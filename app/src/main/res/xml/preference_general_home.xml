@@ -57,7 +57,7 @@
             app:title="@string/force_english" />
 
         <rikka.material.preference.MaterialSwitchPreference
-            app:defaultValue="true"
+            app:defaultValue="false"
             app:key="enablelogs"
             app:title="@string/verbose_logs" />
 

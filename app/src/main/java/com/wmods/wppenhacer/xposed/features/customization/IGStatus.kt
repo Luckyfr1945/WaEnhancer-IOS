@@ -13,10 +13,16 @@ import com.wmods.wppenhacer.xposed.utils.ReflectionUtils
 import com.wmods.wppenhacer.xposed.utils.Utils
 import org.luckypray.dexkit.query.enums.StringMatchType
 import de.robv.android.xposed.XC_MethodHook
-import android.content.SharedPreferences 
+import android.content.SharedPreferences
 import de.robv.android.xposed.XposedBridge
+import java.util.Collections
+import java.util.WeakHashMap
 
-private val mListStatusContainer = ArrayList<IGStatusView>()
+// Referências fracas: enquanto a view estiver anexada à lista, o próprio ListView a mantém
+// viva. Com uma ArrayList comum, cada recriação da HomeActivity vazava a Activity inteira
+// junto com sua árvore de views.
+private val mListStatusContainer: MutableSet<IGStatusView> =
+    Collections.newSetFromMap(WeakHashMap())
 
 class IGStatus(loader: ClassLoader, preferences:SharedPreferences) : Feature(loader, preferences) {
 

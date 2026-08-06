@@ -46,6 +46,11 @@ rikkax-material = { module = "dev.rikka.rikkax.material:material", version = "2.
 rikkax-material-preference = { module = "dev.rikka.rikkax.material:material-preference", version = "2.0.0" }
 rikkax-widget-borderview = { module = "dev.rikka.rikkax.widget:borderview", version = "1.1.0" }
 material = { module = "com.google.android.material:material", version = "1.13.0" }
+# 2.x sengaja dipakai, bukan 3.x: sejak 3.0 `setupWith` menuntut `BlurTarget`, yaitu
+# FrameLayout yang harus MEMBUNGKUS konten yang di-blur. Di dalam proses WhatsApp itu
+# berarti membongkar-pasang hierarki milik aplikasi lain. 2.0.6 menerima ViewGroup biasa
+# sebagai blur root, jadi tidak ada view WhatsApp yang perlu dipindahkan.
+blurview = { module = "com.github.Dimezis:BlurView", version = "version-2.0.6" }
 markwon-core = { module = "io.noties.markwon:core", version.ref = "markwon" }
 remote-preferences = { module = "com.crossbowffs.remotepreferences:remotepreferences", version.ref = "remotePreferences" }
 

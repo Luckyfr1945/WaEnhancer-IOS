@@ -11,3 +11,18 @@ local.properties
 key.jks
 key_base64.txt
 /app/.project
+
+# IDE & AI Assistant temporary files
+.agents/
+.claude/
+CLAUDE.md
+graphify-out/
+
+# Temporary dumps, databases, scripts & logs
+*_dump*.xml
+*.db
+*.png
+*.py
+*.sh
+logcat_*.txt
+perbaikan*.md

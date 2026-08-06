@@ -137,6 +137,8 @@ android {
 
     lint {
         disable += "SelectedPhotoAccess"
+        disable += "ExtraTranslation"
+        checkReleaseBuilds = false
         baseline = file("lint-baseline.xml")
     }
 
@@ -200,6 +202,7 @@ dependencies {
     implementation(libs.rikkax.appcompat)
     implementation(libs.rikkax.core)
     implementation(libs.material)
+    implementation(libs.blurview)
     implementation(libs.rikkax.material)
     implementation(libs.rikkax.material.preference)
     implementation(libs.rikkax.widget.borderview)

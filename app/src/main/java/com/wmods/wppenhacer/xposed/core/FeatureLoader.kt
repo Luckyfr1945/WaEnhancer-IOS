@@ -44,7 +44,12 @@ import com.wmods.wppenhacer.xposed.features.customization.FilterGroups
 import com.wmods.wppenhacer.xposed.features.customization.FloatingBottomBar
 import com.wmods.wppenhacer.xposed.features.customization.HideSeenView
 import com.wmods.wppenhacer.xposed.features.customization.HideTabs
+import com.wmods.wppenhacer.xposed.features.customization.HideWhatsappTitle
 import com.wmods.wppenhacer.xposed.features.customization.IGStatus
+import com.wmods.wppenhacer.xposed.features.customization.IosContextMenu
+import com.wmods.wppenhacer.xposed.features.customization.IosHeader
+import com.wmods.wppenhacer.xposed.features.customization.IosSwipeMenu
+import com.wmods.wppenhacer.xposed.features.customization.IosTextEntry
 import com.wmods.wppenhacer.xposed.features.customization.SeparateGroup
 import com.wmods.wppenhacer.xposed.features.customization.ShowOnline
 import com.wmods.wppenhacer.xposed.features.general.AboutContactPicker
@@ -91,6 +96,7 @@ import com.wmods.wppenhacer.xposed.features.privacy.FreezeLastSeen
 import com.wmods.wppenhacer.xposed.features.privacy.HideChat
 import com.wmods.wppenhacer.xposed.features.privacy.HideSeen
 import com.wmods.wppenhacer.xposed.features.privacy.LockedChatsEnhancer
+import com.wmods.wppenhacer.xposed.features.privacy.ChatLockEnhancer
 import com.wmods.wppenhacer.xposed.features.privacy.TagMessage
 import com.wmods.wppenhacer.xposed.features.privacy.TypingPrivacy
 import com.wmods.wppenhacer.xposed.features.privacy.ViewOnce
@@ -128,7 +134,7 @@ class FeatureLoader {
         @JvmStatic
         fun start(loader: ClassLoader, sourceDir: String) {
             if (!Unobfuscator.initWithPath(sourceDir)) {
-                XposedBridge.log("Can't init dexkit")
+                XposedBridge.log("Can't find apk path: $sourceDir")
                 return
             }
 
@@ -141,7 +147,7 @@ class FeatureLoader {
                         mApp = param.args[0] as Application
                         val application = mApp!!
                         val pref = getPreferences(application)
-                        Feature.DEBUG = pref.getBoolean("enablelogs", true)
+                        Feature.DEBUG = pref.getBoolean("enablelogs", false)
                         Utils.xprefs = pref
 
                         if (pref.getBoolean("bootloader_spoofer", false)) {
@@ -210,6 +216,10 @@ class FeatureLoader {
                                     .joinToString(prefix = "[", postfix = "]")
                             }
                             list.add(error)
+                        } finally {
+                            // Libera o índice dex do DexKit (memória nativa). É recriado
+                            // sob demanda caso alguma busca ocorra depois do hooking.
+                            Unobfuscator.closeBridge()
                         }
                     }
                 })
@@ -361,19 +371,7 @@ class FeatureLoader {
             DesignUtils.setPrefs(pref)
             Utils.init()
 
-            WppCore.addListenerActivity { activity, type ->
-                if (type == WppCore.ActivityChangeState.ChangeType.RESUMED) {
-                    checkUpdate(activity)
-                }
-
-
-                if (App.isOriginalPackage && pref.getBoolean("update_check", true)) {
-                    if (activity.javaClass.simpleName == "HomeActivity" && type == WppCore.ActivityChangeState.ChangeType.RESUMED) {
-                        activity.window.decorView.postDelayed({
-                            CompletableFuture.runAsync(UpdateChecker(activity))
-                        }, 2000)
-                    }
-                }
+            WppCore.addListenerActivity { _, _ ->
             }
 
         }
@@ -487,9 +485,11 @@ class FeatureLoader {
                 CallPrivacy::class.java,
                 ActivityController::class.java,
                 CustomThemeV2::class.java,
+                IosHeader::class.java,
                 FloatingBottomBar::class.java,
                 ChatLimit::class.java,
                 SeparateGroup::class.java,
+                IosSwipeMenu::class.java,
                 ShowOnline::class.java,
                 DndMode::class.java,
                 FreezeLastSeen::class.java,
@@ -499,6 +499,7 @@ class FeatureLoader {
                 HideSeenView::class.java,
                 TagMessage::class.java,
                 HideTabs::class.java,
+                HideWhatsappTitle::class.java,
                 IGStatus::class.java,
                 MediaQuality::class.java,
                 NewChat::class.java,
@@ -530,11 +531,14 @@ class FeatureLoader {
                 GoogleTranslate::class.java,
                 ContactVerify::class.java,
                 LockedChatsEnhancer::class.java,
+                ChatLockEnhancer::class.java,
                 CallRecording::class.java,
                 BackupRestore::class.java,
                 JumpFirstMessage::class.java,
                 AboutContactPicker::class.java,
-                DefaultEmoji::class.java
+                DefaultEmoji::class.java,
+                IosTextEntry::class.java,
+                IosContextMenu::class.java
             )
 
             XposedBridge.log("Loading Plugins")

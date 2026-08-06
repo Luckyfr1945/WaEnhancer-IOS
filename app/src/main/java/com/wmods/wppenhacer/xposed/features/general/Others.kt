@@ -68,7 +68,7 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
         val disableSensorProximity = prefs.getBoolean("disable_sensor_proximity", false)
         val proximityAudios = prefs.getBoolean("proximity_audios", false)
         val showOnline = prefs.getBoolean("showonline", false)
-        val floatingMenu = prefs.getBoolean("floatingmenu", false)
+        val floatingMenu = prefs.getBoolean("floatingmenu", false) || prefs.getBoolean("ios_header", false)
         val filterItems = prefs.getString("filter_items", null)
         val autonextStatus = prefs.getBoolean("autonext_status", false)
         val audioType = prefs.getString("audio_type", "0")?.toInt() ?: 0
@@ -206,7 +206,7 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
         propsBoolean[13957] = true
 
         // new popup menu in chat
-        propsBoolean[21541] = false
+        propsBoolean[21541] = floatingMenu
 
         hookProps()
         hookSearchbar(filterChats)
@@ -238,7 +238,11 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
             }
         }
 
-        customPlayBackSpeed()
+        try {
+            customPlayBackSpeed()
+        } catch (e: Exception) {
+            logDebug("customPlayBackSpeed error: ${e.message}")
+        }
 
         showOnline(showOnline)
 
@@ -267,8 +271,38 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
         if (!filterSeen) {
             disableHomeFilters()
         }
+
+        if (floatingMenu) {
+            hookBlurContextMenu()
+        }
     }
 
+
+    @SuppressLint("NewApi")
+    private fun hookBlurContextMenu() {
+        try {
+            XposedHelpers.findAndHookMethod(
+                "android.view.WindowManagerImpl", null, "addView",
+                View::class.java, android.view.ViewGroup.LayoutParams::class.java,
+                object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                            val layoutParams = param.args[1] as? android.view.WindowManager.LayoutParams ?: return
+                            
+                            // Jika window ini meminta layar diredupkan (dimming),
+                            // kita ubah menjadi efek blur gaya iOS
+                            if (layoutParams.flags and android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND != 0) {
+                                layoutParams.flags = layoutParams.flags or android.view.WindowManager.LayoutParams.FLAG_BLUR_BEHIND
+                                layoutParams.blurBehindRadius = 45 // Radius blur
+                            }
+                        }
+                    }
+                }
+            )
+        } catch (e: Throwable) {
+            logDebug("Gagal hook WindowManagerImpl: ${e.message}")
+        }
+    }
 
     private fun getNewSettingsVariant(): Int {
         val type = prefs.getString("configui_mode", "-1")?.toInt() ?: -1

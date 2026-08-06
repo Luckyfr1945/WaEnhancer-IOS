@@ -131,8 +131,11 @@ class MediaQuality(loader: ClassLoader, preferences: SharedPreferences) :
             }
             Others.propsBoolean[6033] = true
             Others.propsBoolean[9569] = false
-            Others.propsBoolean[26289] = true
-            Others.propsBoolean[22375] = true
+            // 26289, 26291, 22375 enable WhatsApp's Jarvis ML image-transcode config
+            // (UitTranscodeConfig/JarvisImageConfig). Their native passthrough decision
+            // mishandles HEIC/HEIF (Apple format) by uploading the raw file untranscoded,
+            // resulting in "Gambar tidak tersedia karena file bermasalah" for recipients.
+            // Left disabled so HEIC/HEIF is properly transcoded to high quality JPEG.
             listOf(1576, 2654, 6032, 15748, 3068).forEach { Others.propsInteger[it] = 3840 }
 
             // Prevent crashes in Media preview

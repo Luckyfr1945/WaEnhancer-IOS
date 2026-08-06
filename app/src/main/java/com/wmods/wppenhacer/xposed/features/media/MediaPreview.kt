@@ -3,6 +3,7 @@ package com.wmods.wppenhacer.xposed.features.media
 import android.annotation.SuppressLint
 import android.app.Dialog
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Matrix
@@ -48,9 +49,9 @@ import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.io.FilterInputStream
 import java.io.InputStream
 import java.lang.reflect.InvocationTargetException
 import java.util.Locale
@@ -68,10 +69,14 @@ class MediaPreview(
 
     private var filePath: File? = null
     private var dialog: Dialog? = null
+    private var currentPreviewBitmap: Bitmap? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
     companion object {
         private const val MEDIA_PREVIEW_WRAPPER_TAG = "wpp_media_preview_wrapper"
+
+        /** Bytes de MAC no fim da mídia cifrada do WhatsApp, fora do texto cifrado. */
+        private const val MEDIA_MAC_SIZE = 10
 
         val MEDIA_KEYS = hashMapOf<String, ByteArray>()
 
@@ -83,6 +88,8 @@ class MediaPreview(
             MEDIA_KEYS["image/webp"] = "WhatsApp Image Keys".toByteArray()
             MEDIA_KEYS["image/jpeg"] = "WhatsApp Image Keys".toByteArray()
             MEDIA_KEYS["image/png"] = "WhatsApp Image Keys".toByteArray()
+            MEDIA_KEYS["image/heic"] = "WhatsApp Image Keys".toByteArray()
+            MEDIA_KEYS["image/heif"] = "WhatsApp Image Keys".toByteArray()
             MEDIA_KEYS["video/mp4"] = "WhatsApp Video Keys".toByteArray()
             MEDIA_KEYS["audio/aac"] = "WhatsApp Audio Keys".toByteArray()
             MEDIA_KEYS["audio/ogg"] = "WhatsApp Audio Keys".toByteArray()
@@ -532,48 +539,106 @@ class MediaPreview(
         inputStream: InputStream, contentLength: Long,
         mediaKey: String, mimeType: String, progressBar: ProgressBar, progressText: TextView
     ) {
-        val encryptedData: ByteArray
-        ByteArrayOutputStream().use { baos ->
-            val buffer = ByteArray(8192)
-            var totalBytesRead: Long = 0
-            var bytesRead: Int
+        val cipher = createMediaCipher(mediaKey, mimeType)
 
+        // Decriptação em streaming: antes o arquivo inteiro era mantido na heap em quatro
+        // cópias sucessivas (ByteArrayOutputStream -> toByteArray -> copyOfRange -> doFinal),
+        // com pico de 4-5x o tamanho da mídia. Agora o pico é o buffer de 8KB.
+        val progressStream = object : FilterInputStream(inputStream) {
+            private var totalBytesRead = 0L
 
-            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                baos.write(buffer, 0, bytesRead)
-                totalBytesRead += bytesRead
-
-                if (contentLength > 0) {
-                    val progress = ((totalBytesRead * 100) / contentLength).toInt()
-                    val sizeInfo = "${formatSize(totalBytesRead)} / ${formatSize(contentLength)}"
-                    mainHandler.post {
-                        progressBar.progress = progress
-                        progressText.text =
-                            "${Utils.getString(R.string.downloading)} $progress%\n$sizeInfo"
+            override fun read(b: ByteArray, off: Int, len: Int): Int {
+                val bytesRead = super.read(b, off, len)
+                if (bytesRead > 0) {
+                    totalBytesRead += bytesRead
+                    if (contentLength > 0) {
+                        val progress = ((totalBytesRead * 100) / contentLength).toInt()
+                        val sizeInfo = "${formatSize(totalBytesRead)} / ${formatSize(contentLength)}"
+                        mainHandler.post {
+                            progressBar.progress = progress
+                            progressText.text =
+                                "${Utils.getString(R.string.downloading)} $progress%\n$sizeInfo"
+                        }
                     }
                 }
+                return bytesRead
             }
-            encryptedData = baos.toByteArray()
         }
-        inputStream.close()
 
         mainHandler.post { progressText.setText(R.string.decrypting) }
 
-        val decryptedData = decryptMedia(encryptedData, mediaKey, mimeType)
-
-        FileOutputStream(filePath).use { fos ->
-            fos.write(decryptedData)
+        // O cipher é alimentado manualmente em vez de via CipherInputStream porque este
+        // engole BadPaddingException no close(), o que gravaria um arquivo corrompido em
+        // silêncio. Com doFinal() explícito o erro continua chegando em handleError().
+        TrailerStrippingInputStream(progressStream, MEDIA_MAC_SIZE).use { cipherText ->
+            FileOutputStream(filePath).use { fos ->
+                val buffer = ByteArray(8192)
+                var bytesRead: Int
+                while (cipherText.read(buffer).also { bytesRead = it } != -1) {
+                    cipher.update(buffer, 0, bytesRead)?.let { fos.write(it) }
+                }
+                fos.write(cipher.doFinal())
+            }
         }
+    }
+
+    /**
+     * Repassa os bytes de [src] retendo sempre os últimos [trailer] bytes, que na mídia do
+     * WhatsApp são o MAC e não fazem parte do texto cifrado.
+     */
+    private class TrailerStrippingInputStream(
+        private val src: InputStream,
+        private val trailer: Int
+    ) : InputStream() {
+
+        private val pending = ByteArray(trailer)
+        private var pendingSize = 0
+
+        override fun read(): Int {
+            val single = ByteArray(1)
+            return if (read(single, 0, 1) == -1) -1 else single[0].toInt() and 0xFF
+        }
+
+        override fun read(b: ByteArray, off: Int, len: Int): Int {
+            if (len == 0) return 0
+
+            // Lê o suficiente para poder liberar `len` bytes e ainda manter o trailer retido.
+            val scratch = ByteArray(len + trailer)
+            System.arraycopy(pending, 0, scratch, 0, pendingSize)
+            var filled = pendingSize
+
+            while (filled < scratch.size) {
+                val bytesRead = src.read(scratch, filled, scratch.size - filled)
+                if (bytesRead == -1) break
+                filled += bytesRead
+            }
+
+            val emitted = filled - trailer
+            if (emitted <= 0) {
+                // Só restou o trailer (ou menos): fim do texto cifrado.
+                pendingSize = filled.coerceAtMost(trailer)
+                System.arraycopy(scratch, 0, pending, 0, pendingSize)
+                return -1
+            }
+
+            System.arraycopy(scratch, 0, b, off, emitted)
+            pendingSize = trailer
+            System.arraycopy(scratch, emitted, pending, 0, trailer)
+            return emitted
+        }
+
+        override fun close() = src.close()
     }
 
     @SuppressLint("ClickableViewAccessibility")
     private fun displayImage(context: Context, container: FrameLayout) {
         try {
-            val bitmap = BitmapFactory.decodeFile(filePath?.absolutePath)
+            val bitmap = decodeScaledBitmap(filePath?.absolutePath)
             if (bitmap == null) {
                 Utils.showToast("Failed to load image", Toast.LENGTH_SHORT)
                 return
             }
+            currentPreviewBitmap = bitmap
 
             val imageView = ZoomableImageView(context).apply {
                 layoutParams = FrameLayout.LayoutParams(
@@ -589,6 +654,34 @@ class MediaPreview(
             logDebug(e)
             Utils.showToast("Error displaying image: ${e.message}", Toast.LENGTH_SHORT)
         }
+    }
+
+    /**
+     * Decodifica em duas passadas para nunca alocar o bitmap em resolução total: uma foto de
+     * 4000x3000 custaria ~48MB em ARGB_8888, o que sozinho estoura a heap de aparelhos de
+     * entrada. O resultado é reduzido até o menor tamanho que ainda cobre a tela.
+     */
+    private fun decodeScaledBitmap(path: String?): Bitmap? {
+        if (path == null) return null
+
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+        val metrics = Utils.application.resources.displayMetrics
+        val targetWidth = metrics.widthPixels
+        val targetHeight = metrics.heightPixels
+
+        var sampleSize = 1
+        while (bounds.outWidth / (sampleSize * 2) >= targetWidth &&
+            bounds.outHeight / (sampleSize * 2) >= targetHeight
+        ) {
+            sampleSize *= 2
+        }
+
+        return BitmapFactory.decodeFile(path, BitmapFactory.Options().apply {
+            inSampleSize = sampleSize
+        })
     }
 
     @SuppressLint("SetTextI18n")
@@ -909,6 +1002,13 @@ class MediaPreview(
         }
         currentVideoView = null
 
+        currentPreviewBitmap?.let { bitmap ->
+            if (!bitmap.isRecycled) {
+                bitmap.recycle()
+            }
+            currentPreviewBitmap = null
+        }
+
         filePath?.let { path ->
             if (path.exists()) {
                 path.delete()
@@ -1154,11 +1254,7 @@ class MediaPreview(
     }
 
     @Throws(Exception::class)
-    private fun decryptMedia(
-        encryptedData: ByteArray,
-        mediaKey: String,
-        mimeType: String
-    ): ByteArray {
+    private fun createMediaCipher(mediaKey: String, mimeType: String): Cipher {
         if (mediaKey.length % 2 != 0 || mediaKey.length != 64) {
             throw IllegalArgumentException("Invalid media key.")
         }
@@ -1176,9 +1272,9 @@ class MediaPreview(
         val iv = derivedKey.copyOfRange(0, 16)
         val aesKey = derivedKey.copyOfRange(16, 48)
 
-        val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
-        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(aesKey, "AES"), IvParameterSpec(iv))
-        return cipher.doFinal(encryptedData.copyOfRange(0, encryptedData.size - 10))
+        return Cipher.getInstance("AES/CBC/PKCS5Padding").apply {
+            init(Cipher.DECRYPT_MODE, SecretKeySpec(aesKey, "AES"), IvParameterSpec(iv))
+        }
     }
 
     override fun getPluginName(): String {

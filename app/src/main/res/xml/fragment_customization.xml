@@ -7,6 +7,11 @@
         app:title="@string/general">
 
         <rikka.material.preference.MaterialSwitchPreference
+            app:key="ios_header"
+            app:summary="Enables Large Title, iOS-style Search bar, and automatically configures other settings to mimic iOS WhatsApp"
+            app:title="iOS Theme" />
+
+        <rikka.material.preference.MaterialSwitchPreference
             app:key="changecolor"
             app:summary="@string/colors_customization_sum"
             app:title="@string/colors_customization" />
@@ -143,6 +148,11 @@
             app:title="@string/new_context_menu_ui" />
 
         <rikka.material.preference.MaterialSwitchPreference
+            android:summary="@string/ios_text_entry_sum"
+            app:key="ios_text_entry"
+            app:title="@string/ios_text_entry" />
+
+        <rikka.material.preference.MaterialSwitchPreference
             android:defaultValue="true"
             app:key="animation_emojis"
             app:summary="@string/animation_emojis_sum"
@@ -172,6 +182,10 @@
         app:iconSpaceReserved="false"
         app:title="@string/home_screen">
 
+        <rikka.material.preference.MaterialSwitchPreference
+            app:key="ios_swipe_menu"
+            app:summary="Adds iOS style swipe actions (Archive/Unread) to chats"
+            app:title="iOS Swipe Menu" />
 
         <rikka.material.preference.MaterialSwitchPreference
             app:key="menuwicon"
@@ -192,6 +206,13 @@
             app:min="0"
             app:showSeekBarValue="true"
             app:title="@string/floating_bottom_bar_radius" />
+
+        <rikka.material.preference.MaterialSwitchPreference
+            app:defaultValue="true"
+            app:dependency="floating_bottom_bar"
+            app:key="floating_bottom_bar_blur"
+            app:summary="@string/floating_bottom_bar_blur_sum"
+            app:title="@string/floating_bottom_bar_blur" />
 
 
         <ListPreference

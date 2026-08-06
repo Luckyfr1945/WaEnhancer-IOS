@@ -30,6 +30,7 @@ import org.luckypray.dexkit.query.matchers.base.OpCodesMatcher
 import org.luckypray.dexkit.result.ClassData
 import org.luckypray.dexkit.result.MethodData
 import org.luckypray.dexkit.util.DexSignUtil
+import java.io.File
 import java.lang.reflect.Constructor
 import java.lang.reflect.Field
 import java.lang.reflect.Method
@@ -44,22 +45,50 @@ import java.util.stream.Collectors
 
 object Unobfuscator {
 
-    private lateinit var bridge: DexKitBridge
+    private var apkPath: String? = null
+    private var bridgeInstance: DexKitBridge? = null
+    private val bridgeLock = Any()
+
+    @Volatile
+    private var nativeLoaded = false
 
     val cacheClasses = HashMap<String, Class<*>>()
 
-    init {
-        System.loadLibrary("dexkit")
-    }
+    /**
+     * O bridge do DexKit indexa todo o dex do WhatsApp em memória nativa (~150-250MB).
+     * Como o [UnobfuscatorCache] persiste todos os resultados, na maioria dos inícios
+     * nenhuma busca acontece — então só criamos o bridge quando alguma busca realmente
+     * precisa dele, e o liberamos assim que o hooking termina.
+     */
+    private val bridge: DexKitBridge
+        get() = synchronized(bridgeLock) {
+            bridgeInstance ?: run {
+                if (!nativeLoaded) {
+                    System.loadLibrary("dexkit")
+                    nativeLoaded = true
+                }
+                val path = apkPath ?: throw IllegalStateException("Unobfuscator not initialized")
+                DexKitBridge.create(path).also { bridgeInstance = it }
+            }
+        }
 
     @JvmStatic
     fun initWithPath(path: String): Boolean {
-        return try {
-            bridge = DexKitBridge.create(path)
-            true
-        } catch (_: Exception) {
-            false
+        apkPath = path
+        return File(path).exists()
+    }
+
+    /**
+     * Libera a memória nativa do DexKit. O bridge é recriado sob demanda caso alguma
+     * busca ocorra depois disso (cache miss em runtime).
+     */
+    @JvmStatic
+    fun closeBridge() = synchronized(bridgeLock) {
+        try {
+            bridgeInstance?.close()
+        } catch (_: Throwable) {
         }
+        bridgeInstance = null
     }
 
     @Throws(Exception::class)

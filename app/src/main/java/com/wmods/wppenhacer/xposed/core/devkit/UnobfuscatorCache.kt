@@ -22,6 +22,7 @@ import java.lang.reflect.Constructor
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicReference
@@ -30,7 +31,9 @@ class UnobfuscatorCache private constructor(private val mApplication: Applicatio
 
     val sPrefsCacheHooks: SharedPreferences
     private val sPrefsCacheStrings: SharedPreferences
-    private val reverseResourceMap = HashMap<String, String>()
+    // Preenchido por várias threads em initializeReverseResourceMapBruteForce().
+    // Pode conter até ~65k entradas, então é liberado assim que o cache de strings termina.
+    private val reverseResourceMap = ConcurrentHashMap<String, String>()
 
     init {
         try {
@@ -99,6 +102,10 @@ class UnobfuscatorCache private constructor(private val mApplication: Applicatio
         getOfuscateIDString("selectcalltype")
         getOfuscateIDString("lastseensun%s")
         getOfuscateIDString("updates")
+        // O mapa reverso só serve para resolver esses IDs. Depois disso os valores já
+        // estão em sPrefsCacheStrings, então não há motivo para segurar ~65k entradas
+        // durante toda a vida do processo. É reconstruído sob demanda se necessário.
+        reverseResourceMap.clear()
     }
 
     private fun initializeReverseResourceMap() {
@@ -136,7 +143,7 @@ class UnobfuscatorCache private constructor(private val mApplication: Applicatio
 
     private fun initializeReverseResourceMapBruteForce() {
         val currentTime = System.currentTimeMillis()
-        val numThreads = Runtime.getRuntime().availableProcessors()
+        val numThreads = Runtime.getRuntime().availableProcessors().coerceAtMost(4)
         val executor = Executors.newFixedThreadPool(numThreads)
         try {
             val configuration = Configuration(mApplication.resources.configuration)
@@ -182,7 +189,6 @@ class UnobfuscatorCache private constructor(private val mApplication: Applicatio
     private fun getMapIdString(search: String): String? {
         if (reverseResourceMap.isEmpty()) {
             initializeReverseResourceMap()
-            System.gc()
         }
         val s = search.lowercase(Locale.ROOT).replace("\\s".toRegex(), "")
         XposedBridge.log("need search obsfucate: $s")

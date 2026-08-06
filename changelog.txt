@@ -1,5 +1,5 @@
 [ADDED]
-* Added support for WA 2.26.27.xx
+* Added support for WA 2.26.28.xx
 
 [IMPROVED]
 * Improvements in detecting problems in sepolicy in root diagnostics (I suggest you run a test if you have configuration problems by resetting)
