@@ -389,6 +389,12 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                                                         var isSearch = false
                                                         var isCamera = false
                                                         var isPhone = false
+                                                        val btnId = btn.id
+                                                        var isCustomAction = (btnId == com.wmods.wppenhacer.xposed.features.others.MenuHome.ID_DND ||
+                                                                              btnId == com.wmods.wppenhacer.xposed.features.others.MenuHome.ID_GHOST ||
+                                                                              btnId == com.wmods.wppenhacer.xposed.features.others.MenuHome.ID_FREEZE ||
+                                                                              btnId == com.wmods.wppenhacer.xposed.features.others.MenuHome.ID_RESTART ||
+                                                                              btnId == com.wmods.wppenhacer.xposed.features.others.MenuHome.ID_OPEN_WAE)
 
                                                         if (overflowId != 0 && btn.id == overflowId) isOverflow = true
                                                         if (searchId != 0 && btn.id == searchId) isSearch = true
@@ -403,6 +409,12 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                                                             if (desc.contains("kamera", ignoreCase = true) || desc.contains("camera", ignoreCase = true)) isCamera = true
                                                             if (desc.contains("panggilan", ignoreCase = true) || desc.contains("call", ignoreCase = true) ||
                                                                 desc.contains("telepon", ignoreCase = true) || desc.contains("phone", ignoreCase = true)) isPhone = true
+                                                            if (desc.contains("dnd", ignoreCase = true) || desc.contains("pesawat", ignoreCase = true) ||
+                                                                desc.contains("ghost", ignoreCase = true) || desc.contains("bekukan", ignoreCase = true) ||
+                                                                desc.contains("freeze", ignoreCase = true) || desc.contains("restart", ignoreCase = true) ||
+                                                                desc.contains("enhancer", ignoreCase = true) || desc.contains("wae", ignoreCase = true)) {
+                                                                isCustomAction = true
+                                                            }
                                                         }
 
                                                         if (!isOverflow && btn.javaClass.name.contains("OverflowMenuButton")) isOverflow = true
@@ -438,8 +450,8 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                                                                     btn.layoutParams = params
                                                                 }
                                                             }
-                                                        } else if (isSearch || isCamera || isPhone) {
-                                                            // Biarkan Search, Camera & Phone tetap visible
+                                                        } else if (isCustomAction || isSearch || isCamera || isPhone) {
+                                                            // Biarkan Custom Actions (DND, Ghost, Freeze, Restart, WAE), Search, Camera & Phone tetap visible
                                                             if (btn.visibility != View.VISIBLE) btn.visibility = View.VISIBLE
                                                             btn.alpha = 1f
                                                             val params = btn.layoutParams
