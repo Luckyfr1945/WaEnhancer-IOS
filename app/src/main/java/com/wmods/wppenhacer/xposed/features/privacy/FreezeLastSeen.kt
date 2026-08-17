@@ -19,7 +19,7 @@ class FreezeLastSeen(loader: ClassLoader, preferences:SharedPreferences) :
         if (freezeLastSeen || freezeLastSeenOption || ghostmode) {
             val method = loadFreezeSeenMethod(classLoader)
             logDebug(getMethodDescriptor(method))
-            XposedBridge.hookMethod(method, XC_MethodReplacement.DO_NOTHING)
+            XposedBridge.hookMethod(method, com.wmods.wppenhacer.xposed.utils.ReflectionUtils.DO_NOTHING)
         }
     }
 

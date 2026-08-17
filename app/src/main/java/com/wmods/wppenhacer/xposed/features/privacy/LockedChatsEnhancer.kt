@@ -58,12 +58,14 @@ class LockedChatsEnhancer(classLoader: ClassLoader, preferences:SharedPreference
         XposedBridge.hookMethod(loadedContacts, object : XC_MethodHook() {
 
             override fun beforeHookedMethod(param: MethodHookParam) {
-                val list = XposedHelpers.getObjectField(param.args[0], "A01") as MutableList<*>
-                val lockedChats = lockedChatsFields[1]!!.get(chatCache) as HashSet<*>?
-                val lockedNumbers = lockedChats!!.stream()
-                    .map<String?> { userjid: Any? -> UserJid(userjid).phoneNumber }.collect(
-                        Collectors.toList()
-                    )
+                val arg0 = param.args.getOrNull(0) ?: return
+                val list = (XposedHelpers.getObjectField(arg0, "A01") as? MutableList<*>) ?: return
+                if (lockedChatsFields.size <= 1 || chatCache == null) return
+                val lockedChats = lockedChatsFields[1]?.get(chatCache) as? HashSet<*> ?: return
+                val lockedNumbers = lockedChats.stream()
+                    .map<String?> { userjid: Any? -> UserJid(userjid).phoneNumber }
+                    .filter { it != null }
+                    .collect(Collectors.toList())
                 list.removeIf { item: Any? ->
                     if (!WaContactWpp.TYPE.isInstance(item)) return@removeIf false
                     val waContact = WaContactWpp(item)

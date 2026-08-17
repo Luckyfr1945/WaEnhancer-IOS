@@ -308,9 +308,22 @@ class ProtocolTreeNodeWpp(val mInstance: Any) {
 
         var userJid: FMessageWpp.UserJid?
             get() = try {
-                FMessageWpp.UserJid(FMessageWpp.UserJid(fieldJid.get(mInstance)).userRawString)
+                val jidObj = fieldJid.get(mInstance)
+                if (jidObj != null) {
+                    val uj = FMessageWpp.UserJid(jidObj)
+                    if (!uj.isNull) uj else null
+                } else {
+                    val valStr = value
+                    if (valStr != null && valStr.contains("@")) {
+                        val uj = FMessageWpp.UserJid(valStr)
+                        if (!uj.isNull) uj else null
+                    } else null
+                }
             } catch (e: Exception) {
-                null
+                val valStr = value
+                if (valStr != null && valStr.contains("@")) {
+                    FMessageWpp.UserJid(valStr)
+                } else null
             }
             set(value) = try {
                 fieldJid.set(mInstance, value?.userJid)

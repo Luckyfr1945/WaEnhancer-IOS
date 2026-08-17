@@ -57,6 +57,15 @@ class SeenTick(
     val scope = CoroutineScope(Dispatchers.Default + SupervisorJob() + WaeCoroutineExceptionHandler)
 
     companion object {
+        var instance: SeenTick? = null
+
+        fun triggerBlueOnReply(userJid: FMessageWpp.UserJid) {
+            instance?.let { seenTick ->
+                if (!Utils.isBlueOnReplyEnabled(seenTick.prefs)) return
+                seenTick.sendBlueTick(userJid)
+            }
+        }
+
         private var mWaJobManager: Any? = null
         private var mSendReadClass: Class<*>? = null
         private var waJobManagerMethod: Method? = null
@@ -136,6 +145,7 @@ class SeenTick(
     }
 
     override fun doHook() {
+        instance = this
         waJobManagerMethod = Unobfuscator.loadBlueOnReplayWaJobManagerMethod(classLoader)
         mSendReadClass = Unobfuscator.findFirstClassUsingName(
             classLoader,
@@ -484,94 +494,158 @@ class SeenTick(
         )
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     private fun hookOnSendMessages() {
+        if (!Utils.isBlueOnReplyEnabled(prefs)) return
 
-        val messageJobMethod = Unobfuscator.loadBlueOnReplayMessageJobMethod(classLoader)
-        val messageSendClass = Unobfuscator.findFirstClassUsingName(
-            classLoader,
-            StringMatchType.Contains,
-            "SendE2EMessageJob"
-        )
-        val blueOnReplayEnabled = prefs.getBoolean("blueonreply", false)
+        WppCore.addListenerActivity { activity, type ->
+            if (type == WppCore.ActivityChangeState.ChangeType.RESUMED && activity.javaClass.simpleName == "Conversation") {
+                val rootView = activity.window?.decorView?.rootView ?: return@addListenerActivity
+                val tagKey = 0x7E110099
+                if (rootView.getTag(tagKey) == true) return@addListenerActivity
+                rootView.setTag(tagKey, true)
 
-        XposedBridge.hookMethod(messageJobMethod, object : XC_MethodHook() {
-            override fun beforeHookedMethod(param: MethodHookParam) {
-                if (!blueOnReplayEnabled) {
-                    return
-                }
-                val obj = messageSendClass.cast(param.thisObject)
-                val rawJid = XposedHelpers.getObjectField(obj, "jid") as String
-                val userJid = FMessageWpp.UserJid(rawJid)
-                if (userJid.isStatus) {
-                    val listStatus = MenuStatusListener.statusData.getCurrentItemList()
-
-                    listStatus.forEach { fstatus ->
-                        val view = getRegisteredView(fstatus.messageID)
-                        view?.post {
-                            setSeenButton(view, true)
+                val attachSendListeners = {
+                    val sendBtn = rootView.findViewById<View>(Utils.getID("send", "id"))
+                    sendBtn?.setOnTouchListener { _, event ->
+                        if (event.action == android.view.MotionEvent.ACTION_UP) {
+                            WppCore.getCurrentUserJid()?.let { jid ->
+                                if (!jid.isNull && !jid.isStatus) {
+                                    sendBlueTick(jid)
+                                }
+                            }
                         }
+                        false
                     }
-                    sendBlueTickStatus(listStatus)
-                } else {
-                    sendBlueTick(userJid)
+
+                    val voiceBtn = rootView.findViewById<View>(Utils.getID("voice_note_btn", "id"))
+                    voiceBtn?.setOnTouchListener { _, event ->
+                        if (event.action == android.view.MotionEvent.ACTION_UP) {
+                            WppCore.getCurrentUserJid()?.let { jid ->
+                                if (!jid.isNull && !jid.isStatus) {
+                                    sendBlueTick(jid)
+                                }
+                            }
+                        }
+                        false
+                    }
                 }
+
+                rootView.post { attachSendListeners() }
             }
-        })
+        }
     }
 
-    private fun sendBlueTick(userJid: FMessageWpp.UserJid) {
-
+    fun sendBlueTick(userJid: FMessageWpp.UserJid) {
         scope.launch {
             val phoneNumber = userJid.phoneNumber
             val userRaw = userJid.userRawString ?: ""
             if (phoneNumber == Utils.getMyNumber() || userRaw.contains("lid_me") || userRaw.contains("status_me")) return@launch
 
-            val messages = ArrayList<FMessageWpp>()
-            val hiddenMessages = MessageHistoryStore.getInstance()
+            val jidKey = userJid.phoneRawString ?: userRaw
+            if (jidKey.isBlank()) return@launch
+
+            val jidPattern = if (!phoneNumber.isNullOrEmpty()) "%$phoneNumber%" else "%$jidKey%"
+            
+            XposedBridge.log("[WaEnhancer] Querying hidden messages for jidKey=$jidKey, userRaw=$userRaw, pattern=$jidPattern")
+
+            var hiddenMessages = MessageHistoryStore.getInstance()
                 .getHideSeenMessages(
-                    userJid.phoneRawString,
+                    jidKey,
                     MessageHistoryStore.ReceiptType.READ,
                     false
                 )
-
-            hiddenMessages?.forEach { message ->
-                message.fMessage?.let { messages.add(it) }
-            }
-
-            if (messages.isEmpty()) return@launch
-
-            messages.forEach { m ->
-                if (m.mediaType == 2) {
-                    MessageHistoryStore.getInstance().updateViewedMessage(
-                        userJid.phoneRawString,
-                        m.key.messageID,
-                        MessageHistoryStore.ReceiptType.PLAYED,
-                        true
-                    )
-                    sendBlueTickMedia(m)
-                }
-            }
-
-            messages.forEach { msg ->
-                MessageHistoryStore.getInstance().updateViewedMessage(
-                    userJid.phoneRawString,
-                    msg.key.messageID,
+            if (hiddenMessages.isNullOrEmpty()) {
+                hiddenMessages = MessageHistoryStore.getInstance().getHideSeenMessagesByPattern(
+                    jidKey,
+                    jidPattern,
                     MessageHistoryStore.ReceiptType.READ,
-                    true
+                    false
+                )
+            }
+            if (hiddenMessages.isNullOrEmpty() && userJid.userRawString != null && userJid.userRawString != jidKey) {
+                hiddenMessages = MessageHistoryStore.getInstance().getHideSeenMessages(
+                    userJid.userRawString,
+                    MessageHistoryStore.ReceiptType.READ,
+                    false
                 )
             }
 
-            sendBlueTickMsg(userJid, messages)
+            XposedBridge.log("[WaEnhancer] Found ${hiddenMessages?.size ?: 0} hidden messages to mark read")
+            if (hiddenMessages.isNullOrEmpty()) return@launch
+
+            val messages = ArrayList<FMessageWpp>()
+            val messageIds = ArrayList<String>()
+
+            hiddenMessages.forEach { item ->
+                messageIds.add(item.message)
+                MessageHistoryStore.getInstance().updateViewedMessage(
+                    item.jid,
+                    item.message,
+                    MessageHistoryStore.ReceiptType.READ,
+                    true
+                )
+                if (item.jid != jidKey) {
+                    MessageHistoryStore.getInstance().updateViewedMessage(
+                        jidKey,
+                        item.message,
+                        MessageHistoryStore.ReceiptType.READ,
+                        true
+                    )
+                }
+                item.fMessage?.let { m ->
+                    messages.add(m)
+                    if (m.mediaType == 2) {
+                        MessageHistoryStore.getInstance().updateViewedMessage(
+                            item.jid,
+                            m.key.messageID,
+                            MessageHistoryStore.ReceiptType.PLAYED,
+                            true
+                        )
+                        sendBlueTickMedia(m)
+                    }
+                }
+            }
+
+            WppCore.getCurrentActivity()?.runOnUiThread {
+                com.wmods.wppenhacer.xposed.features.listeners.ConversationItemListener.notifyDataSetChanged()
+            }
+
+            if (messages.isNotEmpty()) {
+                sendBlueTickMsg(userJid, messages)
+            } else if (messageIds.isNotEmpty()) {
+                sendBlueTickMsgDirect(userJid, messageIds.toTypedArray())
+            }
+        }
+    }
+
+    private fun sendBlueTickMsgDirect(userJid: FMessageWpp.UserJid, messageIds: Array<String>) {
+        if (messageIds.isEmpty()) return
+        val constr = sendJobConstructor ?: return
+        val jidIndexes = sendJobJidIndexes ?: return
+        val paramTypes = sendJobParamTypes ?: return
+        if (jidIndexes.size < 2 || sendJobMessageIdIndex == -1) return
+
+        try {
+            @Suppress("UNCHECKED_CAST")
+            val args = ReflectionUtils.initArray(paramTypes)
+            args[jidIndexes[0].first] = userJid.userJid
+            args[jidIndexes[1].first] = null
+            args[sendJobMessageIdIndex] = messageIds
+
+            val sendJob = constr.newInstance(*args)
+            XposedHelpers.setAdditionalInstanceField(sendJob, "blue_on_reply", true)
+            waJobManagerMethod?.invoke(mWaJobManager, sendJob)
+        } catch (ex: Exception) {
+            logDebug(ex)
         }
     }
 
     private fun sendBlueTickMsg(userJid: FMessageWpp.UserJid, messages: ArrayList<FMessageWpp>) {
-
         if (messages.isEmpty()) return
 
         val constr = sendJobConstructor ?: return
         val jidIndexes = sendJobJidIndexes ?: return
-
         val paramTypes = sendJobParamTypes ?: return
 
         if (jidIndexes.size < 2 || sendJobMessageIdIndex == -1) return

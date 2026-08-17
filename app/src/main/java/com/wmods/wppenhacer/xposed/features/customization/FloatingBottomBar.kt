@@ -300,6 +300,13 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         private var fluidVelocityX = 0f
         private var fluidVelocityY = 0f
         private var isPhysicsActive = false
+        private var isDrawingBackdrop = false
+
+        override fun draw(canvas: Canvas) {
+            // RECURSION GUARD: Prevent blurRoot.draw() from infinitely calling this view's draw()
+            if (isDrawingBackdrop) return
+            super.draw(canvas)
+        }
 
         private val physicsChoreographer = object : Runnable {
             override fun run() {
@@ -482,7 +489,9 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                 recordingCanvas.save()
                 recordingCanvas.translate(dx, dy)
 
+                isDrawingBackdrop = true
                 blurRoot.draw(recordingCanvas)
+                isDrawingBackdrop = false
 
                 recordingCanvas.restore()
                 renderNode.endRecording()
@@ -544,6 +553,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             XposedBridge.hookAllMethods(itemClass, "setSelected", object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
                     val view = param.thisObject as? View ?: return
+                    if (!isBarOrChild(view)) return
                     disableNativeActiveIndicator(view)
                     resetAnimations(view)
                 }
@@ -551,26 +561,50 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             XposedBridge.hookAllMethods(itemClass, "refreshDrawableState", object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
                     val view = param.thisObject as? View ?: return
+                    if (!isBarOrChild(view)) return
                     disableNativeActiveIndicator(view)
                     resetAnimations(view)
                 }
             })
             XposedBridge.hookAllMethods(itemClass, "getActiveIndicatorDrawable", object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
+                    val view = param.thisObject as? View ?: return
+                    if (!isBarOrChild(view)) return
                     param.result = null
                 }
             })
             XposedBridge.hookAllMethods(itemClass, "A01", object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     val view = param.thisObject as? View ?: return
+                    if (!isBarOrChild(view)) return
                     disableNativeActiveIndicator(view)
                     resetAnimations(view)
                     param.result = null
                 }
             })
         } catch (e: Throwable) {
-            logDebug("FloatingBottomBar: Hook X.0hl failed: ${e.message}")
+            logDebug("BottomBar item hook failed: ${e.message}")
         }
+    }
+
+    private fun isBarOrChild(view: View): Boolean {
+        var ctx = view.context
+        while (ctx is android.content.ContextWrapper) {
+            if (ctx.javaClass == com.wmods.wppenhacer.xposed.core.WppCore.homeActivityClass) break
+            val base = ctx.baseContext
+            if (base === ctx) break
+            ctx = base
+        }
+        if (ctx.javaClass != com.wmods.wppenhacer.xposed.core.WppCore.homeActivityClass) return false
+
+        val bottomNavId = Utils.getID("bottom_nav", "id")
+        if (bottomNavId <= 0) return false
+        var current: View? = view
+        while (current != null) {
+            if (current.id == bottomNavId) return true
+            current = current.parent as? View
+        }
+        return false
     }
 
     private fun scheduleSetup(bar: ViewGroup) {
@@ -613,7 +647,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
 
     private fun setupFloatingBar(bar: ViewGroup): Boolean {
         try {
-            // Check if already wrapped in our floating wrapper
             val existingParent = bar.parent as? FrameLayout
             if (existingParent?.getTag(TAG_FLOATING_WRAPPER) == true) {
                 val rootView = findRootView(bar) ?: return false
@@ -626,19 +659,9 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                 return true
             }
 
-            // Detach bar from its current parent
             val originalParent = bar.parent as? ViewGroup ?: return false
 
-            // Debug: dump bar position before we move it
-            android.util.Log.i("FBAR", "BAR: ${bar.javaClass.name} h=${bar.height} w=${bar.width} top=${bar.top}")
-            var p: android.view.ViewParent? = bar.parent
-            while (p is View) {
-                android.util.Log.i("FBAR", "  parent: ${p.javaClass.name} id=${p.id} h=${p.height} w=${p.width}")
-                p = p.parent
-            }
-
             val rootView = findRootView(bar) ?: return false
-            android.util.Log.i("FBAR", "ROOT: ${rootView.javaClass.name} h=${rootView.height}")
 
             if (originalParent.parent === rootView &&
                 originalParent.getTag(TAG_FLOATING_WRAPPER) == true) {
@@ -649,7 +672,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             val state = barStates.getOrPut(bar) { BarState() }
             state.originalParent = originalParent
 
-            // Create a minimal wrapper FrameLayout sized just for bar
             val wrapper = FrameLayout(bar.context).apply {
                 setTag(TAG_FLOATING_WRAPPER, true)
                 setBackgroundColor(Color.TRANSPARENT)
@@ -665,8 +687,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                 gravity = Gravity.BOTTOM
             }
 
-            // A barra fica MATCH_PARENT dentro do wrapper. O gravity BOTTOM é uma salvaguarda:
-            // se algum filho voltar a esticar o wrapper, a barra permanece colada embaixo.
             val barParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -689,11 +709,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         }
     }
 
-    /**
-     * Permite que o usuário arraste a pílula horizontalmente para reposicioná-la.
-     * A lógica discrimina toque puro (dx < slop) e arrasto horizontal claro
-     * (dx > slop E dx > 2×dy), para que os cliques nas abas continuem funcionando.
-     */
     private fun setupVisibilitySync(
         rootView: FrameLayout,
         wrapper: FrameLayout,
@@ -708,18 +723,11 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
 
         val listener = ViewTreeObserver.OnPreDrawListener {
             val origParent = state.originalParent
-            // 1. O contêiner original de navegação foi ocultado pelo WhatsApp (ex: busca ou tela de chat)
             val isOrigParentVisible = origParent == null || (origParent.isShown && origParent.visibility == View.VISIBLE)
-
-            // 2. A própria barra foi ocultada
             val isBarVisible = bar.visibility == View.VISIBLE
-
-            // 3. Teclado virtual (IME) aberto
             val insets = ViewCompat.getRootWindowInsets(rootView)
             val imeVisible = insets?.isVisible(WindowInsetsCompat.Type.ime()) == true ||
                     (insets?.getInsets(WindowInsetsCompat.Type.ime())?.bottom ?: 0) > 100
-
-            // 4. Campo de texto (busca/mensagem) focado
             val focusedView = rootView.findFocus()
             val isEditing = focusedView is EditText
 
@@ -735,7 +743,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         state.visibilityListener = listener
         rootView.viewTreeObserver.addOnPreDrawListener(listener)
     }
-
 
     private fun updateOverlayLayout(rootView: FrameLayout, container: ViewGroup, bar: ViewGroup) {
         val params = container.layoutParams as? FrameLayout.LayoutParams ?: return
@@ -760,37 +767,19 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
     }
 
     private fun findRootView(startView: View): FrameLayout? {
-        // From logcat hierarchy:
-        // WDSBottomBar -> LinearLayout(h=221) -> ... LinearLayouts ... -> FrameLayout(root_view, h=2356)
-        // -> ContentFrameLayout(h=2356) -> FitWindowsFrameLayout(h=2356)
-        // -> FrameLayout(-1, h=2356)  ← PURE FrameLayout, target!
-        // -> LinearLayout -> DecorView(h=2400)
-        //
-        // We want the highest pure android.widget.FrameLayout (not ContentFrameLayout, not DecorView)
-        // since those subclasses have special inset/padding behavior.
         var candidate: FrameLayout? = null
         var p: android.view.ViewParent? = startView.parent
         while (p != null) {
-            // Only pure android.widget.FrameLayout — not subclasses
             if (p.javaClass == android.widget.FrameLayout::class.java) {
                 candidate = p as FrameLayout
             }
             p = p.parent
         }
-        android.util.Log.i("FBAR", "findRootView -> ${candidate?.javaClass?.simpleName} id=${candidate?.id} h=${candidate?.height}")
         if (candidate != null) return candidate
-
-        // Fallback: android.R.id.content
         val content = startView.rootView.findViewById<ViewGroup>(android.R.id.content)
         return (content as? FrameLayout) ?: (startView.rootView as? FrameLayout)
     }
 
-    /**
-     * Raiz cujo conteúdo será borrado. Precisa ser um irmão do nosso wrapper — nunca a
-     * própria [rootView] — porque o BlurView desenha `rootView.draw(internalCanvas)` inteiro
-     * no snapshot. Se o wrapper entrasse nesse desenho, os ícones apareceriam como um
-     * fantasma borrado atrás deles mesmos.
-     */
     private fun findBlurRoot(rootView: ViewGroup, wrapper: View): ViewGroup? {
         var best: ViewGroup? = null
         var bestArea = 0L
@@ -837,12 +826,10 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         val radiusDp = prefs.getInt("floating_bottom_bar_radius", CORNER_RADIUS_DP.toInt()).toFloat()
         val radius = Utils.dipToPixels(radiusDp).toFloat()
 
-        // Blur adaptivo: fundo claro precisa de mais desfoque para o efeito ser visível
         val brightness = (Color.red(barColor) * 299 + Color.green(barColor) * 587 +
                           Color.blue(barColor) * 114) / 1000f / 255f
         val adaptiveBlurRadius = BLUR_RADIUS + brightness * BLUR_RADIUS_LIGHT_BOOST
 
-        // Base líquida pura (sem cinza, vidro cristalino como HookVip)
         val pillAlpha = if (blurEnabled) 10 else 225
         val pillColor = if (isLight) {
             Color.argb(pillAlpha, 255, 255, 255)
@@ -850,10 +837,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             Color.argb(pillAlpha, 255, 255, 255)
         }
 
-        // Borda externa de vidro
         val strokeColor = Color.argb(35, 255, 255, 255)
-
-        // Gradiente de topo com linha de brilho especular e glow
         val sheenTop = Color.argb(55, 255, 255, 255)
         val sheenGlow = Color.argb(20, 255, 255, 255)
         val sheenBot = Color.TRANSPARENT
@@ -893,7 +877,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         backdrop.background = pill
         backdrop.clipToOutline = true
         backdrop.outlineProvider = ViewOutlineProvider.BACKGROUND
-        backdrop.elevation = elevPx  // shadow dari pill
+        backdrop.elevation = elevPx
 
         if (backdrop is LiquidGlassBackdropView) {
             backdrop.updateRadius(radius)
@@ -906,7 +890,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                         .setBlurRadius(BLUR_RADIUS)
                         .setOverlayColor(Color.argb(8, 255, 255, 255))
                         .setBlurAutoUpdate(true)
-                } catch (_: Throwable) { /* ignore re-setup failure */ }
+                } catch (_: Throwable) { }
             }
         }
 
@@ -924,7 +908,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         }
         bar.bringToFront()
 
-        // Indicador suave e calmo
         val indicatorColor = if (isLight) {
             Color.argb(25, 0, 0, 0)
         } else {
@@ -936,8 +919,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         state.selectedIndex = -1
         bar.background = indicator
 
-        // Indicador nativo do Material desligado: ele só aparece/desaparece na posição nova,
-        // sem deslizar. Quem desenha agora é o LiquidIndicatorDrawable.
         try {
             val setIndicatorEnabled = bar.javaClass
                 .getMethod("setItemActiveIndicatorEnabled", Boolean::class.javaPrimitiveType)
@@ -946,12 +927,11 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             logDebug("Failed to disable native active indicator: ${e.message}")
         }
 
-        // Always-labeled
         try {
             val setLabelMode = bar.javaClass
                 .getMethod("setLabelVisibilityMode", Int::class.javaPrimitiveType)
             setLabelMode.invoke(bar, 1)
-        } catch (e: Exception) { /* ignore */ }
+        } catch (e: Exception) { }
 
         setupPillScrubbing(container, bar, state)
         attachSelectionWatcher(bar, state)
@@ -983,7 +963,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         val backdrop = createBackdropView(rootView, container, blurEnabled)
         backdrop.setTag(TAG_BACKDROP, true)
 
-        // O backdrop tem sempre a mesma altura que a barra (bar.height) e topMargin 0
         val initialHeight = if (bar.height > 0) bar.height else Utils.dipToPixels(56)
         container.addView(
             backdrop,
@@ -998,10 +977,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         return backdrop
     }
 
-    /**
-     * Mantém a altura do [backdrop] sempre igual a [bar.height] a cada passagem de layout.
-     * O backdrop nunca muda de proporção ou desloca verticalmente.
-     */
     private fun syncBackdropHeight(bar: ViewGroup, backdrop: View, state: BarState) {
         state.layoutSync?.let { bar.removeOnLayoutChangeListener(it) }
         val listener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
@@ -1018,7 +993,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         }
         state.layoutSync = listener
         bar.addOnLayoutChangeListener(listener)
-        // Força sync imediato se bar já tem altura
         if (bar.height > 0) {
             val lp = backdrop.layoutParams as? FrameLayout.LayoutParams ?: return
             if (lp.height != bar.height || lp.topMargin != 0) {
@@ -1068,14 +1042,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         }
     }
 
-    // --- Troca de aba e animação ------------------------------------------------------
-
-    /**
-     * Observa qual item está marcado a cada frame de desenho. Deliberadamente não usamos
-     * `setOnItemSelectedListener` (substituiria o listener do WhatsApp) nem um hook em
-     * `setChecked` (a classe do item é ofuscada). O custo é percorrer ~5 `drawableState`
-     * por frame.
-     */
     private fun attachSelectionWatcher(bar: ViewGroup, state: BarState) {
         state.preDraw?.let {
             if (bar.viewTreeObserver.isAlive) bar.viewTreeObserver.removeOnPreDrawListener(it)

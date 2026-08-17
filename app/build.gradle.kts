@@ -149,7 +149,7 @@ android {
         }
 
         outputs.all {
-            (this as BaseVariantOutputImpl).outputFileName = "$appName-$versionName.apk"
+            (this as BaseVariantOutputImpl).outputFileName = "waenhancer-ios.apk"
         }
     }
 

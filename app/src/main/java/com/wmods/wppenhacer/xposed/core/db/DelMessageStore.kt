@@ -20,18 +20,38 @@ class DelMessageStore private constructor(context: Context) {
         }
     }
 
+    private val timestampCache = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val jidMessagesCache = java.util.concurrent.ConcurrentHashMap<String, java.util.HashSet<String>>()
+
     fun insertMessage(jid: String, msgid: String, timestamp: Long) {
+        timestampCache[msgid] = timestamp
+        jidMessagesCache.getOrPut(jid) { java.util.HashSet() }.add(msgid)
         val message = DelMessage(jid = jid, msgid = msgid, timestamp = timestamp)
         dao.insertMessage(message)
     }
 
     fun getMessagesByJid(jid: String?): java.util.HashSet<String> {
         if (jid == null) return java.util.HashSet()
-        return HashSet(dao.getMessagesByJid(jid))
+        jidMessagesCache[jid]?.let { return java.util.HashSet(it) }
+        val set = java.util.HashSet(dao.getMessagesByJid(jid))
+        jidMessagesCache[jid] = set
+        return set
     }
 
     fun getTimestampByMessageId(msgid: String): Long {
-        return dao.getTimestampByMessageId(msgid) ?: 0L
+        timestampCache[msgid]?.let { return it }
+        java.util.concurrent.CompletableFuture.runAsync {
+            try {
+                val ts = dao.getTimestampByMessageId(msgid) ?: 0L
+                if (ts > 0) {
+                    timestampCache[msgid] = ts
+                    com.wmods.wppenhacer.xposed.core.WppCore.getCurrentActivity()?.runOnUiThread {
+                        com.wmods.wppenhacer.xposed.features.listeners.ConversationItemListener.notifyDataSetChanged()
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        return 0L
     }
 
 }

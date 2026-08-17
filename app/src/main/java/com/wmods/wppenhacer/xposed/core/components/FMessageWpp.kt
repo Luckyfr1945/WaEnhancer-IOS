@@ -386,6 +386,58 @@ class FMessageWpp(fMessage: Any?) {
                 return UserJid()
             }
 
+            private val jidFieldsCache = java.util.concurrent.ConcurrentHashMap<Class<*>, List<java.lang.reflect.Field>>()
+
+            fun extractFrom(obj: Any?): UserJid? {
+                if (obj == null) return null
+                if (obj is UserJid) return obj
+
+                val clazz = obj.javaClass
+                val candidateFields = jidFieldsCache.computeIfAbsent(clazz) { cls ->
+                    val list = mutableListOf<java.lang.reflect.Field>()
+                    var current: Class<*>? = cls
+                    while (current != null && current != Any::class.java) {
+                        for (f in current.declaredFields) {
+                            if (java.lang.reflect.Modifier.isStatic(f.modifiers)) continue
+                            if (f.type == String::class.java ||
+                                f.type.name.contains("jid", ignoreCase = true) ||
+                                (::TYPE_USERJID.isInitialized && TYPE_USERJID.isAssignableFrom(f.type)) ||
+                                (::TYPE_JID.isInitialized && TYPE_JID.isAssignableFrom(f.type))
+                            ) {
+                                f.isAccessible = true
+                                list.add(f)
+                            }
+                        }
+                        current = current.superclass
+                    }
+                    list
+                }
+
+                // Check "jid" named field first
+                for (f in candidateFields) {
+                    if (f.name.equals("jid", ignoreCase = true)) {
+                        val v = try { f.get(obj) } catch (_: Throwable) { null }
+                        if (v != null) {
+                            val uj = UserJid(v)
+                            if (!uj.isNull) return uj
+                        }
+                    }
+                }
+
+                // Check other candidate fields
+                for (f in candidateFields) {
+                    val v = try { f.get(obj) } catch (_: Throwable) { null } ?: continue
+                    if (v is String && v.contains("@")) {
+                        val uj = UserJid(v)
+                        if (!uj.isNull) return uj
+                    } else if (f.type.name.contains("jid", ignoreCase = true) || v.javaClass.name.contains("jid", ignoreCase = true)) {
+                        val uj = UserJid(v)
+                        if (!uj.isNull) return uj
+                    }
+                }
+                return null
+            }
+
         }
 
         @JvmField
@@ -395,9 +447,12 @@ class FMessageWpp(fMessage: Any?) {
         var userJid: Any? = null
 
 
+        var rawJidString: String? = null
+
         constructor()
 
         constructor(rawjid: String?) {
+            this.rawJidString = rawjid
             if (isInvalidJid(rawjid)) return
             if (checkValidLID(rawjid)) {
                 this.userJid = WppCore.createUserJid(rawjid)
@@ -416,6 +471,7 @@ class FMessageWpp(fMessage: Any?) {
             } catch (ignored: Throwable) {
                 return
             }
+            this.rawJidString = raw
             if (isInvalidJid(raw)) return
             if (checkValidLID(raw)) {
                 this.userJid = lidOrJid
@@ -432,18 +488,30 @@ class FMessageWpp(fMessage: Any?) {
         }
 
         val phoneRawString: String? by lazy {
-            if (this.phoneJid == null) return@lazy null
+            if (this.phoneJid == null) {
+                if (this.userJid != null) {
+                    val raw = XposedHelpers.callMethod(this.userJid, "getRawString") as? String
+                    if (raw != null) return@lazy raw.replaceFirst("\\.[\\d:]+@".toRegex(), "@")
+                }
+                return@lazy rawJidString?.replaceFirst("\\.[\\d:]+@".toRegex(), "@")
+            }
             val raw =
                 XposedHelpers.callMethod(this.phoneJid, "getRawString") as? String
-                    ?: return@lazy null
+                    ?: return@lazy rawJidString?.replaceFirst("\\.[\\d:]+@".toRegex(), "@")
             raw.replaceFirst("\\.[\\d:]+@".toRegex(), "@")
         }
 
         val userRawString: String? by lazy {
-            if (this.phoneJid == null) return@lazy null
+            if (this.userJid == null) {
+                if (this.phoneJid != null) {
+                    val raw = XposedHelpers.callMethod(this.phoneJid, "getRawString") as? String
+                    if (raw != null) return@lazy raw.replaceFirst("\\.[\\d:]+@".toRegex(), "@")
+                }
+                return@lazy rawJidString?.replaceFirst("\\.[\\d:]+@".toRegex(), "@")
+            }
             val raw =
                 XposedHelpers.callMethod(this.userJid, "getRawString") as? String
-                    ?: return@lazy null
+                    ?: return@lazy rawJidString?.replaceFirst("\\.[\\d:]+@".toRegex(), "@")
             raw.replaceFirst("\\.[\\d:]+@".toRegex(), "@")
         }
 

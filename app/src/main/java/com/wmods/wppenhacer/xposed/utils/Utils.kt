@@ -67,6 +67,17 @@ object Utils {
     }
 
     @JvmStatic
+    fun isBlueOnReplyEnabled(prefs: SharedPreferences? = null): Boolean {
+        if (prefs?.getBoolean("blueonreply", false) == true) return true
+        try {
+            val ctx = application
+            val embeddedPrefs = ctx.getSharedPreferences("wae_embedded_prefs", Context.MODE_PRIVATE)
+            return embeddedPrefs.getBoolean("blueonreply", false)
+        } catch (_: Throwable) {}
+        return false
+    }
+
+    @JvmStatic
     fun doRestart(context: Context): Boolean {
         val packageManager = context.packageManager
         val intent =

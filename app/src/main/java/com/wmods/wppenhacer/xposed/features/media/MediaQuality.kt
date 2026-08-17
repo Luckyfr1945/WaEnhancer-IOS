@@ -35,8 +35,17 @@ class MediaQuality(loader: ClassLoader, preferences: SharedPreferences) :
         // Enable Media Quality selection for Stories
         enableMediaQualityForStories()
 
+        val videoRealResolution = prefs.getBoolean("video_real_resolution", false)
+        val videoMaxFps = prefs.getBoolean("video_maxfps", false)
+        val targetEdge = if (videoRealResolution) 3840 else EDGE_WIDTH
+        val targetBitrate = if (videoRealResolution) 40_000 else BITRATE
+        val targetFps = if (videoMaxFps) 60 else 30
+
         if (videoQuality) {
             Others.propsBoolean[5549] = true
+            Others.propsBoolean[7589] = true
+            Others.propsBoolean[6972] = true
+            Others.propsBoolean[15708] = true
 
             val processVideoQualityClass = Unobfuscator.loadProcessVideoQualityClass(classLoader)
             val fieldsVideoQuality = Unobfuscator.getAllMapFields(processVideoQualityClass)
@@ -49,9 +58,11 @@ class MediaQuality(loader: ClassLoader, preferences: SharedPreferences) :
                 override fun afterHookedMethod(param: MethodHookParam) {
                     val instance = param.thisObject
                     fieldsVideoQuality["videoLimitMb"]?.setInt(instance, maxSize)
-                    fieldsVideoQuality["videoMaxEdge"]?.setInt(instance, EDGE_WIDTH)
-                    fieldsVideoQuality["videoMaxBitrate"]?.setInt(instance, BITRATE * 1000)
+                    fieldsVideoQuality["videoMaxEdge"]?.setInt(instance, targetEdge)
+                    fieldsVideoQuality["videoMaxBitrate"]?.setInt(instance, targetBitrate * 1000)
+                    fieldsVideoQuality["frameRate"]?.setInt(instance, targetFps)
                     fieldsVideoQuality["mainHighBitRate"]?.set(instance, null)
+                    fieldsVideoQuality["shouldRetainAspectRatio"]?.setBoolean(instance, true)
                 }
             })
 
@@ -90,9 +101,9 @@ class MediaQuality(loader: ClassLoader, preferences: SharedPreferences) :
                 object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) {
                         val processSpec = param.args[0] ?: return
-                        val booleanField = processSpec.javaClass.declaredFields.first {
+                        val booleanField = processSpec.javaClass.declaredFields.firstOrNull {
                             it.type == Boolean::class.javaPrimitiveType
-                        }
+                        } ?: return
                         booleanField.isAccessible = true
                         booleanField.set(
                             processSpec,
@@ -102,14 +113,20 @@ class MediaQuality(loader: ClassLoader, preferences: SharedPreferences) :
                 })
 
             Others.propsBoolean[5549] = true
-            listOf(594, 12852).forEach { Others.propsInteger[it] = EDGE_WIDTH }
-            listOf(4686, 3654, 3183, 4685).forEach { Others.propsInteger[it] = EDGE_WIDTH }
-            listOf(3755, 3756, 3757, 3758).forEach { Others.propsInteger[it] = BITRATE }
+            listOf(594, 12852).forEach { Others.propsInteger[it] = targetEdge }
+            listOf(4686, 3654, 3183, 4685).forEach { Others.propsInteger[it] = targetEdge }
+            listOf(3755, 3756, 3757, 3758).forEach { Others.propsInteger[it] = targetBitrate }
+            if (videoMaxFps) {
+                listOf(4687, 3655).forEach { Others.propsInteger[it] = 60 }
+            }
         }
 
         if (imageQuality) {
             val processImageQualityClass = Unobfuscator.loadProcessImageQualityClass(classLoader)
             val fieldsProcessImageQuality = Unobfuscator.getAllMapFields(processImageQualityClass)
+
+            val maxKb = 100 * 1024
+            val targetImageMaxEdge = 12000
 
             XposedBridge.hookAllConstructors(processImageQualityClass, object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
@@ -118,25 +135,19 @@ class MediaQuality(loader: ClassLoader, preferences: SharedPreferences) :
                     val fieldimageMaxQuality = fieldsProcessImageQuality["quality"]
                     val fieldimageMaxEdge = fieldsProcessImageQuality["maxEdge"]
 
-                    fieldimageMaxSize?.setInt(processImageQuality, 50 * 1024)
+                    fieldimageMaxSize?.setInt(processImageQuality, maxKb)
                     fieldimageMaxQuality?.setInt(processImageQuality, 100)
-                    fieldimageMaxEdge?.setInt(processImageQuality, 6000)
+                    fieldimageMaxEdge?.setInt(processImageQuality, targetImageMaxEdge)
                 }
             })
 
-            val maxKb = 50 * 1024
             listOf(1577, 6030, 2656, 15752, 15746).forEach { Others.propsInteger[it] = maxKb }
-            listOf(1581, 1575, 1578, 6029, 2655, 15749, 2655).forEach {
+            listOf(1581, 1575, 1578, 6029, 2655, 15749).forEach {
                 Others.propsInteger[it] = 100
             }
             Others.propsBoolean[6033] = true
             Others.propsBoolean[9569] = false
-            // 26289, 26291, 22375 enable WhatsApp's Jarvis ML image-transcode config
-            // (UitTranscodeConfig/JarvisImageConfig). Their native passthrough decision
-            // mishandles HEIC/HEIF (Apple format) by uploading the raw file untranscoded,
-            // resulting in "Gambar tidak tersedia karena file bermasalah" for recipients.
-            // Left disabled so HEIC/HEIF is properly transcoded to high quality JPEG.
-            listOf(1576, 2654, 6032, 15748, 3068).forEach { Others.propsInteger[it] = 3840 }
+            listOf(1576, 2654, 6032, 15748, 3068).forEach { Others.propsInteger[it] = targetImageMaxEdge }
 
             // Prevent crashes in Media preview
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

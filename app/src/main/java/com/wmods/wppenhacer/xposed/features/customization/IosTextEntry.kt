@@ -139,34 +139,29 @@ class IosTextEntry(loader: ClassLoader, prefs: SharedPreferences) : Feature(load
                                 if (lp != null) cameraWidth += lp.leftMargin + lp.rightMargin
                             }
 
-                            // Actively strip WhatsApp default bubble and camera background which might be restored during typing
-                            textEntryLayout.background = null
+                            // Only strip backgrounds if they are actually non-null to prevent layout invalidation loops
+                            if (textEntryLayout.background != null) textEntryLayout.background = null
+
                             val inputLayoutId = Utils.getID("input_layout", "id")
                             if (cachedInputLayout == null && inputLayoutId > 0) {
                                 cachedInputLayout = rootView.findViewById<View>(inputLayoutId)
                             }
-                            cachedInputLayout?.background = null
-                            cameraBtn?.background = null
+                            if (cachedInputLayout?.background != null) cachedInputLayout?.background = null
+                            if (cameraBtn?.background != null) cameraBtn?.background = null
                             
-                            // Actively strip green mic background
                             val buttonsId2 = Utils.getID("buttons", "id")
                             if (cachedButtonsFrame == null && buttonsId2 > 0) {
                                 cachedButtonsFrame = editLayout?.findViewById<ViewGroup>(buttonsId2)
                             }
-                            cachedButtonsFrame?.background = null
+                            if (cachedButtonsFrame?.background != null) cachedButtonsFrame?.background = null
                             
                             val voiceNoteId = Utils.getID("voice_note_btn", "id")
                             if (cachedVoiceBtn == null && voiceNoteId > 0) {
                                 cachedVoiceBtn = rootView.findViewById<View>(voiceNoteId)
                             }
-                            cachedVoiceBtn?.background = null
-                            cameraBtn?.background = null
+                            if (cachedVoiceBtn?.background != null) cachedVoiceBtn?.background = null
 
                             // Jaga jarak konsisten antara pill dan tombol mic/send di kanan.
-                            val buttonsId = Utils.getID("buttons", "id")
-                            if (cachedButtonsFrame == null && buttonsId > 0) {
-                                cachedButtonsFrame = editLayout?.findViewById<ViewGroup>(buttonsId)
-                            }
                             val buttonsFrame = cachedButtonsFrame
                             val bfLp = buttonsFrame?.layoutParams
                             if (bfLp is ViewGroup.MarginLayoutParams) {
@@ -339,42 +334,11 @@ class IosTextEntry(loader: ClassLoader, prefs: SharedPreferences) : Feature(load
                 entry.paddingBottom
             )
 
-            // ── 8. Voice Note ONLY — strip green from voice note, keep send button intact ──
-            val voiceNoteId = Utils.getID("voice_note_btn", "id")
+            // ── 8. Voice Note and Send Button — keep native WhatsApp styling ──
             val buttonsId = Utils.getID("buttons", "id")
             val buttonsFrame = editLayout?.findViewById<ViewGroup>(buttonsId)
             if (buttonsFrame != null) {
-                buttonsFrame.setPadding(0, buttonsFrame.paddingTop, buttonsFrame.paddingRight, buttonsFrame.paddingBottom)
-
-                val voiceBtn = buttonsFrame.findViewById<ImageView>(voiceNoteId)
-                if (voiceBtn != null) {
-                    voiceBtn.background = null
-                    voiceBtn.backgroundTintList = null
-                    voiceBtn.imageTintList = android.content.res.ColorStateList.valueOf(Color.parseColor(MIC_BLUE))
-                }
-
-                val sendId = Utils.getID("send", "id")
-                val sendBtn = buttonsFrame.findViewById<ImageView>(sendId)
-                if (sendBtn != null) {
-                    val sendBg = GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
-                        setColor(Color.parseColor(MIC_BLUE))
-                    }
-                    sendBtn.background = sendBg
-                    sendBtn.backgroundTintList = null
-                    sendBtn.imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
-                    
-                    // Supaya tombol kirim tidak kebesaran, tambahkan sedikit padding di dalamnya
-                    val p = Utils.dipToPixels(10f)
-                    sendBtn.setPadding(p, p, p, p)
-                }
-
-                val sendContainerId = Utils.getID("send_container", "id")
-                val sendContainer = buttonsFrame.findViewById<View>(sendContainerId)
-                if (sendContainer != null) {
-                    sendContainer.background = null
-                    sendContainer.backgroundTintList = null
-                }
+                // Remove padding adjustment to let native WhatsApp handle it
             }
         } catch (e: Exception) {
             logDebug("IosTextEntry CSS error: ${e.message}")

@@ -87,12 +87,11 @@ public class DrawableColors {
                 }
             }
         } else if (drawable instanceof LayerDrawable layerDrawable) {
-            var layerState = layerDrawable.getConstantState();
-            var mChildren = (Object[]) XposedHelpers.getObjectField(layerState, "mChildren");
-            for (var childDrawable : mChildren) {
-                if (childDrawable != null) {
-                    var drawable1 = (Drawable) XposedHelpers.getObjectField(childDrawable, "mDrawable");
-                    replaceColor(drawable1, colors);
+            int count = layerDrawable.getNumberOfLayers();
+            for (int i = 0; i < count; i++) {
+                Drawable child = layerDrawable.getDrawable(i);
+                if (child != null) {
+                    replaceColor(child, colors);
                 }
             }
         } else if (drawable instanceof DrawableContainer drawableContainer) {

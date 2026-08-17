@@ -195,6 +195,15 @@ class FeatureLoader {
 
                             initComponents(loader, pref)
                             plugins(loader, pref, packageInfo.versionName!!)
+                            try {
+                                val cls7Fj = loader.loadClass("X.7Fj")
+                                android.util.Log.e("WAE_DEBUG", "X.7Fj superclass=${cls7Fj.superclass?.name}, interfaces=${cls7Fj.interfaces.map { it.name }}")
+                                for (m in cls7Fj.declaredMethods) {
+                                    android.util.Log.e("WAE_DEBUG", "  X.7Fj method: ${m.name}(${m.parameterTypes.map { it.simpleName }.joinToString()}) -> ${m.returnType.name}, modifiers=${m.modifiers}")
+                                }
+                            } catch (t: Throwable) {
+                                android.util.Log.e("WAE_DEBUG", "Failed to inspect X.7Fj: ${t.message}")
+                            }
                             sendEnabledBroadcast(application)
 
                             val totalTime = System.currentTimeMillis() - timeMillis

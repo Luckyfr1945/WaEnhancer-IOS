@@ -196,7 +196,7 @@ class MessageHistoryStore private constructor(context: Context) {
                 hideSeenDao.updateRead(jid, messageId, isViewedInt)
             }
 
-            if (updatedRows <= 0) return false
+            XposedBridge.log("[WaEnhancer] updateViewedMessage jid=$jid, msgId=$messageId, type=$type, viewed=$viewed -> rows=$updatedRows")
 
             val cacheKey = createSeenMessageCacheKey(jid, messageId, type)
             val cachedItem = seenMessageCache.get(cacheKey)
@@ -207,7 +207,7 @@ class MessageHistoryStore private constructor(context: Context) {
             invalidateSeenMessagesListCache(jid, type)
 
             hideSeenChangeListener?.onHideSeenChanged(jid, messageId, type, viewed)
-            return true
+            return updatedRows > 0
         } catch (t: Throwable) {
             XposedBridge.log(t)
             return false
@@ -268,14 +268,44 @@ class MessageHistoryStore private constructor(context: Context) {
             if (entities.isNotEmpty()) {
                 val messages = ArrayList<MessageSeenItem>()
                 for (entity in entities) {
-                    val message = MessageSeenItem(jid, entity.messageId, viewed)
+                    val message = MessageSeenItem(entity.jid, entity.messageId, viewed)
                     messages.add(message)
 
                     // Alimenta também o cache individual
-                    val msgCacheKey = createSeenMessageCacheKey(jid, entity.messageId, type)
+                    val msgCacheKey = createSeenMessageCacheKey(entity.jid, entity.messageId, type)
                     seenMessageCache.put(msgCacheKey, message)
                 }
                 seenMessagesListCache.put(cacheKey, messages)
+                return messages
+            }
+        } catch (t: Throwable) {
+            XposedBridge.log(t)
+        }
+        return null
+    }
+
+    fun getHideSeenMessagesByPattern(
+        jid: String?,
+        pattern: String?,
+        type: ReceiptType?,
+        viewed: Boolean
+    ): List<MessageSeenItem>? {
+        try {
+            if (jid == null || type == null) return null
+            val pat = pattern ?: "%$jid%"
+            val isViewedInt = if (viewed) 1 else 0
+            val entities = if (type == ReceiptType.PLAYED) {
+                hideSeenDao.getMessagesByPlayedState(jid, pat, isViewedInt)
+            } else {
+                hideSeenDao.getMessagesByReadState(jid, pat, isViewedInt)
+            }
+
+            if (entities.isNotEmpty()) {
+                val messages = ArrayList<MessageSeenItem>()
+                for (entity in entities) {
+                    val message = MessageSeenItem(entity.jid, entity.messageId, viewed)
+                    messages.add(message)
+                }
                 return messages
             }
         } catch (t: Throwable) {

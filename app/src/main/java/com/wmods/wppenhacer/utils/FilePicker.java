@@ -50,7 +50,7 @@ public class FilePicker {
     private static void setDirectory(Uri uri) {
         if (uri == null) return;
 
-        if (mOnFilePickedListener == null) {
+        if (mOnUriPickedListener != null) {
             mOnUriPickedListener.onUriPicked(uri);
             mOnUriPickedListener = null;
         }

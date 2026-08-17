@@ -81,6 +81,24 @@ class WppXposed : IXposedHookLoadPackage, IXposedHookInitPackageResources, IXpos
         if ((packageName == FeatureLoader.PACKAGE_WPP && App.isOriginalPackage) || packageName == FeatureLoader.PACKAGE_BUSINESS) {
             if (lpparam.isFirstApplication) { // I believe this may fix the problem when using multiple accounts, not yet tested
                 XposedBridge.log("[•] This package: ${lpparam.packageName}")
+                try {
+                    XposedHelpers.findAndHookMethod(
+                        XposedBridge::class.java,
+                        "hookMethod",
+                        java.lang.reflect.Member::class.java,
+                        XC_MethodHook::class.java,
+                        object : XC_MethodHook() {
+                            override fun beforeHookedMethod(param: MethodHookParam) {
+                                val member = param.args[0] as? java.lang.reflect.Member ?: return
+                                val hook = param.args[1]
+                                android.util.Log.e(
+                                    "WAE_ALL_HOOKS",
+                                    "Hooked: ${member.declaringClass.name}.${member.name} by ${hook?.javaClass?.name}"
+                                )
+                            }
+                        }
+                    )
+                } catch (_: Throwable) {}
                 FeatureLoader.start(classLoader, lpparam.appInfo.sourceDir)
                 disableSecureFlag()
             }

@@ -42,7 +42,7 @@ class TypingPrivacy(
                 if ((type == 1 && customHideRecording) ||
                     (type == 0 && customHideTyping)
                 ) {
-                    param.result = null
+                    ReflectionUtils.blockMethodExecution(param)
                 }
             }
         })

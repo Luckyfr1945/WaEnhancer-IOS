@@ -106,6 +106,10 @@ class CustomThemeV2(loader: ClassLoader, preferences:SharedPreferences) :
     @Throws(Throwable::class)
     override fun doHook() {
         properties = Utils.getProperties(prefs, "custom_css", "custom_filters")
+        val changeColorEnabled = prefs.getBoolean("changecolor", false)
+        val hasCustomTheme = changeColorEnabled || properties?.getProperty("change_colors") == "true" || prefs.getBoolean("wallpaper", false)
+        if (!hasCustomTheme) return
+
         hookTheme()
         hookWallpaper()
         XposedBridge.hookAllMethods(
@@ -254,7 +258,7 @@ class CustomThemeV2(loader: ClassLoader, preferences:SharedPreferences) :
             filterItemClass,
             object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
-                    val view = param.args[0] as View
+                    val view = param.args.getOrNull(0) as? View ?: return
                     val textView = view.findViewById<TextView>(Utils.getID("text_view", "id"))
                     if (textView != null) {
                         textView.setTextColor(DesignUtils.getPrimaryTextColor())

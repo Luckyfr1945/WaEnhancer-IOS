@@ -23,6 +23,7 @@ class GroupAdmin(classLoader: ClassLoader, preferences:SharedPreferences) : Feat
 
         val jidFactory = Unobfuscator.loadJidFactory(classLoader)
         val grpcheckAdmin = Unobfuscator.loadGroupCheckAdminMethod(classLoader)
+        var cachedField: java.lang.reflect.Field? = null
 
         ConversationItemListener.conversationListeners.add(object :
             ConversationItemListener.OnConversationItemListener() {
@@ -32,12 +33,16 @@ class GroupAdmin(classLoader: ClassLoader, preferences:SharedPreferences) : Feat
                 if (chatCurrentJid == null || !chatCurrentJid.isGroup) return
 
                 val grpcheckAdminClass = grpcheckAdmin.declaringClass
-                val field = ReflectionUtils.findFieldUsingFilter(view.javaClass) { f ->
-                    f.type.isAssignableFrom(grpcheckAdminClass)
+                if (cachedField == null) {
+                    try {
+                        cachedField = ReflectionUtils.findFieldUsingFilter(view.javaClass) { f ->
+                            f.type.isAssignableFrom(grpcheckAdminClass)
+                        }?.apply { isAccessible = true }
+                    } catch (_: Exception) {}
                 }
-                field.isAccessible = true
+                val field = cachedField ?: return
 
-                val grpParticipants = field.get(view)
+                val grpParticipants = field.get(view) ?: return
                 val context = view.context
 
                 var iconAdmin = view.findViewWithTag<ImageView>("admin_icon")

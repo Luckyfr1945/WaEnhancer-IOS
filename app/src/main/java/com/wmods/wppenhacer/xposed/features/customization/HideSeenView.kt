@@ -127,6 +127,28 @@ private fun getCachedStatus(jid: String, messageId: String, type: MessageHistory
     }
 }
 
+private fun handleHideSeenChanged(
+    jid: String,
+    messageId: String,
+    type: MessageHistoryStore.ReceiptType,
+    viewed: Boolean
+) {
+    synchronized(CACHE_LOCK) {
+        val cache = jidCache.get(jid)
+        if (cache != null) {
+            val map = if (type == MessageHistoryStore.ReceiptType.READ) cache.readStatus else cache.playedStatus
+            map[messageId] = viewed
+        }
+        for ((_, v) in jidCache.snapshot()) {
+            val map = if (type == MessageHistoryStore.ReceiptType.READ) v.readStatus else v.playedStatus
+            if (map.containsKey(messageId)) {
+                map[messageId] = viewed
+            }
+        }
+    }
+    requestRefresh()
+}
+
 private fun ensureCacheLoaded(jid: String, type: MessageHistoryStore.ReceiptType) {
     val loadingMap = if (type == MessageHistoryStore.ReceiptType.READ) loadingReadStatus else loadingPlayedStatus
     val loadedMap = if (type == MessageHistoryStore.ReceiptType.READ) loadedReadStatus else loadedPlayedStatus
@@ -172,28 +194,11 @@ private fun loadStatusMap(jid: String, type: MessageHistoryStore.ReceiptType): H
     return map
 }
 
-private fun handleHideSeenChanged(jid: String, messageId: String, type: MessageHistoryStore.ReceiptType, viewed: Boolean) {
-    synchronized(CACHE_LOCK) {
-        var cache = jidCache.get(jid)
-        if (cache == null) {
-            cache = JidSeenCache()
-            jidCache.put(jid, cache)
-        }
-        if (type == MessageHistoryStore.ReceiptType.READ) {
-            cache.readStatus[messageId] = viewed
-        } else {
-            cache.playedStatus[messageId] = viewed
-        }
-    }
-    requestRefresh()
-}
 
 private fun requestRefresh() {
-    if (!refreshScheduled.compareAndSet(false, true)) return
-    mainHandler.postDelayed({
-        refreshScheduled.set(false)
+    mainHandler.post {
         ConversationItemListener.notifyDataSetChanged()
-    }, REFRESH_DEBOUNCE_MS)
+    }
 }
 
 private class JidSeenCache {

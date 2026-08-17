@@ -23,6 +23,32 @@ object ReflectionUtils {
         }
     }
 
+    @JvmStatic
+    fun blockMethodExecution(param: de.robv.android.xposed.XC_MethodHook.MethodHookParam) {
+        val method = param.method as? Method ?: return
+        val returnType = method.returnType
+        param.result = when (returnType) {
+            java.lang.Boolean.TYPE   -> false
+            java.lang.Integer.TYPE   -> 0
+            java.lang.Long.TYPE      -> 0L
+            java.lang.Short.TYPE     -> 0.toShort()
+            java.lang.Byte.TYPE      -> 0.toByte()
+            java.lang.Float.TYPE     -> 0f
+            java.lang.Double.TYPE    -> 0.0
+            java.lang.Character.TYPE -> '\u0000'
+            java.lang.Void.TYPE      -> null
+            else                     -> null
+        }
+    }
+
+    @JvmField
+    val DO_NOTHING = object : de.robv.android.xposed.XC_MethodReplacement() {
+        override fun replaceHookedMethod(param: MethodHookParam): Any? {
+            blockMethodExecution(param)
+            return param.result
+        }
+    }
+
     @JvmField
     val primitiveClasses: Map<String, Class<*>> = mapOf(
         "byte" to java.lang.Byte.TYPE,

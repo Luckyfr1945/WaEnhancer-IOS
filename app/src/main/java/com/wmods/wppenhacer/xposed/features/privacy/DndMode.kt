@@ -14,7 +14,7 @@ class DndMode(loader: ClassLoader, preferences:SharedPreferences) : Feature(load
         if (!getPrivBoolean("dndmode", false)) return
         val dndMethod = loadDndModeMethod(classLoader)
         logDebug(getMethodDescriptor(dndMethod))
-        XposedBridge.hookMethod(dndMethod, XC_MethodReplacement.DO_NOTHING)
+        XposedBridge.hookMethod(dndMethod, com.wmods.wppenhacer.xposed.utils.ReflectionUtils.DO_NOTHING)
     }
 
     override fun getPluginName(): String {

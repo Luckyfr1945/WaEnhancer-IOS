@@ -78,7 +78,7 @@ class UnobfuscatorCache private constructor(private val mApplication: Applicatio
     }
 
     companion object {
-        private const val CACHE_SCHEMA_VERSION = 2
+        private const val CACHE_SCHEMA_VERSION = 5
         private var mInstance: UnobfuscatorCache? = null
 
         @JvmStatic

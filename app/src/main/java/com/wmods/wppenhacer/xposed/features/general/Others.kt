@@ -89,6 +89,14 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
         propsBoolean[4023] = false
         propsBoolean[16250] = false
 
+        val fileSizeSpoofer = prefs.getBoolean("file_size_spoofer", true)
+        if (fileSizeSpoofer) {
+            propsInteger[1702] = 2048
+            propsInteger[1703] = 2048
+            propsInteger[500] = 2048
+            propsInteger[2627] = 2048
+        }
+
         if (newSettings == 2) {
             XposedBridge.hookAllMethods(WppCore.homeActivityClass, "onCreateOptionsMenu", object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
@@ -218,7 +226,7 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
         if (proximityAudios) {
             val classes = Unobfuscator.loadProximitySensorListenerClasses(classLoader)
             for (cls in classes) {
-                XposedBridge.hookAllMethods(cls, "onSensorChanged", XC_MethodReplacement.DO_NOTHING)
+                XposedBridge.hookAllMethods(cls, "onSensorChanged", ReflectionUtils.DO_NOTHING)
             }
         }
 
@@ -230,9 +238,12 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
             autoNextStatus()
         }
 
-        if (audioType > 0) {
+        val sendAudioAsVoiceStatus = prefs.getBoolean("send_audio_as_voice_status", true)
+        val effectiveAudioType = if (audioType == 0 && sendAudioAsVoiceStatus) 2 else audioType
+
+        if (effectiveAudioType > 0) {
             try {
-                sendAudioType(audioType)
+                sendAudioType(effectiveAudioType)
             } catch (e: Exception) {
                 logDebug(e)
             }
@@ -467,7 +478,7 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
     private fun alwaysOnline() {
         if (!prefs.getBoolean("always_online", false)) return
         val stateChange = Unobfuscator.loadStateChangeMethod(classLoader)
-        XposedBridge.hookMethod(stateChange, XC_MethodReplacement.DO_NOTHING)
+        XposedBridge.hookMethod(stateChange, ReflectionUtils.DO_NOTHING)
     }
 
     private fun doubleTapReaction() {
@@ -654,7 +665,7 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
         })
         
         val onPlayBackFinished = Unobfuscator.loadOnPlaybackFinished(classLoader)
-        XposedBridge.hookMethod(onPlayBackFinished, XC_MethodReplacement.DO_NOTHING)
+        XposedBridge.hookMethod(onPlayBackFinished, ReflectionUtils.DO_NOTHING)
     }
 
 
@@ -707,7 +718,7 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
         XposedBridge.hookMethod(methodPropsBoolean, object : XC_MethodHook() {
             override fun afterHookedMethod(param: MethodHookParam) {
                 val list = ReflectionUtils.findInstancesOfType(param.args, Integer::class.java)
-                val i = list[0].second.toInt()
+                val i = list.firstOrNull()?.second?.toInt() ?: return
 
                 val propValue = propsBoolean[i]
                 if (propValue != null) {
@@ -725,7 +736,7 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
         XposedBridge.hookMethod(methodPropsInteger, object : XC_MethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
                 val list = ReflectionUtils.findInstancesOfType(param.args, Integer::class.java)
-                val i = list[0].second.toInt()
+                val i = list.firstOrNull()?.second?.toInt() ?: return
                 val propValue = propsInteger[i] ?: return
                 param.result = propValue
             }
@@ -760,7 +771,9 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
         try {
             if (filterChats != "2") {
                 val loadMySearchBar = Unobfuscator.loadMySearchBarMethod(classLoader)
-                XposedBridge.hookMethod(loadMySearchBar, XC_MethodReplacement.DO_NOTHING)
+                if (loadMySearchBar != null) {
+                    XposedBridge.hookMethod(loadMySearchBar, ReflectionUtils.DO_NOTHING)
+                }
             }
         } catch (_: Exception) {
         }
