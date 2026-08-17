@@ -21,17 +21,22 @@ class DeleteStatus(classLoader: ClassLoader, preferences:SharedPreferences) : Fe
 
             override fun addMenu(menu: Menu, statusData: MenuStatusListener.StatusData): MenuItem? {
                 if (menu.findItem(R.string.delete_for_me) != null) return null
-                if (statusData.currentItem.isFromMe) return null
+                val item = statusData.currentItem ?: return null
+                if (item.isFromMe) return null
                 return menu.add(0, R.string.delete_for_me, 0, R.string.delete_for_me)
             }
 
             override fun onClick(item: MenuItem, statusData: MenuStatusListener.StatusData) {
                 try {
-                    MessageStore.getInstance().deleteStatusByMessageKey(statusData.currentItem.messageID)
+                    val current = statusData.currentItem ?: return
+                    MessageStore.getInstance().deleteStatusByMessageKey(current.messageID)
 
                     val activity = WppCore.getCurrentActivity()
-                    if (activity != null && statusPlaybackActivityClass.isInstance(activity)) {
-                        activity.recreate()
+                    if (activity != null) {
+                        if (statusPlaybackActivityClass?.isInstance(activity) == true || 
+                            activity.javaClass.simpleName.contains("StatusPlayback")) {
+                            activity.finish()
+                        }
                     }
                 } catch (e: Exception) {
                     logDebug(e)

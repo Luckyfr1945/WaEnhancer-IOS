@@ -26,6 +26,9 @@ class StatusItemWpp private constructor(
     fun getMediaFile(): File? = directFMessage?.mediaFile ?: fStatus?.getMediaFile()
 
     companion object {
+        @JvmField
+        val EMPTY = StatusItemWpp(null, null)
+
         private val fStatusFieldCache = mutableMapOf<Class<*>, Field?>()
 
         @JvmStatic

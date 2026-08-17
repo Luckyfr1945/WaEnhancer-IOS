@@ -88,10 +88,14 @@ class MenuStatusListener(classLoader: ClassLoader, preferences:SharedPreferences
         private var cachedItemList: List<StatusItemWpp>? = null
 
         val currentItem: StatusItemWpp
-            get() = getCurrentItemList()[currentIndex]
+            get() {
+                val list = getCurrentItemList()
+                val index = try { currentIndex } catch (_: Throwable) { 0 }
+                return list.getOrNull(index) ?: list.firstOrNull() ?: StatusItemWpp.EMPTY
+            }
 
         val currentIndex: Int
-            get() = XposedHelpers.getObjectField(fragmentInstance, "A00") as Int
+            get() = (XposedHelpers.getObjectField(fragmentInstance, "A00") as? Int) ?: 0
 
         fun getCurrentItemList(): List<StatusItemWpp> {
             return cachedItemList ?: listStatus.mapNotNull { obj ->

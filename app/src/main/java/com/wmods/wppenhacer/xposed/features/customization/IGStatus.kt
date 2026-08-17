@@ -43,12 +43,21 @@ class IGStatus(loader: ClassLoader, preferences:SharedPreferences) : Feature(loa
         val folderFragmentClass = Unobfuscator.findFirstClassUsingName(
             classLoader, StringMatchType.EndsWith, "FolderConversationsFragment"
         )
+        val lockedFragmentClass = Unobfuscator.findFirstClassUsingName(
+            classLoader, StringMatchType.EndsWith, "LockedConversationsFragment"
+        )
 
         val getViewConversationMethod = Unobfuscator.loadGetViewConversationMethod(classLoader)
         XposedBridge.hookMethod(getViewConversationMethod, object : XC_MethodHook() {
             override fun afterHookedMethod(param: MethodHookParam) {
-                if (archivedFragmentClass.isInstance(param.thisObject)) return
-                if (folderFragmentClass.isInstance(param.thisObject)) return
+                val targetObj = param.thisObject ?: return
+                val className = targetObj.javaClass.name
+                if (className.contains("Archived") || className.contains("Locked") || 
+                    className.contains("Folder") || className.contains("Hidden")) return
+
+                if (archivedFragmentClass?.isInstance(targetObj) == true) return
+                if (folderFragmentClass?.isInstance(targetObj) == true) return
+                if (lockedFragmentClass?.isInstance(targetObj) == true) return
                 val view = param.result as? ViewGroup ?: return
                 val list = view.findViewById<ViewGroup>(android.R.id.list)
                 val mStatusContainer = IGStatusView(WppCore.getCurrentActivity()!!)

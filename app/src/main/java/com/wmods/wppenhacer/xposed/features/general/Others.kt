@@ -329,20 +329,24 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
         propsBoolean[13546] = false
         propsBoolean[13408] = true
 
-        val filterView = Unobfuscator.loadChatFilterView(classLoader)
-        XposedBridge.hookAllConstructors(filterView, object : XC_MethodHook() {
-            override fun afterHookedMethod(param: MethodHookParam) {
-                val view = param.thisObject as View
-                view.visibility = View.GONE
-                XposedHelpers.findAndHookMethod(View::class.java, "setVisibility", Int::class.javaPrimitiveType, object : XC_MethodHook() {
-                    override fun beforeHookedMethod(param: MethodHookParam) {
-                        if (view === param.thisObject && param.args[0] as Int != View.GONE) {
-                            param.result = View.GONE
-                        }
+        val filterView = try {
+            Unobfuscator.loadChatFilterView(classLoader)
+        } catch (_: Throwable) {
+            null
+        }
+
+        if (filterView != null) {
+            XposedBridge.hookAllConstructors(filterView, object : XC_MethodHook() {
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    val view = param.thisObject as? View ?: return
+                    view.visibility = View.GONE
+                    view.layoutParams?.let {
+                        it.height = 0
+                        view.layoutParams = it
                     }
-                })
-            }
-        })
+                }
+            })
+        }
     }
 
     private fun disableAds() {
