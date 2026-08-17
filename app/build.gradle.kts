@@ -147,9 +147,11 @@ android {
             "business" -> "WaEnhancer-Business"
             else -> "WaEnhancer"
         }
+        val cleanVersion = versionName.replace(" ", "_").replace("(", "").replace(")", "")
+        val typeName = buildType.name.lowercase()
 
         outputs.all {
-            (this as BaseVariantOutputImpl).outputFileName = "waenhancer-ios.apk"
+            (this as BaseVariantOutputImpl).outputFileName = "$appName-$cleanVersion-$typeName.apk"
         }
     }
 
