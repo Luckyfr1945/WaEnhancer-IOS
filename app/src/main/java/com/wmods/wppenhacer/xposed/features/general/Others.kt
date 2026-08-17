@@ -676,18 +676,17 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
 
 
     private fun filterItems(filterItems: String) {
-        val idsFilter: List<Int> by lazy {
-            filterItems.split("\n").map {
-                Utils.getID(it.trim(), "id")
-            }.filter {
-                it > 0
-            }
-        }
-        XposedHelpers.findAndHookMethod(View::class.java, "invalidate", Boolean::class.javaPrimitiveType, object : XC_MethodHook() {
+        val idsFilter = filterItems.split("\n").map {
+            Utils.getID(it.trim(), "id")
+        }.filter { it > 0 }.toHashSet()
+
+        if (idsFilter.isEmpty()) return
+
+        XposedHelpers.findAndHookMethod(View::class.java, "onAttachedToWindow", object : XC_MethodHook() {
             override fun afterHookedMethod(param: MethodHookParam) {
-                val view = param.thisObject as View
+                val view = param.thisObject as? View ?: return
                 val id = view.id
-                if (id > 0 && idsFilter.contains(id) && view.isVisible) {
+                if (id > 0 && idsFilter.contains(id)) {
                     view.visibility = View.GONE
                 }
             }

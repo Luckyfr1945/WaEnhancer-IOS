@@ -36,8 +36,9 @@ class DownloadViewOnce(classLoader: ClassLoader, preferences:SharedPreferences) 
 
                     // check media is view once
                     if (!fMessage.isViewOnce) return
-                    val menu = ReflectionUtils.getArg(param.args, Menu::class.java, 0)
-                    val item = menu!!.add(0, 0, 0, R.string.download).setIcon(R.drawable.download)
+                    val menu = ReflectionUtils.getArg(param.args, Menu::class.java, 0) ?: return
+                    if (menu.findItem(R.string.download) != null) return
+                    val item = menu.add(0, R.string.download, 0, R.string.download).setIcon(R.drawable.download)
                     item.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
                     item.setOnMenuItemClickListener {
                         try {
@@ -66,7 +67,8 @@ class DownloadViewOnce(classLoader: ClassLoader, preferences:SharedPreferences) 
                     @Throws(Throwable::class)
                     override fun afterHookedMethod(param: MethodHookParam) {
                         val menu = param.args[0] as Menu
-                        val item = menu.add(0, 0, 0, R.string.download).setIcon(R.drawable.download)
+                        if (menu.findItem(R.string.download) != null) return
+                        val item = menu.add(0, R.string.download, 0, R.string.download).setIcon(R.drawable.download)
                         item.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
                         item.setOnMenuItemClickListener {
                             CompletableFuture.runAsync {

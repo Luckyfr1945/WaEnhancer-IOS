@@ -19,8 +19,10 @@ class DownloadProfile(classLoader: ClassLoader, preferences:SharedPreferences) :
     Feature(classLoader, preferences) {
 
     override fun doHook() {
+        if (!prefs.getBoolean("downloadprofile", true)) return
+
         val profileClass =
-            findFirstClassUsingName(classLoader, StringMatchType.EndsWith, "ViewProfilePhoto")
+            findFirstClassUsingName(classLoader, StringMatchType.EndsWith, "ViewProfilePhoto") ?: return
         XposedHelpers.findAndHookMethod(
             profileClass,
             "onCreateOptionsMenu",
@@ -29,7 +31,8 @@ class DownloadProfile(classLoader: ClassLoader, preferences:SharedPreferences) :
                 @Throws(Throwable::class)
                 override fun afterHookedMethod(param: MethodHookParam) {
                     val menu = param.args[0] as Menu
-                    val item = menu.add(0, 0, 0, R.string.download)
+                    if (menu.findItem(R.string.download) != null) return
+                    val item = menu.add(0, R.string.download, 0, R.string.download)
                     item.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
                     item.setIcon(R.drawable.download)
                     item.setOnMenuItemClickListener(MenuItem.OnMenuItemClickListener { _: MenuItem? ->

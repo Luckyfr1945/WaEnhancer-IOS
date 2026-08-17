@@ -170,15 +170,18 @@ class CustomThemeV2(loader: ClassLoader, preferences:SharedPreferences) :
                 }
             })
 
-        XposedHelpers.findAndHookMethod(
-            View::class.java, "onAttachedToWindow",
-            object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam) {
-                    val view = param.thisObject as View
-                    if (view.id == Utils.getID("action_mode_bar", "id"))
-                        view.background = DesignUtils.getPrimarySurfaceColor().toDrawable()
-                }
-            })
+        val actionModeBarId = Utils.getID("action_mode_bar", "id")
+        if (actionModeBarId > 0) {
+            XposedHelpers.findAndHookMethod(
+                View::class.java, "onAttachedToWindow",
+                object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        val view = param.thisObject as? View ?: return
+                        if (view.id == actionModeBarId)
+                            view.background = DesignUtils.getPrimarySurfaceColor().toDrawable()
+                    }
+                })
+        }
 
         val hookFragmentView = Unobfuscator.loadFragmentViewMethod(classLoader)
 
@@ -187,19 +190,23 @@ class CustomThemeV2(loader: ClassLoader, preferences:SharedPreferences) :
             object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
                     if (checkNotHomeActivity()) return
-                    val viewGroup = param.result as ViewGroup
+                    val viewGroup = param.result as? ViewGroup ?: return
                     replaceColors(viewGroup, wallAlpha)
                 }
             })
 
-        val loadTabFrameClass = Unobfuscator.loadTabFrameClass(classLoader)
+        val loadTabFrameClass = try {
+            Unobfuscator.loadTabFrameClass(classLoader)
+        } catch (_: Throwable) {
+            null
+        }
         XposedHelpers.findAndHookMethod(
             FrameLayout::class.java, "onMeasure", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType,
             object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
-                    if (!loadTabFrameClass.isInstance(param.thisObject)) return
+                    if (loadTabFrameClass != null && !loadTabFrameClass.isInstance(param.thisObject)) return
                     if (checkNotHomeActivity()) return
-                    val viewGroup = param.thisObject as ViewGroup
+                    val viewGroup = param.thisObject as? ViewGroup ?: return
                     val background = viewGroup.background
                     replaceColor(background, navAlpha)
                 }

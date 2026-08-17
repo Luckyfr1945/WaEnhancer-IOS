@@ -10,14 +10,19 @@ import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.os.Bundle
+import android.content.Intent
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.wmods.wppenhacer.BuildConfig
+import com.wmods.wppenhacer.R
 import com.wmods.wppenhacer.xposed.core.Feature
 import com.wmods.wppenhacer.xposed.core.WppCore
+import com.wmods.wppenhacer.xposed.core.components.AlertDialogWpp
 import com.wmods.wppenhacer.xposed.core.devkit.Unobfuscator
 import com.wmods.wppenhacer.xposed.utils.DesignUtils
 import com.wmods.wppenhacer.xposed.utils.Utils
@@ -33,6 +38,7 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
         const val TAG_ORIGINAL_MARGIN = 0x7E110001
         const val TAG_SEARCH_ORIGINAL_MARGIN = 0x7E110002
         const val TAG_LARGE_TITLE_VIEW = 0x7E110003
+        const val TAG_ACTION_BUTTONS_CONTAINER = 0x7E120099
         var isToolbarHooked = false
     }
 
@@ -206,6 +212,11 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                                 "setNavigationOnClickListener", View.OnClickListener::class.java
                             )
                             setNavOnClick.invoke(toolbar, View.OnClickListener { activity.openOptionsMenu() })
+                        } catch (e: Exception) {}
+
+                        // Suntikkan Action Buttons (DND, Ghost, Freeze, Restart, WAE) ke toolbar
+                        try {
+                            injectActionButtons(activity, toolbar)
                         } catch (e: Exception) {}
 
                         // Buat Large Title
@@ -401,17 +412,17 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                                                         if (cameraId != 0 && btn.id == cameraId) isCamera = true
                                                         if (callId != 0 && btn.id == callId) isPhone = true
                                                         if (phoneId != 0 && btn.id == phoneId) isPhone = true
-
-                                                        val desc = btn.contentDescription
-                                                        if (desc != null) {
-                                                            if (desc.contains("opsi", ignoreCase = true) || desc.contains("more", ignoreCase = true)) isOverflow = true
+                                                        val desc = btn.contentDescription?.toString() ?: ""
+                                                        if (desc.isNotEmpty()) {
+                                                            if (desc.contains("opsi", ignoreCase = true) || desc.contains("more", ignoreCase = true) || desc.contains("lainnya", ignoreCase = true)) isOverflow = true
                                                             if (desc.contains("cari", ignoreCase = true) || desc.contains("search", ignoreCase = true)) isSearch = true
                                                             if (desc.contains("kamera", ignoreCase = true) || desc.contains("camera", ignoreCase = true)) isCamera = true
                                                             if (desc.contains("panggilan", ignoreCase = true) || desc.contains("call", ignoreCase = true) ||
                                                                 desc.contains("telepon", ignoreCase = true) || desc.contains("phone", ignoreCase = true)) isPhone = true
-                                                            if (desc.contains("dnd", ignoreCase = true) || desc.contains("pesawat", ignoreCase = true) ||
-                                                                desc.contains("ghost", ignoreCase = true) || desc.contains("bekukan", ignoreCase = true) ||
-                                                                desc.contains("freeze", ignoreCase = true) || desc.contains("restart", ignoreCase = true) ||
+                                                            if (desc.contains("dnd", ignoreCase = true) || desc.contains("pesawat", ignoreCase = true) || desc.contains("ganggu", ignoreCase = true) ||
+                                                                desc.contains("ghost", ignoreCase = true) || desc.contains("hantu", ignoreCase = true) ||
+                                                                desc.contains("bekukan", ignoreCase = true) || desc.contains("freeze", ignoreCase = true) || desc.contains("terakhir", ignoreCase = true) ||
+                                                                desc.contains("restart", ignoreCase = true) || desc.contains("ulang", ignoreCase = true) ||
                                                                 desc.contains("enhancer", ignoreCase = true) || desc.contains("wae", ignoreCase = true)) {
                                                                 isCustomAction = true
                                                             }
@@ -454,6 +465,9 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                                                             // Biarkan Custom Actions (DND, Ghost, Freeze, Restart, WAE), Search, Camera & Phone tetap visible
                                                             if (btn.visibility != View.VISIBLE) btn.visibility = View.VISIBLE
                                                             btn.alpha = 1f
+                                                            val density = activity.resources.displayMetrics.density
+                                                            val pad = (4 * density).toInt()
+                                                            btn.setPadding(pad, btn.paddingTop, pad, btn.paddingBottom)
                                                             val params = btn.layoutParams
                                                             if (params != null && (params.width == 0 || params.height == 0)) {
                                                                 params.width = ViewGroup.LayoutParams.WRAP_CONTENT
@@ -611,6 +625,12 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                 // 1. Biarkan menu ikon di kanan (kamera, tombol +, dll)
                 if (className.contains("ActionMenuView")) continue
                 
+                // 1b. Biarkan Action Buttons Container (DND, Ghost, Freeze, Restart, WAE)
+                if (child.id == TAG_ACTION_BUTTONS_CONTAINER || child.tag == TAG_ACTION_BUTTONS_CONTAINER) {
+                    if (child.visibility != View.VISIBLE) child.visibility = View.VISIBLE
+                    continue
+                }
+                
                 // 2. Biarkan tombol navigasi di kiri (ikon titik-tiga buatan kita) dan tombol +
                 if (child is android.widget.ImageButton) {
                     val d = child.drawable
@@ -697,6 +717,260 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
         override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) {}
         @Deprecated("Deprecated in Java", ReplaceWith("android.graphics.PixelFormat.TRANSLUCENT", "android.graphics.PixelFormat"))
         override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
+    }
+
+    private fun injectActionButtons(activity: Activity, toolbar: ViewGroup) {
+        val existing = toolbar.findViewById<View>(TAG_ACTION_BUTTONS_CONTAINER)
+        if (existing != null) {
+            refreshActionButtons(activity, existing as ViewGroup)
+            return
+        }
+
+        val density = activity.resources.displayMetrics.density
+        val btnSize = (36 * density).toInt()
+        val btnPadding = (6 * density).toInt()
+
+        val lp = try {
+            val defaultLp = XposedHelpers.callMethod(toolbar, "generateDefaultLayoutParams") as ViewGroup.LayoutParams
+            XposedHelpers.setIntField(defaultLp, "gravity", Gravity.END or Gravity.CENTER_VERTICAL)
+            defaultLp.width = ViewGroup.LayoutParams.WRAP_CONTENT
+            defaultLp.height = ViewGroup.LayoutParams.MATCH_PARENT
+            (defaultLp as? ViewGroup.MarginLayoutParams)?.marginEnd = (4 * density).toInt()
+            defaultLp
+        } catch (_: Throwable) {
+            try {
+                val lpClass = toolbar.javaClass.classLoader?.loadClass("androidx.appcompat.widget.Toolbar\$LayoutParams")
+                    ?: toolbar.javaClass.classLoader?.loadClass("android.widget.Toolbar\$LayoutParams")
+                val constructor = lpClass?.getConstructor(Int::class.java, Int::class.java, Int::class.java)
+                val newLp = constructor?.newInstance(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END or Gravity.CENTER_VERTICAL) as? ViewGroup.LayoutParams
+                (newLp as? ViewGroup.MarginLayoutParams)?.marginEnd = (4 * density).toInt()
+                newLp ?: ViewGroup.MarginLayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            } catch (_: Throwable) {
+                ViewGroup.MarginLayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            }
+        }
+
+        val container = LinearLayout(activity).apply {
+            id = TAG_ACTION_BUTTONS_CONTAINER
+            tag = TAG_ACTION_BUTTONS_CONTAINER
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL or Gravity.END
+            layoutParams = lp
+        }
+
+        // 1. DND Mode
+        val dndBtn = ImageButton(activity).apply {
+            id = com.wmods.wppenhacer.xposed.features.others.MenuHome.ID_DND
+            contentDescription = "DND Mode Pesawat"
+            background = null
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            setPadding(btnPadding, btnPadding, btnPadding, btnPadding)
+            layoutParams = LinearLayout.LayoutParams(btnSize, btnSize).apply {
+                marginEnd = (2 * density).toInt()
+            }
+            setOnClickListener {
+                val dndmode = WppCore.getPrivBoolean("dndmode", false)
+                if (!dndmode) {
+                    AlertDialogWpp(activity)
+                        .setTitle(activity.getString(R.string.dnd_mode_title))
+                        .setMessage(activity.getString(R.string.dnd_message))
+                        .setPositiveButton(activity.getString(R.string.activate)) { _, _ ->
+                            WppCore.setPrivBoolean("dndmode", true)
+                            Utils.doRestart(activity)
+                        }
+                        .setNegativeButton(activity.getString(R.string.cancel)) { dialog, _ -> dialog?.dismiss() }
+                        .create().show()
+                } else {
+                    WppCore.setPrivBoolean("dndmode", false)
+                    Utils.doRestart(activity)
+                }
+            }
+        }
+        container.addView(dndBtn)
+
+        // 2. Ghost Mode
+        val ghostBtn = ImageButton(activity).apply {
+            id = com.wmods.wppenhacer.xposed.features.others.MenuHome.ID_GHOST
+            contentDescription = "Ghost Mode"
+            background = null
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            setPadding(btnPadding, btnPadding, btnPadding, btnPadding)
+            layoutParams = LinearLayout.LayoutParams(btnSize, btnSize).apply {
+                marginEnd = (2 * density).toInt()
+            }
+            setOnClickListener {
+                val ghostmode = WppCore.getPrivBoolean("ghostmode", false)
+                AlertDialogWpp(activity).setTitle(
+                    activity.getString(
+                        R.string.ghost_mode_s,
+                        (if (ghostmode) "ON" else "OFF")
+                    )
+                ).setMessage(activity.getString(R.string.ghost_mode_message))
+                    .setPositiveButton(activity.getString(R.string.disable)) { _, _ ->
+                        WppCore.setPrivBoolean("ghostmode", false)
+                        Utils.doRestart(activity)
+                    }
+                    .setNegativeButton(activity.getString(R.string.enable)) { _, _ ->
+                        WppCore.setPrivBoolean("ghostmode", true)
+                        Utils.doRestart(activity)
+                    }.show()
+            }
+        }
+        container.addView(ghostBtn)
+
+        // 3. Freeze Last Seen
+        val freezeBtn = ImageButton(activity).apply {
+            id = com.wmods.wppenhacer.xposed.features.others.MenuHome.ID_FREEZE
+            contentDescription = "Freeze Last Seen"
+            background = null
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            setPadding(btnPadding, btnPadding, btnPadding, btnPadding)
+            layoutParams = LinearLayout.LayoutParams(btnSize, btnSize).apply {
+                marginEnd = (2 * density).toInt()
+            }
+            setOnClickListener {
+                val freezelastseen = WppCore.getPrivBoolean("freezelastseen", false)
+                if (!freezelastseen) {
+                    AlertDialogWpp(activity)
+                        .setTitle(activity.getString(R.string.freezelastseen_title))
+                        .setMessage(activity.getString(R.string.freezelastseen_message))
+                        .setPositiveButton(activity.getString(R.string.activate)) { _, _ ->
+                            WppCore.setPrivBoolean("freezelastseen", true)
+                            Utils.doRestart(activity)
+                        }
+                        .setNegativeButton(activity.getString(R.string.cancel)) { dialog, _ -> dialog?.dismiss() }
+                        .create().show()
+                } else {
+                    WppCore.setPrivBoolean("freezelastseen", false)
+                    Utils.doRestart(activity)
+                }
+            }
+        }
+        container.addView(freezeBtn)
+
+        // 4. Restart Button
+        val restartBtn = ImageButton(activity).apply {
+            id = com.wmods.wppenhacer.xposed.features.others.MenuHome.ID_RESTART
+            contentDescription = "Restart WhatsApp"
+            background = null
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            setPadding(btnPadding, btnPadding, btnPadding, btnPadding)
+            layoutParams = LinearLayout.LayoutParams(btnSize, btnSize).apply {
+                marginEnd = (2 * density).toInt()
+            }
+            val icon = activity.getDrawable(R.drawable.refresh)?.mutate()
+            icon?.setTint(DesignUtils.getPrimaryTextColor())
+            setImageDrawable(icon)
+            setOnClickListener {
+                Utils.doRestart(activity)
+            }
+        }
+        container.addView(restartBtn)
+
+        // 5. Open WaEnhancer
+        val waeBtn = ImageButton(activity).apply {
+            id = com.wmods.wppenhacer.xposed.features.others.MenuHome.ID_OPEN_WAE
+            contentDescription = "Open WaEnhancer"
+            background = null
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            setPadding(btnPadding, btnPadding, btnPadding, btnPadding)
+            layoutParams = LinearLayout.LayoutParams(btnSize, btnSize).apply {
+                marginEnd = (2 * density).toInt()
+            }
+            val icon = DesignUtils.getDrawableByName("ic_settings")?.mutate()
+            icon?.setTint(DesignUtils.getPrimaryTextColor())
+            setImageDrawable(icon)
+            setOnClickListener {
+                try {
+                    val intent = activity.packageManager.getLaunchIntentForPackage(BuildConfig.APPLICATION_ID)
+                    intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    activity.startActivity(intent)
+                } catch (e: Exception) {
+                    Utils.showToast(e.message)
+                }
+            }
+        }
+        container.addView(waeBtn)
+
+        // Tempelkan container tepat di sebelah kiri ActionMenuView (kamera)
+        container.viewTreeObserver.addOnPreDrawListener {
+            var amv: ViewGroup? = null
+            for (i in 0 until toolbar.childCount) {
+                val child = toolbar.getChildAt(i)
+                if (child.javaClass.name.contains("ActionMenuView")) {
+                    amv = child as ViewGroup
+                    break
+                }
+            }
+            if (amv != null && amv.visibility == View.VISIBLE && amv.width > 0 && container.width > 0) {
+                val amvLeft = amv.left + amv.translationX
+                val targetTranslation = amvLeft - container.left - container.width
+                if (Math.abs(container.translationX - targetTranslation) > 0.5f) {
+                    container.translationX = targetTranslation
+                }
+            }
+            true
+        }
+
+        toolbar.addView(container, lp)
+        refreshActionButtons(activity, container)
+    }
+
+    private fun refreshActionButtons(activity: Activity, container: ViewGroup) {
+        val textColor = DesignUtils.getPrimaryTextColor()
+
+        // 1. DND
+        val showDnd = prefs.getBoolean("show_dndmode", false)
+        val dndmode = WppCore.getPrivBoolean("dndmode", false)
+        val dndBtn = container.findViewById<ImageButton>(com.wmods.wppenhacer.xposed.features.others.MenuHome.ID_DND)
+        if (dndBtn != null) {
+            dndBtn.visibility = if (showDnd) View.VISIBLE else View.GONE
+            val dndDrawable = activity.getDrawable(if (dndmode) R.drawable.airplane_enabled else R.drawable.airplane_disabled)?.mutate()
+            dndDrawable?.setTint(textColor)
+            dndBtn.setImageDrawable(dndDrawable)
+        }
+
+        // 2. Ghost
+        val showGhost = prefs.getBoolean("ghostmode", true)
+        val ghostmode = WppCore.getPrivBoolean("ghostmode", false)
+        val ghostBtn = container.findViewById<ImageButton>(com.wmods.wppenhacer.xposed.features.others.MenuHome.ID_GHOST)
+        if (ghostBtn != null) {
+            ghostBtn.visibility = if (showGhost) View.VISIBLE else View.GONE
+            val ghostDrawable = activity.getDrawable(if (ghostmode) R.drawable.ghost_enabled else R.drawable.ghost_disabled)?.mutate()
+            ghostDrawable?.setTint(textColor)
+            ghostBtn.setImageDrawable(ghostDrawable)
+        }
+
+        // 3. Freeze
+        val showFreeze = prefs.getBoolean("show_freezeLastSeen", true)
+        val freezelastseen = WppCore.getPrivBoolean("freezelastseen", false)
+        val freezeBtn = container.findViewById<ImageButton>(com.wmods.wppenhacer.xposed.features.others.MenuHome.ID_FREEZE)
+        if (freezeBtn != null) {
+            freezeBtn.visibility = if (showFreeze) View.VISIBLE else View.GONE
+            val freezeDrawable = activity.getDrawable(if (freezelastseen) R.drawable.eye_disabled else R.drawable.eye_enabled)?.mutate()
+            freezeDrawable?.setTint(textColor)
+            freezeBtn.setImageDrawable(freezeDrawable)
+        }
+
+        // 4. Restart
+        val showRestart = prefs.getBoolean("restartbutton", true)
+        val restartBtn = container.findViewById<ImageButton>(com.wmods.wppenhacer.xposed.features.others.MenuHome.ID_RESTART)
+        if (restartBtn != null) {
+            restartBtn.visibility = if (showRestart) View.VISIBLE else View.GONE
+            val restartDrawable = activity.getDrawable(R.drawable.refresh)?.mutate()
+            restartDrawable?.setTint(textColor)
+            restartBtn.setImageDrawable(restartDrawable)
+        }
+
+        // 5. WAE
+        val showWae = prefs.getBoolean("open_wae", true)
+        val waeBtn = container.findViewById<ImageButton>(com.wmods.wppenhacer.xposed.features.others.MenuHome.ID_OPEN_WAE)
+        if (waeBtn != null) {
+            waeBtn.visibility = if (showWae) View.VISIBLE else View.GONE
+            val waeDrawable = DesignUtils.getDrawableByName("ic_settings")?.mutate()
+            waeDrawable?.setTint(textColor)
+            waeBtn.setImageDrawable(waeDrawable)
+        }
     }
 
     override fun getPluginName(): String {

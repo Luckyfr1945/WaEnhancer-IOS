@@ -377,33 +377,70 @@ class FeatureLoader {
             AlertDialogWpp.initDialog(loader)
             WaContactWpp.initialize(loader)
             WppCore.initialize(loader, pref)
+            mPreferences = pref
             DesignUtils.setPrefs(pref)
             Utils.init()
 
-            WppCore.addListenerActivity { _, _ ->
+            WppCore.addListenerActivity { activity, type ->
+                if (type == WppCore.ActivityChangeState.ChangeType.RESUMED) {
+                    val name = activity.javaClass.simpleName
+                    if (name == "HomeActivity" || name.contains("Home")) {
+                        activity.window?.decorView?.post {
+                            checkUpdate(activity)
+                        }
+                    }
+                }
             }
 
         }
 
+        private var mPreferences: SharedPreferences? = null
+        private var lastAppliedPrefChangeTime: Long = -1L
+        private var isDialogShowing = false
+
         private fun checkUpdate(activity: Activity) {
-            if (WppCore.getPrivBoolean("need_restart", false)) {
-                WppCore.setPrivBoolean("need_restart", false)
-                try {
+            try {
+                val pref = mPreferences ?: return
+                if (pref is de.robv.android.xposed.XSharedPreferences) {
+                    pref.reload()
+                }
+                val lastChangeTime = pref.getLong("last_pref_change_time", 0L)
+                val forceNeedRestart = WppCore.getPrivBoolean("need_restart", false)
+
+                if (forceNeedRestart) {
+                    WppCore.setPrivBoolean("need_restart", false)
+                }
+
+                if (lastAppliedPrefChangeTime == -1L) {
+                    lastAppliedPrefChangeTime = lastChangeTime
+                    if (!forceNeedRestart) return
+                }
+
+                val hasNewChanges = (lastChangeTime > lastAppliedPrefChangeTime) || forceNeedRestart
+                if (hasNewChanges && !isDialogShowing) {
+                    lastAppliedPrefChangeTime = lastChangeTime
+                    isDialogShowing = true
                     AlertDialogWpp(activity)
+                        .setTitle("WaEnhancer")
                         .setMessage(activity.getString(R.string.restart_wpp))
                         .setPositiveButton(activity.getString(R.string.yes)) { _, _ ->
+                            isDialogShowing = false
                             if (!Utils.doRestart(activity)) {
                                 Toast.makeText(
                                     activity,
-                                    "Unable to rebooting activity",
+                                    "Gagal memulai ulang WhatsApp",
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }
                         }
-                        .setNegativeButton(activity.getString(R.string.no), null)
+                        .setNegativeButton(activity.getString(R.string.no)) { dialog, _ ->
+                            isDialogShowing = false
+                            dialog?.dismiss()
+                        }
                         .show()
-                } catch (_: Throwable) {
                 }
+            } catch (_: Throwable) {
+                isDialogShowing = false
             }
         }
 

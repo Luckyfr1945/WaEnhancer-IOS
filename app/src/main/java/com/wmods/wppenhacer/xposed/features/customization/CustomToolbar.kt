@@ -38,6 +38,8 @@ private const val TITLE_TEXT_SIZE = 20f
 private const val SUBTITLE_TEXT_SIZE = 12f
 
 private var onMenuItemSelected: Method? = null
+private var tabVisibilityHooked = false
+private var currentToolbarLayout: java.lang.ref.WeakReference<LinearLayout>? = null
 
 class CustomToolbar(loader: ClassLoader, preferences:SharedPreferences) : Feature(loader, preferences) {
 
@@ -50,6 +52,18 @@ class CustomToolbar(loader: ClassLoader, preferences:SharedPreferences) : Featur
         val typeArchive = prefs.getString("typearchive", "0") ?: "0"
 
         onMenuItemSelected = Unobfuscator.loadOnMenuItemSelected(classLoader)
+
+        if (!tabVisibilityHooked && onMenuItemSelected != null) {
+            tabVisibilityHooked = true
+            XposedBridge.hookMethod(onMenuItemSelected, object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    val toolbarLayout = currentToolbarLayout?.get() ?: return
+                    val currentIndex = param.args.getOrNull(0) as? Int ?: return
+                    val visibility = if (currentIndex == 0) View.VISIBLE else View.GONE
+                    toolbarLayout.visibility = visibility
+                }
+            })
+        }
 
         val methodHook = ToolbarMethodHook(showName, showBio, typeArchive)
         XposedHelpers.findAndHookMethod(
@@ -117,12 +131,10 @@ class CustomToolbar(loader: ClassLoader, preferences:SharedPreferences) : Featur
 
         override fun afterHookedMethod(param: MethodHookParam) {
             val homeActivity = param.thisObject as Activity
-            val toolbar = homeActivity.findViewById<ViewGroup>(Utils.getID("toolbar", "id"))
+            val toolbar = homeActivity.findViewById<ViewGroup>(Utils.getID("toolbar", "id")) ?: return
             val logo = toolbar.findViewById<View>(Utils.getID("toolbar_logo", "id"))
 
-            val tabInstance = getTabInstance(homeActivity)
             val archiveIntent = createArchiveIntent(homeActivity)
-
             setupArchiveListener(toolbar, homeActivity, archiveIntent)
 
             if (!showBio && !showName) return
@@ -134,14 +146,10 @@ class CustomToolbar(loader: ClassLoader, preferences:SharedPreferences) : Featur
                 createSubtitleView(homeActivity, toolbarLayout)
             }
 
-            hideOriginalLogo(homeActivity, logo)
-            setupTabVisibilityHook(tabInstance, toolbarLayout)
-        }
-
-        private fun getTabInstance(homeActivity: Activity): Any {
-            val clazz = WppCore.tabsPagerClass
-            val fieldTab = ReflectionUtils.getFieldByType(homeActivity.javaClass, clazz)
-            return fieldTab!!.get(homeActivity)
+            if (logo != null) {
+                hideOriginalLogo(homeActivity, logo)
+            }
+            currentToolbarLayout = java.lang.ref.WeakReference(toolbarLayout)
         }
 
         private fun createArchiveIntent(homeActivity: Activity): Intent {
@@ -226,8 +234,8 @@ class CustomToolbar(loader: ClassLoader, preferences:SharedPreferences) : Featur
         }
 
         private fun hideOriginalLogo(homeActivity: Activity, logo: View) {
-            val parent = logo.parent as ViewGroup
-            val window = homeActivity.window.decorView as ViewGroup
+            val parent = logo.parent as? ViewGroup ?: return
+            val window = homeActivity.window.decorView as? ViewGroup ?: return
 
             parent.removeView(logo)
 
@@ -237,18 +245,6 @@ class CustomToolbar(loader: ClassLoader, preferences:SharedPreferences) : Featur
 
             window.addView(hideLayout)
             hideLayout.addView(logo)
-        }
-
-        private fun setupTabVisibilityHook(tabInstance: Any, toolbarLayout: LinearLayout) {
-            XposedBridge.hookMethod(onMenuItemSelected!!, object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) {
-                    if (tabInstance != param.thisObject) return
-
-                    val currentIndex = param.args[0] as Int
-                    val visibility = if (currentIndex == 0) View.VISIBLE else View.GONE
-                    toolbarLayout.visibility = visibility
-                }
-            })
         }
     }
 }

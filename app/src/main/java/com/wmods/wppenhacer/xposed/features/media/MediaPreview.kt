@@ -106,33 +106,39 @@ class MediaPreview(
 
         Others.propsBoolean[24205] = false
 
-        val layoutClass = Unobfuscator.loadLayoutClass(classLoader)
-        XposedHelpers.findAndHookMethod(View::class.java,"onAttachedToWindow",
+        val layoutClass = try {
+            Unobfuscator.loadLayoutClass(classLoader)
+        } catch (_: Throwable) {
+            null
+        }
+
+        XposedHelpers.findAndHookMethod(
+            View::class.java, "onAttachedToWindow",
             object : XC_MethodHook() {
-            override fun afterHookedMethod(param: MethodHookParam) {
-                if (!layoutClass.isInstance(param.thisObject))return
-                val view = param.thisObject as View
-                view.postDelayed(
-                    {
-                        var resourceNames = listOf("invisible_press_surface","video_control_frame_view")
-                        for (rn in resourceNames){
-                            val viewGroup = view.findViewById<View>(Utils.getID(rn, "id")) ?: continue
-                            if (!viewGroup.isVisible)continue
-                            logDebug("Found Surface: $viewGroup")
-                            handlePressSurface(view,viewGroup)
-                            return@postDelayed
-                        }
-                        resourceNames = listOf("control_frame_new","control_frame","control_frame_view","mms_control_frame_new","mms_control_frame")
-                        for (rn in resourceNames){
-                            val viewGroup = view.findViewById<View>(Utils.getID(rn, "id")) ?: continue
-                            if (!viewGroup.isVisible)continue
-                            logDebug("Found ControlFrame: $viewGroup")
-                            handleMediaControlFrame(view,viewGroup)
-                            return@postDelayed
-                        }
-                    },200)
-            }
-        })
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    if (layoutClass != null && !layoutClass.isInstance(param.thisObject)) return
+                    val view = param.thisObject as? View ?: return
+                    view.postDelayed(
+                        {
+                            var resourceNames = listOf("invisible_press_surface","video_control_frame_view")
+                            for (rn in resourceNames){
+                                val viewGroup = view.findViewById<View>(Utils.getID(rn, "id")) ?: continue
+                                if (!viewGroup.isVisible)continue
+                                logDebug("Found Surface: $viewGroup")
+                                handlePressSurface(view,viewGroup)
+                                return@postDelayed
+                            }
+                            resourceNames = listOf("control_frame_new","control_frame","control_frame_view","mms_control_frame_new","mms_control_frame")
+                            for (rn in resourceNames){
+                                val viewGroup = view.findViewById<View>(Utils.getID(rn, "id")) ?: continue
+                                if (!viewGroup.isVisible)continue
+                                logDebug("Found ControlFrame: $viewGroup")
+                                handleMediaControlFrame(view,viewGroup)
+                                return@postDelayed
+                            }
+                        }, 200)
+                }
+            })
 
     }
 

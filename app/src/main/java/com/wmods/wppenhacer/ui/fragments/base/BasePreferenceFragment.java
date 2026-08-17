@@ -67,6 +67,9 @@ public abstract class BasePreferenceFragment extends PreferenceFragmentCompat
 
     @Override
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, @Nullable String s) {
+        if (s != null && !s.equals("last_pref_change_time") && !s.equals("wae_pref_version")) {
+            sharedPreferences.edit().putLong("last_pref_change_time", System.currentTimeMillis()).apply();
+        }
         Intent intent = new Intent(BuildConfig.APPLICATION_ID + ".MANUAL_RESTART");
         App.instance.sendBroadcast(intent);
         chanceStates(s);

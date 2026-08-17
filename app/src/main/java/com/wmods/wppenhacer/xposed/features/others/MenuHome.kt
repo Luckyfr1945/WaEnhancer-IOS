@@ -92,6 +92,7 @@ class MenuHome(classLoader: ClassLoader, preferences:SharedPreferences) :
         val waeMenu = prefs.getBoolean("open_wae", true)
         if (!waeMenu) return
         val itemMenu = menu.add(0, ID_OPEN_WAE, -6, " " + activity.getString(R.string.app_name))
+        itemMenu.contentDescription = "Open WaEnhancer"
         val iconDraw = DesignUtils.getDrawableByName("ic_settings")
         if (iconDraw != null) {
             iconDraw.setTint(if (showAsAction) DesignUtils.getPrimaryTextColor() else -0x796960)
@@ -124,6 +125,7 @@ class MenuHome(classLoader: ClassLoader, preferences:SharedPreferences) :
             return
         }
         val itemMenu = menu.add(0, ID_GHOST, -9, R.string.ghost_mode)
+        itemMenu.contentDescription = "Ghost Mode"
 
         val iconDraw =
             activity.getDrawable(if (ghostmode) R.drawable.ghost_enabled else R.drawable.ghost_disabled)
@@ -160,6 +162,7 @@ class MenuHome(classLoader: ClassLoader, preferences:SharedPreferences) :
             iconDraw.setTint(if (showAsAction) DesignUtils.getPrimaryTextColor() else -0x796960)
         }
         val itemMenu = menu.add(0, ID_RESTART, -7, R.string.restart_whatsapp).setIcon(iconDraw)
+        itemMenu.contentDescription = "Restart WhatsApp"
         if (showAsAction) {
             itemMenu.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
         }
@@ -172,7 +175,7 @@ class MenuHome(classLoader: ClassLoader, preferences:SharedPreferences) :
     @SuppressLint("DiscouragedApi", "UseCompatLoadingForDrawables", "ApplySharedPref")
     private fun insertDNDOption(menu: Menu, activity: Activity, showAsAction: Boolean) {
         val dndmode = getPrivBoolean("dndmode", false)
-        if (!prefs.getBoolean("show_dndmode", false)) {
+        if (!prefs.getBoolean("show_dndmode", true)) {
             if (getPrivBoolean("dndmode", false)) {
                 setPrivBoolean("dndmode", false)
                 Utils.doRestart(activity)
@@ -180,6 +183,7 @@ class MenuHome(classLoader: ClassLoader, preferences:SharedPreferences) :
             return
         }
         val item = menu.add(0, ID_DND, -10, activity.getString(R.string.dnd_mode_title))
+        item.contentDescription = "DND Mode Pesawat"
         val drawable = Utils.application
             .getDrawable(if (dndmode) R.drawable.airplane_enabled else R.drawable.airplane_disabled)
         if (drawable != null) {
@@ -219,6 +223,7 @@ class MenuHome(classLoader: ClassLoader, preferences:SharedPreferences) :
         }
 
         val item = menu.add(0, ID_FREEZE, -8, activity.getString(R.string.freezelastseen_title))
+        item.contentDescription = "Freeze Last Seen"
         val drawable = Utils.application
             .getDrawable(if (freezelastseen) R.drawable.eye_disabled else R.drawable.eye_enabled)
         if (drawable != null) {
