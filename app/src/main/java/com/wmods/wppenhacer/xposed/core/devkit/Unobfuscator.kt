@@ -821,6 +821,15 @@
         @JvmStatic
         fun loadPropsBooleanMethod(loader: ClassLoader): Method {
             return UnobfuscatorCache.getInstance().getMethod(loader) {
+                val methods = bridge.findMethod {
+                    matcher {
+                        addUsingString("Unknown BooleanField", StringMatchType.Contains)
+                        returnType(Boolean::class.javaPrimitiveType!!)
+                    }
+                }
+                if (methods.isNotEmpty()) {
+                    return@getMethod methods[0].getMethodInstance(loader)
+                }
                 findFirstMethodUsingStrings(loader, StringMatchType.Contains, "Unknown BooleanField")
                     ?: throw Exception("Props method not found")
             }
@@ -830,6 +839,15 @@
         @JvmStatic
         fun loadPropsIntegerMethod(loader: ClassLoader): Method {
             return UnobfuscatorCache.getInstance().getMethod(loader) {
+                val methods = bridge.findMethod {
+                    matcher {
+                        addUsingString("Unknown IntField", StringMatchType.Contains)
+                        returnType(Int::class.javaPrimitiveType!!)
+                    }
+                }
+                if (methods.isNotEmpty()) {
+                    return@getMethod methods[0].getMethodInstance(loader)
+                }
                 findFirstMethodUsingStrings(loader, StringMatchType.Contains, "Unknown IntField")
                     ?: throw Exception("Props method not found")
             }

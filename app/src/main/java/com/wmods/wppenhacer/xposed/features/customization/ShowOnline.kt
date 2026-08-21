@@ -11,6 +11,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.RelativeLayout
 import android.widget.TextView
+import android.view.ViewGroup
 import androidx.core.text.TextUtilsCompat
 import com.wmods.wppenhacer.R
 import com.wmods.wppenhacer.xposed.core.Feature
@@ -71,67 +72,45 @@ class ShowOnline(loader: ClassLoader, preferences:SharedPreferences) : Feature(l
                     linearLayout.addView(lastSeenText)
                 }
                 if (showOnlineIcon) {
-                    val contactView = view.findViewById<FrameLayout>(Utils.getID("contact_selector", "id"))
-                    val firstChild = contactView.getChildAt(0)
-                    val isLeftToRight = TextUtilsCompat.getLayoutDirectionFromLocale(Locale.getDefault()) == View.LAYOUT_DIRECTION_LTR
-                    if (firstChild is ImageView) {
-                        contactView.removeView(firstChild)
+                    val contactPhoto = view.findViewById<View>(Utils.getID("contact_photo", "id"))
+                    if (contactPhoto != null) {
+                        val contactView = contactPhoto.parent as? ViewGroup
+                        if (contactView != null && contactView.id != 0x7FFF0003) {
+                            val isLeftToRight = TextUtilsCompat.getLayoutDirectionFromLocale(Locale.getDefault()) == View.LAYOUT_DIRECTION_LTR
+                            val index = contactView.indexOfChild(contactPhoto)
+                            contactView.removeView(contactPhoto)
 
-                        val relativeLayout = RelativeLayout(context)
-                        relativeLayout.id = 0x7FFF0003
-                        val params = RelativeLayout.LayoutParams(
-                            LinearLayout.LayoutParams.WRAP_CONTENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT
-                        )
-                        params.addRule(RelativeLayout.CENTER_IN_PARENT)
-                        firstChild.layoutParams = params
-                        relativeLayout.addView(firstChild)
-                        contactView.addView(relativeLayout)
+                            val relativeLayout = RelativeLayout(context)
+                            relativeLayout.id = 0x7FFF0003
+                            relativeLayout.layoutParams = contactPhoto.layoutParams
 
-                        val imageView = ImageView(context)
-                        imageView.id = 0x7FFF0001
-                        val params2 = RelativeLayout.LayoutParams(
-                            Utils.dipToPixels(14), Utils.dipToPixels(14)
-                        )
-                        params2.addRule(RelativeLayout.ALIGN_TOP, contactView.id)
-                        params2.addRule(
-                            if (isLeftToRight) RelativeLayout.ALIGN_RIGHT else RelativeLayout.ALIGN_LEFT,
-                            firstChild.id
-                        )
-                        params2.topMargin = Utils.dipToPixels(5)
-                        imageView.layoutParams = params2
-                        imageView.setImageResource(R.drawable.online)
-                        imageView.adjustViewBounds = true
-                        imageView.scaleType = ImageView.ScaleType.FIT_XY
-                        imageView.visibility = View.INVISIBLE
-                        relativeLayout.addView(imageView)
-                    } else if (firstChild is RelativeLayout) {
-                        val photoView = firstChild.getChildAt(0) as ImageView
+                            val params = RelativeLayout.LayoutParams(
+                                LinearLayout.LayoutParams.WRAP_CONTENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT
+                            )
+                            params.addRule(RelativeLayout.CENTER_IN_PARENT)
+                            contactPhoto.layoutParams = params
+                            relativeLayout.addView(contactPhoto)
+                            contactView.addView(relativeLayout, index)
 
-                        val params = RelativeLayout.LayoutParams(
-                            LinearLayout.LayoutParams.WRAP_CONTENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT
-                        )
-                        params.addRule(RelativeLayout.CENTER_IN_PARENT)
-                        photoView.layoutParams = params
-
-                        val imageView = ImageView(context)
-                        imageView.id = 0x7FFF0001
-                        val params2 = RelativeLayout.LayoutParams(
-                            Utils.dipToPixels(14), Utils.dipToPixels(14)
-                        )
-                        params2.addRule(RelativeLayout.ALIGN_TOP, contactView.id)
-                        params2.addRule(
-                            if (isLeftToRight) RelativeLayout.ALIGN_RIGHT else RelativeLayout.ALIGN_LEFT,
-                            photoView.id
-                        )
-                        params2.topMargin = Utils.dipToPixels(5)
-                        imageView.layoutParams = params2
-                        imageView.setImageResource(R.drawable.online)
-                        imageView.adjustViewBounds = true
-                        imageView.scaleType = ImageView.ScaleType.FIT_XY
-                        imageView.visibility = View.INVISIBLE
-                        firstChild.addView(imageView)
+                            val imageView = ImageView(context)
+                            imageView.id = 0x7FFF0001
+                            val params2 = RelativeLayout.LayoutParams(
+                                Utils.dipToPixels(14), Utils.dipToPixels(14)
+                            )
+                            params2.addRule(RelativeLayout.ALIGN_TOP, contactPhoto.id)
+                            params2.addRule(
+                                if (isLeftToRight) RelativeLayout.ALIGN_RIGHT else RelativeLayout.ALIGN_LEFT,
+                                contactPhoto.id
+                            )
+                            params2.topMargin = Utils.dipToPixels(5)
+                            imageView.layoutParams = params2
+                            imageView.setImageResource(R.drawable.online)
+                            imageView.adjustViewBounds = true
+                            imageView.scaleType = ImageView.ScaleType.FIT_XY
+                            imageView.visibility = View.INVISIBLE
+                            relativeLayout.addView(imageView)
+                        }
                     }
                 }
             }

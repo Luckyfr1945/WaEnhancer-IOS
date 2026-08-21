@@ -244,15 +244,12 @@ class HideSeen(loader: ClassLoader, preferences:SharedPreferences) :
                 val hideSeen = checkPrivacyAndHideSeen(fmessageKey)
                 val hideReceipt = checkPrivacyAndHideReceipt(fmessageKey)
 
-                if (hideReceipt) {
+                if (hideReceipt || (hideSeen && isReadReceipt)) {
                     protocolTreeNodeWpp.modifyKeyValue("type", "inactive")
                     if (protocolTreeNodeWpp.getFirstKeyValue("type") == null) {
                         protocolTreeNodeWpp.addKeyValue("type", "inactive")
                     }
                     protocolTreeNodeWpp.removeAllKeyValuesByKey("sts")
-                } else if (hideSeen && isReadReceipt) {
-                    protocolTreeNodeWpp.removeAllKeyValuesByKey("sts")
-                    protocolTreeNodeWpp.removeAllKeyValuesByKey("type")
                 }
 
                 if (hideReceipt || (hideSeen && isReadReceipt)) {

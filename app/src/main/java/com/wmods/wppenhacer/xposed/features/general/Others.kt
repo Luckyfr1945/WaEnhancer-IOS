@@ -717,9 +717,11 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
         val methodPropsBoolean = Unobfuscator.loadPropsBooleanMethod(classLoader)
         logDebug(Unobfuscator.getMethodDescriptor(methodPropsBoolean))
         val dataUsageActivityClass = WppCore.dataUsageActivityClass
-        
+
         XposedBridge.hookMethod(methodPropsBoolean, object : XC_MethodHook() {
             override fun afterHookedMethod(param: MethodHookParam) {
+                val method = param.method as? Method
+                val returnType = method?.returnType
                 val list = ReflectionUtils.findInstancesOfType(param.args, Integer::class.java)
                 val i = list.firstOrNull()?.second?.toInt() ?: return
 
@@ -729,7 +731,9 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
                     if (i == 4023) {
                         if (ReflectionUtils.isCalledFromClass(dataUsageActivityClass)) return
                     }
-                    param.result = propValue
+                    if (returnType == java.lang.Boolean.TYPE || returnType == java.lang.Boolean::class.java) {
+                        param.result = propValue
+                    }
                 }
             }
         })
@@ -738,10 +742,16 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
 
         XposedBridge.hookMethod(methodPropsInteger, object : XC_MethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
+                val method = param.method as? Method
+                val returnType = method?.returnType
                 val list = ReflectionUtils.findInstancesOfType(param.args, Integer::class.java)
                 val i = list.firstOrNull()?.second?.toInt() ?: return
                 val propValue = propsInteger[i] ?: return
-                param.result = propValue
+                if (returnType == java.lang.Integer.TYPE || returnType == java.lang.Integer::class.java) {
+                    param.result = propValue
+                } else if (returnType == java.lang.Long.TYPE || returnType == java.lang.Long::class.java) {
+                    param.result = propValue.toLong()
+                }
             }
         })
     }

@@ -1,5 +1,5 @@
 [ADDED]
-* Added support and compatibility for WhatsApp 2.26.30.xx
+* Added support and compatibility for WhatsApp 2.26.32.xx
 * Added auto-restart recommendation dialog when settings are changed in WaEnhancer
 * Added action buttons (DND, Ghost, Freeze, Restart, WAE) integration in iOS Header style
 
@@ -8,6 +8,8 @@
 * Improved toolbar action items spacing and dynamic pre-draw alignment
 
 [FIXED]
+* Fixed "Show Blue Ticks on Reply" failing to send read receipts when replying with stickers, voice notes, or physical keyboards
+* Fixed XMPP connection drops (messages stuck on clock icon) caused by malformed receipt nodes in Hide Seen feature
 * Fixed runtime method hook compatibility issues in MediaPreview and AboutContactPicker
 * Fixed memory leak and duplicate menu hook registration in CustomToolbar
 * Fixed duplicate download buttons in ViewOnce and Profile

@@ -14,9 +14,8 @@ import de.robv.android.xposed.XposedHelpers
 class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Feature(loader, preferences) {
 
     companion object {
-        private const val TAG_KEY_SWIPE_BG = 0x7f0a1003
-        private const val TAG_KEY_POSITION = 0x7f0a1004
-        private const val TAG_KEY_CONVERSATION = 0x7f0a1005
+        private const val TAG_KEY_POSITION = 0x7E1200A1
+        private const val TAG_KEY_CONVERSATION = 0x7E1200A2
 
         var allowProgrammaticLongClick = false
 
@@ -24,8 +23,27 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
         private const val MAX_TRANSLATION = 160f
         private const val ACTION_THRESHOLD_RATIO = 0.40f
 
-        private const val COLOR_MORE = "#8E8E93"
-        private const val COLOR_UNREAD = "#007AFF"
+        private val INT_COLOR_MORE_LIGHT = Color.parseColor("#8E8E93")
+        private val INT_COLOR_MORE_DARK = Color.parseColor("#5A5A5F")
+        private val INT_COLOR_ARCHIVE = Color.parseColor("#4CAF50")
+        private val INT_COLOR_UNARCHIVE = Color.parseColor("#007AFF")
+        
+        var currentInstance: IosSwipeMenu? = null
+        
+        fun closeSwipeMenu() {
+            currentInstance?.forceCloseOpenRow()
+        }
+    }
+
+    init {
+        currentInstance = this
+    }
+
+    fun forceCloseOpenRow() {
+        val row = openRow ?: return
+        animateChildrenBack(row)
+        animateBackgroundBack(row)
+        openRow = null
     }
 
     private class SwipeState {
@@ -35,6 +53,13 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
         var swipedRow: View? = null
         var lastSwipeTime = 0L
     }
+
+    private val bgExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "IosSwipeMenu-Worker").apply {
+            isDaemon = true
+        }
+    }
+    private val reflectedFieldsCache = java.util.concurrent.ConcurrentHashMap<Class<*>, List<java.lang.reflect.Field>>()
 
     private var openRow: View? = null
     private val listSwipeStates = java.util.WeakHashMap<ViewGroup, SwipeState>()
@@ -156,7 +181,7 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
                                 openRow = null
                                 row.postDelayed({ showIOSMenu(row) }, 50)
                             } else {
-                                val isArchived = isInArchivedView(row)
+                                val isArchived = bg?.isArchived ?: isInArchivedView(row)
                                 val actionType = if (isArchived) "unarchive" else "archive"
                                 executeDirectAction(row, actionType)
                                 animateChildrenBack(row)
@@ -213,7 +238,13 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
         var isMuted = false
         var isUnread = false
 
-        // 1. Try reading state from UI indicators directly (most reliable if views exist)
+        // 1. Cek accessibility contentDescription pada row dan child-nya
+        val rowDesc = row.contentDescription?.toString()?.lowercase() ?: ""
+        if (rowDesc.contains("belum dibaca") || rowDesc.contains("unread") || rowDesc.contains("tidak dibaca")) {
+            isUnread = true
+        }
+
+        // 2. Cek indikator UI langsung di row (badge angka, dot hijau, pin, mute)
         try {
             val context = row.context
             val res = context.resources
@@ -222,139 +253,236 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
             val pinId = res.getIdentifier("pin_indicator", "id", packageName)
             if (pinId != 0) {
                 val v = row.findViewById<View>(pinId)
-                if (v != null) isPinned = (v.visibility == android.view.View.VISIBLE)
+                if (v != null) isPinned = (v.visibility == View.VISIBLE)
             }
             
             val muteId = res.getIdentifier("mute_indicator", "id", packageName)
             if (muteId != 0) {
                 val v = row.findViewById<View>(muteId)
-                if (v != null) isMuted = (v.visibility == android.view.View.VISIBLE)
+                if (v != null) isMuted = (v.visibility == View.VISIBLE)
             }
             
-            // For unread, try multiple common names
-            val unreadId1 = res.getIdentifier("unread_indicator", "id", packageName)
-            val unreadId2 = res.getIdentifier("conversations_row_unread_count_badge", "id", packageName)
-            val unreadId3 = res.getIdentifier("unread_count", "id", packageName)
-            val unreadIds = listOf(unreadId1, unreadId2, unreadId3).filter { it != 0 }
-            
-            for (id in unreadIds) {
-                val v = row.findViewById<View>(id)
-                if (v != null) {
-                    if (v.visibility == android.view.View.VISIBLE) isUnread = true
-                    break
-                }
+            if (!isUnread) {
+                isUnread = checkUnreadInViewHierarchy(row)
             }
         } catch (_: Exception) {}
 
-        // If UI method gave us false for everything, try reading from the conversation object
-        if (!isPinned || !isMuted || !isUnread) {
-            val conversationObj = try {
-                val pos = row.getTag(TAG_KEY_POSITION) as? Int
-                if (pos != null && chatAdapter != null) chatAdapter?.getItem(pos) else null
-            } catch (_: Exception) { null }
-                ?: row.getTag(TAG_KEY_CONVERSATION)
-                ?: row.tag
+        // 3. Cek dari Objek Percakapan (Conversation Object via Reflection)
+        val conversationObj = try {
+            val pos = row.getTag(TAG_KEY_POSITION) as? Int
+            if (pos != null && chatAdapter != null) chatAdapter?.getItem(pos) else null
+        } catch (_: Exception) { null }
+            ?: row.getTag(TAG_KEY_CONVERSATION)
+            ?: row.tag
 
-            if (conversationObj != null) {
-                val objResult = readStateFromObject(conversationObj)
-                if (objResult != null) {
-                    isPinned = isPinned || objResult.first
-                    isMuted = isMuted || objResult.second
-                    isUnread = isUnread || objResult.third
-                }
+        if (conversationObj != null) {
+            val objResult = readStateFromObject(conversationObj)
+            if (objResult != null) {
+                isPinned = isPinned || objResult.first
+                isMuted = isMuted || objResult.second
+                isUnread = isUnread || objResult.third
             }
         }
 
-        // Fallback: SQLite
-        val jid = getJidStr(row) ?: return Triple(isPinned, isMuted, isUnread)
-        val contextFallback = row.context
+        // 4. Cek SQLite (chatsettings.db & msgstore.db)
+        val jid = getJidStr(row)
+        if (jid != null) {
+            val contextFallback = row.context
 
-        try {
-            val dbFile = java.io.File(contextFallback.filesDir?.parentFile?.parentFile, "databases/chatsettings.db")
-            if (dbFile.exists()) {
-                android.database.sqlite.SQLiteDatabase.openDatabase(
-                    dbFile.absolutePath, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY
-                ).use { db ->
-                    db.rawQuery("SELECT pinned, mute_end, muted_notifications FROM settings WHERE jid = ?", arrayOf(jid)).use { c ->
-                        if (c.moveToFirst()) {
-                            if (!isPinned) isPinned = c.getInt(0) == 1 || c.getLong(0) > 0
-                            if (!isMuted) {
-                                val muteEnd = c.getLong(1)
-                                val mutedNotif = c.getInt(2) == 1
-                                isMuted = mutedNotif || (muteEnd != 0L && (muteEnd == -1L || muteEnd > System.currentTimeMillis()))
+            try {
+                val dbFile = java.io.File(contextFallback.filesDir?.parentFile?.parentFile, "databases/chatsettings.db")
+                if (dbFile.exists()) {
+                    android.database.sqlite.SQLiteDatabase.openDatabase(
+                        dbFile.absolutePath, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY
+                    ).use { db ->
+                        db.rawQuery("SELECT pinned, mute_end, muted_notifications FROM settings WHERE jid = ?", arrayOf(jid)).use { c ->
+                            if (c.moveToFirst()) {
+                                if (!isPinned) isPinned = c.getInt(0) == 1 || c.getLong(0) > 0
+                                if (!isMuted) {
+                                    val muteEnd = c.getLong(1)
+                                    val mutedNotif = c.getInt(2) == 1
+                                    isMuted = mutedNotif || (muteEnd != 0L && (muteEnd == -1L || muteEnd > System.currentTimeMillis()))
+                                }
                             }
                         }
                     }
                 }
-            }
-        } catch (_: Throwable) {}
+            } catch (_: Throwable) {}
 
-        try {
-            val msgStorePath = java.io.File(contextFallback.filesDir?.parentFile?.parentFile, "databases/msgstore.db")
-            if (msgStorePath.exists()) {
-                android.database.sqlite.SQLiteDatabase.openDatabase(
-                    msgStorePath.absolutePath, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY
-                ).use { db ->
-                    var jidRowId = -1L
-                    db.rawQuery("SELECT _id FROM jid WHERE raw_string = ?", arrayOf(jid)).use { c ->
-                        if (c.moveToFirst()) jidRowId = c.getLong(0)
-                    }
-                    if (jidRowId != -1L) {
-                        db.rawQuery("SELECT unseen_message_count FROM chat WHERE jid_row_id = ?", arrayOf(jidRowId.toString())).use { c ->
-                            if (c.moveToFirst()) isUnread = c.getInt(0) > 0
+            try {
+                val msgStorePath = java.io.File(contextFallback.filesDir?.parentFile?.parentFile, "databases/msgstore.db")
+                if (msgStorePath.exists()) {
+                    android.database.sqlite.SQLiteDatabase.openDatabase(
+                        msgStorePath.absolutePath, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY
+                    ).use { db ->
+                        val cleanUser = jid.substringBefore("@").substringBefore(":")
+                        db.rawQuery(
+                            "SELECT c.unseen_message_count, c.marked_unread, c.unseen_row_count " +
+                            "FROM chat c JOIN jid j ON c.jid_row_id = j._id " +
+                            "WHERE j.raw_string = ? OR j.raw_string LIKE ? OR j.user = ?",
+                            arrayOf(jid, "%$cleanUser%", cleanUser)
+                        ).use { c ->
+                            if (c.moveToFirst()) {
+                                val count = c.getInt(0)
+                                val marked = if (c.columnCount > 1) c.getInt(1) else 0
+                                val unseenRows = if (c.columnCount > 2) c.getInt(2) else 0
+                                if (count != 0 || marked == 1 || unseenRows > 0) {
+                                    isUnread = true
+                                }
+                            }
                         }
                     }
                 }
-            }
-        } catch (_: Throwable) {}
+            } catch (_: Throwable) {}
+        }
 
         return Triple(isPinned, isMuted, isUnread)
     }
 
+    private fun checkUnreadInViewHierarchy(view: View): Boolean {
+        if (view.visibility != View.VISIBLE) return false
+        
+        val desc = view.contentDescription?.toString()?.lowercase() ?: ""
+        if (desc.contains("belum dibaca") || desc.contains("unread") || desc.contains("tidak dibaca")) {
+            return true
+        }
+
+        val res = view.context.resources
+        val idName = try {
+            if (view.id != 0 && view.id != -1) res.getResourceEntryName(view.id).lowercase() else ""
+        } catch (_: Exception) { "" }
+
+        if (idName.contains("unread") || idName.contains("badge") || idName.contains("counter") || idName.contains("count")) {
+            if (view is android.widget.TextView) {
+                val txt = view.text?.toString()?.trim() ?: ""
+                if (txt.isNotEmpty() && txt != "0") return true
+            } else {
+                return true
+            }
+        }
+
+        // Cek jika ini TextView berisi angka kecil (indikator badge jumlah pesan)
+        if (view is android.widget.TextView) {
+            val txt = view.text?.toString()?.trim() ?: ""
+            if (txt.isNotEmpty() && txt.length <= 4 && txt.all { it.isDigit() } && txt != "0") {
+                // Pastikan bukan bagian dari jam/menit atau tanggal
+                if (!txt.contains(":") && !txt.contains("/") && !txt.contains(".")) {
+                    return true
+                }
+            }
+        }
+
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                if (checkUnreadInViewHierarchy(view.getChildAt(i))) return true
+            }
+        }
+        return false
+    }
+
+    private fun getAllFields(cls: Class<*>): List<java.lang.reflect.Field> {
+        return reflectedFieldsCache.getOrPut(cls) {
+            val list = mutableListOf<java.lang.reflect.Field>()
+            var current: Class<*>? = cls
+            while (current != null && current != Any::class.java) {
+                for (f in current.declaredFields) {
+                    try {
+                        f.isAccessible = true
+                        list.add(f)
+                    } catch (_: Throwable) {}
+                }
+                current = current.superclass
+            }
+            list
+        }
+    }
+
     private fun readStateFromObject(obj: Any): Triple<Boolean, Boolean, Boolean>? {
-        return null
+        var isPinned = false
+        var isMuted = false
+        var isUnread = false
+        try {
+            val fields = getAllFields(obj.javaClass)
+            for (field in fields) {
+                try {
+                    val name = field.name.lowercase()
+                    val value = field.get(obj) ?: continue
+                    if (name.contains("unseen") || name.contains("unread")) {
+                        if (value is Int && value != 0) isUnread = true
+                        if (value is Boolean && value) isUnread = true
+                    }
+                    if (name.contains("pin")) {
+                        if (value is Boolean && value) isPinned = true
+                        if (value is Number && value.toLong() > 0) isPinned = true
+                    }
+                    if (name.contains("mute")) {
+                        if (value is Boolean && value) isMuted = true
+                        if (value is Number && value.toLong() > 0) isMuted = true
+                    }
+                } catch (_: Throwable) {}
+            }
+        } catch (_: Throwable) {}
+        return Triple(isPinned, isMuted, isUnread)
     }
 
     private fun showIOSMenu(row: View) {
         val context = row.context
         val activity = findActivity(context) ?: return
-        activity.runOnUiThread {
+
+        bgExecutor.execute {
             try {
                 val (isPinned, isMuted, isUnread) = getChatState(row)
+                val isIndonesian = java.util.Locale.getDefault().language == "in" || java.util.Locale.getDefault().language == "id"
+
+                val labelInfo = if (isIndonesian) "Info Kontak" else "Contact Info"
+                val labelPin = if (isPinned) (if (isIndonesian) "Lepas Sematan" else "Unpin Chat") else (if (isIndonesian) "Sematkan Chat" else "Pin Chat")
+                val labelMute = if (isMuted) (if (isIndonesian) "Bunyikan Notifikasi" else "Unmute") else (if (isIndonesian) "Bisukan Notifikasi" else "Mute")
+                val labelRead = if (isUnread) (if (isIndonesian) "Tandai Sudah Dibaca" else "Mark as Read") else (if (isIndonesian) "Tandai Belum Dibaca" else "Mark as Unread")
+                val labelShortcut = if (isIndonesian) "Tambah Pintasan" else "Add Shortcut"
+                val labelLock = if (isIndonesian) "Kunci Chat" else "Lock Chat"
+                val labelSelect = if (isIndonesian) "Pilih Chat" else "Select Chat"
+                val labelDelete = if (isIndonesian) "Hapus Chat" else "Delete Chat"
 
                 val menuItems = listOf(
-                    "Contact Info" to { executeDirectAction(row, "info") },
-                    if (isPinned) "Unpin Chat" to { executeDirectAction(row, "unpin") }
-                    else "Pin Chat" to { executeDirectAction(row, "pin") },
-                    if (isMuted) "Unmute" to { executeDirectAction(row, "unmute") }
-                    else "Mute" to { executeDirectAction(row, "mute") },
-                    if (isUnread) "Mark as Read" to { executeDirectAction(row, "read") }
-                    else "Mark as Unread" to { executeDirectAction(row, "unread") },
-                    "Add Shortcut" to { executeDirectAction(row, "shortcut") },
-                    "Lock Chat" to { executeDirectAction(row, "lock") },
-                    "Select Chat" to { triggerProgrammaticLongClick(row) },
-                    "Delete Chat" to { executeDirectAction(row, "delete") }
+                    labelInfo to { executeDirectAction(row, "info") },
+                    labelPin to { executeDirectAction(row, if (isPinned) "unpin" else "pin") },
+                    labelMute to { executeDirectAction(row, if (isMuted) "unmute" else "mute") },
+                    labelRead to { executeDirectAction(row, if (isUnread) "read" else "unread") },
+                    labelShortcut to { executeDirectAction(row, "shortcut") },
+                    labelLock to { executeDirectAction(row, "lock") },
+                    labelSelect to { triggerProgrammaticLongClick(row) },
+                    labelDelete to { executeDirectAction(row, "delete") }
                 )
 
-                val dialog = IOSMenuDialog(context)
-                dialog.setOnDismissListener {
+                activity.runOnUiThread {
+                    if (activity.isFinishing || activity.isDestroyed || !row.isAttachedToWindow) {
+                        animateChildrenBack(row)
+                        animateBackgroundBack(row)
+                        if (openRow == row) openRow = null
+                        return@runOnUiThread
+                    }
+                    val dialog = IOSMenuDialog(context)
+                    dialog.setOnDismissListener {
+                        animateChildrenBack(row)
+                        animateBackgroundBack(row)
+                        openRow = null
+                    }
+                    dialog.show(menuItems, isIndonesian)
+                }
+            } catch (e: Exception) {
+                logDebug("IosSwipeMenu: Failed to show iOS menu: ${e.message}")
+                activity.runOnUiThread {
                     animateChildrenBack(row)
                     animateBackgroundBack(row)
                     openRow = null
                 }
-                dialog.show(menuItems)
-            } catch (e: Exception) {
-                logDebug("IosSwipeMenu: Failed to show iOS menu: ${e.message}")
-                animateChildrenBack(row)
-                animateBackgroundBack(row)
-                openRow = null
             }
         }
     }
 
     private fun triggerProgrammaticLongClick(row: View) {
         allowProgrammaticLongClick = true
-        row.performLongClick()
+        forceLongClickDeep(row)
         allowProgrammaticLongClick = false
     }
 
@@ -379,7 +507,6 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
                     android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                     android.view.ViewGroup.LayoutParams.MATCH_PARENT
                 )
-                // Remove the manual dim background since WindowManager will handle it
                 setOnClickListener { dismiss() }
             }
             rootLayout.addView(dimView)
@@ -394,7 +521,6 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
                     bottomMargin = Utils.dipToPixels(16f).toInt()
                 }
                 orientation = android.widget.LinearLayout.VERTICAL
-                // No background for the wrapper, blocks will have their own backgrounds
             }
             rootLayout.addView(menuContainer)
 
@@ -419,7 +545,7 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
             }
         }
 
-        fun show(menuItems: List<Pair<String, () -> Unit>>) {
+        fun show(menuItems: List<Pair<String, () -> Unit>>, isIndonesian: Boolean = false) {
             menuContainer.removeAllViews()
 
             val isDarkMode = (context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
@@ -438,7 +564,7 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
             }
 
             menuItems.forEachIndexed { index, (label, action) ->
-                val isDelete = label.equals("Delete Chat", ignoreCase = true)
+                val isDelete = label.equals("Delete Chat", ignoreCase = true) || label.equals("Hapus Chat", ignoreCase = true)
 
                 val itemView = createMenuItem(label, isDelete, isDarkMode) {
                     action()
@@ -477,7 +603,8 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
                 background = createRoundedBackground(blockBgColor, Utils.dipToPixels(18f).toFloat())
             }
 
-            val cancelBtn = createMenuItem("cancel", false, isDarkMode) { dismiss() }
+            val labelCancel = if (isIndonesian) "Batal" else "Cancel"
+            val cancelBtn = createMenuItem(labelCancel, false, isDarkMode) { dismiss() }
             cancelBlock.addView(cancelBtn)
             menuContainer.addView(cancelBlock)
 
@@ -503,7 +630,7 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
                         setTextColor(Color.parseColor("#FF3B30"))
                         typeface = android.graphics.Typeface.DEFAULT
                     }
-                    label == "cancel" || label == "Cancel" -> {
+                    label.equals("Cancel", ignoreCase = true) || label.equals("Batal", ignoreCase = true) -> {
                         setTextColor(if (isDarkMode) Color.WHITE else Color.parseColor("#007AFF"))
                         typeface = android.graphics.Typeface.create(
                             android.graphics.Typeface.DEFAULT,
@@ -555,55 +682,106 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
             forceLongClickDeep(row)
             allowProgrammaticLongClick = false
 
-            val delayMillis = if (action == "mute" || action == "unmute" || action == "lock") 200L else 0L
-            row.postDelayed({
-                try {
-                    silentToolbarAction(row, action)
-                } catch (e: Exception) {
-                    logDebug("IosSwipeMenu: toolbar action error: ${e.message}")
+            fun tryAction(attempt: Int) {
+                val success = silentToolbarAction(row, action)
+                if (!success && attempt < 10) {
+                    row.postDelayed({ tryAction(attempt + 1) }, 60)
                 }
-            }, delayMillis)
+            }
+            row.postDelayed({ tryAction(0) }, 100)
+
+            if (action == "lock") {
+                row.postDelayed({
+                    val activity = findActivity(row.context)
+                    if (activity != null) dismissSelection(activity)
+                }, 4000)
+            }
         } catch (e: Exception) {
             logDebug("IosSwipeMenu: executeDirectAction error: ${e.message}")
         }
     }
 
-    private fun silentToolbarAction(row: View, action: String) {
-        val activity = findActivity(row.context) ?: return
-        if (activity.isFinishing || activity.isDestroyed) return
-        val decorView = activity.window?.decorView as? ViewGroup ?: return
+    private fun silentToolbarAction(row: View, action: String): Boolean {
+        val activity = findActivity(row.context) ?: return false
+        if (activity.isFinishing || activity.isDestroyed) return false
+        val decorView = activity.window?.decorView as? ViewGroup ?: return false
 
         val toolbars = mutableListOf<ViewGroup>()
         findAllToolbars(decorView, toolbars)
-        if (toolbars.isEmpty()) {
-            dismissSelection(activity)
-            return
-        }
+        if (toolbars.isEmpty()) return false
 
         val cab = toolbars.find { it.javaClass.name.contains("ActionBarContextView", ignoreCase = true) }
         val activeToolbars = if (cab != null) listOf(cab) else toolbars
 
         val keywords = when (action) {
-            "archive" -> listOf("arsip", "archive", "archived")
-            "unarchive" -> listOf("unarchive", "buka arsip", "pulih", "restore", "kembalikan", "keluarkan")
-            "read" -> listOf("mark as read", "tandai dibaca", "sudah dibaca")
-            "unread" -> listOf("mark as unread", "tandai belum dibaca", "belum dibaca")
-            "delete" -> listOf("hapus", "delete", "hapus chat")
-            "info" -> listOf("lihat kontak", "view contact", "info grup", "group info")
-            "pin" -> listOf("sematkan chat", "sematkan", "pin chat", "pin conversation", "semat")
-            "unpin" -> listOf("lepas sematan chat", "lepas sematan", "unpin", "buka pin", "copot sematan", "hapus sematan", "unpin chat", "unpin conversation", "batalkan sematan", "lepaskan sematan")
-            "mute" -> listOf("bisukan", "bisukan notifikasi", "bisukan obrolan", "mute", "silence", "senyap", "senyapkan")
-            "unmute" -> listOf("batal senyapkan", "aktifkan notifikasi", "unmute", "bunyikan", "buka bisukan", "bunyikan notifikasi", "nyalakan notifikasi")
-            "shortcut" -> listOf("tambah pintasan", "add chat shortcut", "pintasan", "shortcut")
-            "lock" -> listOf("kunci", "lock", "kunci chat", "lock chat", "kunci obrolan", "lock conversation")
+            "archive" -> listOf(
+                "arsip", "archive", "archived", "archivar", "arquivar", "archivieren", "archiver", "archivia", "أرشفة", "архив", "arşivle"
+            )
+            "unarchive" -> listOf(
+                "unarchive", "buka arsip", "pulih", "restore", "kembalikan", "keluarkan",
+                "desarchivar", "desarquivar", "dearchivieren", "désarchiver", "estrai dall'archivio", "إلغاء الأرشفة", "разархивировать", "arşivden çıkar"
+            )
+            "read" -> listOf(
+                "mark as read", "mark read", "read",
+                "tandai dibaca", "sudah dibaca", "baca", "tandai sudah dibaca", "tandai telah dibaca",
+                "tandai sbg dibaca", "tandai sebagai dibaca", "tandai sbg sudah dibaca", "tandai sebagai sudah dibaca",
+                "tandai sebagai telah dibaca", "tandai sbg telah dibaca",
+                "marcar como leído", "marcar como leida", "marcar como lida", "marcar como lido",
+                "als gelesen markieren", "marquer comme lu", "segna come letto", "وضع علامة كمقروء", "отметить как прочитанное", "okundu olarak işaretle"
+            )
+            "unread" -> listOf(
+                "mark as unread", "mark unread", "unread",
+                "tandai belum dibaca", "belum dibaca", "tandai sbg belum dibaca", "tandai sebagai belum dibaca",
+                "tandai sbg blm dibaca", "tandai sebagai blm dibaca", "tandai blm dibaca",
+                "marcar como no leído", "marcar como no leida", "marcar como não lida", "marcar como não lido",
+                "als ungelesen markieren", "marquer comme non lu", "segna come non letto", "وضع علامة كغير مقروء", "отметить как непрочитанное", "okunmadı olarak işaretle"
+            )
+            "delete" -> listOf(
+                "hapus", "delete", "hapus chat", "eliminar", "apagar", "excluir", "löschen", "supprimer", "elimina", "حذف", "удалить", "sil"
+            )
+            "info" -> listOf(
+                "lihat kontak", "view contact", "info grup", "group info", "info del contacto", "dados do contato",
+                "kontaktinfo", "infos du contact", "info contatto", "معلومات جهة الاتصال", "данные контакта", "kişi bilgisi"
+            )
+            "pin" -> listOf(
+                "sematkan chat", "sematkan", "pin chat", "pin conversation", "semat", "pin",
+                "fijar", "fixar", "anpinnen", "épingler", "fissa", "تثبيت", "закрепить", "sabitle"
+            )
+            "unpin" -> listOf(
+                "lepas sematan chat", "lepas sematan", "unpin", "buka pin", "copot sematan", "hapus sematan", "unpin chat", "unpin conversation",
+                "batalkan sematan", "lepaskan sematan", "desfijar", "desafixar", "loslösen", "désépingler", "sblocca", "إلغاء التثبيت", "открепить", "sabitlemeyi kaldır"
+            )
+            "mute" -> listOf(
+                "bisukan", "bisukan notifikasi", "bisukan obrolan", "mute", "silence", "senyap", "senyapkan",
+                "silenciar", "stumm schalten", "mettre en sourdine", "disattiva notifiche", "كتم", "без звука", "sessize al"
+            )
+            "unmute" -> listOf(
+                "batal senyapkan", "aktifkan notifikasi", "unmute", "bunyikan", "buka bisukan", "bunyikan notifikasi", "nyalakan notifikasi",
+                "desactivar silencio", "reativar", "stummschaltung aufheben", "réactiver les notifications", "attiva notifiche", "إلغاء الكتم", "включить звук", "sesi aç"
+            )
+            "shortcut" -> listOf(
+                "tambah pintasan", "add chat shortcut", "pintasan", "shortcut",
+                "añadir acceso directo", "adicionar atalho", "verknüpfung hinzufügen", "ajouter le raccourci", "aggiungi collegamento", "إضافة اختصار", "добавить ярлык", "kestirme ekle"
+            )
+            "lock" -> listOf(
+                "kunci", "lock", "kunci chat", "lock chat", "kunci obrolan", "lock conversation",
+                "buka kunci", "unlock", "unlock chat", "buka kunci chat", "kunci percakapan",
+                "bloquear chat", "trancar conversa", "chat sperren", "verrouiller la discussion", "blocca chat", "قفل الدردشة", "заблокировать чат", "sohbeti kilitle"
+            )
             else -> emptyList()
         }
 
         val excludeKeywords = listOf("laporkan", "report", "pengaturan", "setting", "pencarian", "search")
-        var executed = false
 
+        // 1. Cek semua Menu di Toolbar / CAB / ActionMenuView
         val menus = mutableListOf<android.view.Menu>()
-        for (tb in activeToolbars) getMenusFromViewGroup(tb, menus)
+        for (tb in activeToolbars) {
+            try {
+                val m = tb.javaClass.getMethod("getMenu").invoke(tb) as? android.view.Menu
+                if (m != null) menus.add(m)
+            } catch (_: Exception) {}
+            getMenusFromViewGroup(tb, menus)
+        }
 
         for (menu in menus) {
             for (i in 0 until menu.size()) {
@@ -615,65 +793,60 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
 
                 if (!isExcluded && keywords.any { title.contains(it) || desc.contains(it) }) {
                     try {
-                        // Buka overflow menu secara native
-                        var overflowOpened = false
-                        for (tb in activeToolbars) {
-                            for (j in 0 until tb.childCount) {
-                                val child = tb.getChildAt(j)
-                                if (child.javaClass.name.contains("ActionMenuView")) {
-                                    try {
-                                        child.javaClass.getMethod("showOverflowMenu").invoke(child)
-                                        overflowOpened = true
-                                    } catch (e: Exception) {}
-                                }
-                            }
+                        menu.performIdentifierAction(item.itemId, 0)
+                        if (action != "lock" && action != "delete" && action != "info") {
+                            dismissSelection(activity)
                         }
-                        
-                        if (overflowOpened) {
-                            // Retry mechanism to find and click the popup item
-                            fun tryClickPopup(attempt: Int) {
-                                var clicked = false
-                                for (popup in getPopupViews()) {
-                                    val target = findViewWithText(popup as ViewGroup, keywords)
-                                    if (target != null) {
-                                        target.performClick()
-                                        clicked = true
-                                        break
-                                    }
-                                }
-                                if (!clicked && attempt < 10) {
-                                    row.postDelayed({ tryClickPopup(attempt + 1) }, 50)
-                                } else if (!clicked) {
-                                    menu.performIdentifierAction(item.itemId, 0)
-                                }
-                            }
-                            row.postDelayed({ tryClickPopup(0) }, 50)
-                        } else {
-                            menu.performIdentifierAction(item.itemId, 0)
-                        }
-                        executed = true
-                        break
+                        return true
                     } catch (_: Exception) {}
                 }
             }
-            if (executed) break
         }
 
-        if (!executed) {
-            val actionViews = mutableListOf<View>()
-            for (tb in activeToolbars) collectActionMenuViews(tb, actionViews)
+        // 2. Cek Action views (ikon langsung di toolbar)
+        val actionViews = mutableListOf<View>()
+        for (tb in activeToolbars) collectActionMenuViews(tb, actionViews)
 
-            for (v in actionViews) {
-                val desc = v.contentDescription?.toString()?.lowercase() ?: ""
-                val isExcluded = excludeKeywords.any { desc.contains(it) }
+        for (v in actionViews) {
+            val desc = v.contentDescription?.toString()?.lowercase() ?: ""
+            val isExcluded = excludeKeywords.any { desc.contains(it) }
 
-                if (!isExcluded && keywords.any { desc.contains(it) }) {
-                    v.performClick()
-                    executed = true
-                    break
+            if (!isExcluded && keywords.any { desc.contains(it) }) {
+                v.performClick()
+                if (action != "lock" && action != "delete" && action != "info") {
+                    dismissSelection(activity)
+                }
+                return true
+            }
+        }
+
+        // 3. Buka overflow menu jika item ada di dalam popup
+        for (tb in activeToolbars) {
+            for (j in 0 until tb.childCount) {
+                val child = tb.getChildAt(j)
+                if (child.javaClass.name.contains("ActionMenuView") || child.javaClass.name.contains("Overflow")) {
+                    try {
+                        child.javaClass.getMethod("showOverflowMenu").invoke(child)
+                    } catch (_: Exception) {
+                        try { child.performClick() } catch (_: Exception) {}
+                    }
                 }
             }
         }
+
+        // Cek popup view yang terbuka
+        for (popup in getPopupViews()) {
+            val target = findViewWithText(popup as? ViewGroup ?: continue, keywords)
+            if (target != null) {
+                target.performClick()
+                if (action != "lock" && action != "delete" && action != "info") {
+                    dismissSelection(activity)
+                }
+                return true
+            }
+        }
+
+        return false
     }
 
     private fun findAllToolbars(vg: ViewGroup, result: MutableList<ViewGroup>) {
@@ -783,6 +956,28 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
 
     private fun forceLongClickDeep(view: View): Boolean {
         try {
+            var parent: android.view.ViewParent? = view.parent
+            var adapterView: android.widget.AdapterView<*>? = null
+            while (parent != null) {
+                if (parent is android.widget.AdapterView<*>) {
+                    adapterView = parent
+                    break
+                }
+                parent = parent.parent
+            }
+
+            if (adapterView != null) {
+                val pos = (view.getTag(TAG_KEY_POSITION) as? Int) ?: adapterView.getPositionForView(view)
+                val id = chatAdapter?.getItemId(pos) ?: view.id.toLong()
+                val itemLongClickListener = adapterView.onItemLongClickListener
+                if (itemLongClickListener != null && pos >= 0) {
+                    allowProgrammaticLongClick = true
+                    val handled = itemLongClickListener.onItemLongClick(adapterView, view, pos, id)
+                    allowProgrammaticLongClick = false
+                    if (handled) return true
+                }
+            }
+
             if (view.performLongClick()) return true
             val listenerInfoMethod = android.view.View::class.java.getDeclaredMethod("getListenerInfo")
             listenerInfoMethod.isAccessible = true
@@ -849,10 +1044,9 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
     }
 
     private fun extractJidFromConversation(obj: Any): String? {
-        val cls = obj.javaClass
-        for (field in cls.declaredFields) {
+        val fields = getAllFields(obj.javaClass)
+        for (field in fields) {
             try {
-                field.isAccessible = true
                 val fieldValue = field.get(obj) ?: continue
                 try {
                     val rawString = XposedHelpers.callMethod(fieldValue, "getRawString") as? String
@@ -864,25 +1058,6 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
                     return strVal
                 }
             } catch (_: Throwable) {}
-        }
-        var superCls = cls.superclass
-        while (superCls != null && superCls != Any::class.java) {
-            for (field in superCls.declaredFields) {
-                try {
-                    field.isAccessible = true
-                    val fieldValue = field.get(obj) ?: continue
-                    try {
-                        val rawString = XposedHelpers.callMethod(fieldValue, "getRawString") as? String
-                        if (rawString != null && rawString.contains("@")) return rawString
-                    } catch (_: Throwable) {}
-
-                    val strVal = fieldValue.toString()
-                    if (strVal.contains("@") && (strVal.endsWith("@s.whatsapp.net") || strVal.endsWith("@g.us") || strVal.endsWith("@lid"))) {
-                        return strVal
-                    }
-                } catch (_: Throwable) {}
-            }
-            superCls = superCls.superclass
         }
         return null
     }
@@ -896,24 +1071,38 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
         return null
     }
 
+    private val archivedStatusCache = java.util.WeakHashMap<android.app.Activity, Pair<Long, Boolean>>()
+
     private fun isInArchivedView(row: View): Boolean {
         try {
             val activity = findActivity(row.context) ?: return false
-            
+
             // Explicitly prevent Home Screen from being treated as Archived View
             val activityName = activity.javaClass.simpleName
             if (activityName == "HomeActivity") {
                 return false
             }
 
+            val now = System.currentTimeMillis()
+            val cached = archivedStatusCache[activity]
+            if (cached != null && now - cached.first < 2000L) {
+                return cached.second
+            }
+
             val title = activity.title?.toString()?.lowercase() ?: ""
-            if (title == "archived" || title == "diarsipkan" || title == "arsip") return true
+            if (title == "archived" || title == "diarsipkan" || title == "arsip") {
+                archivedStatusCache[activity] = now to true
+                return true
+            }
             val actionBar = activity.actionBar
             if (actionBar != null) {
                 val abTitle = actionBar.title?.toString()?.lowercase() ?: ""
-                if (abTitle == "archived" || abTitle == "diarsipkan" || abTitle == "arsip") return true
+                if (abTitle == "archived" || abTitle == "diarsipkan" || abTitle == "arsip") {
+                    archivedStatusCache[activity] = now to true
+                    return true
+                }
             }
-            
+
             val decorView = activity.window?.decorView as? ViewGroup ?: return false
             var found = false
             fun findToolbarText(v: View) {
@@ -940,6 +1129,7 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
                 }
             }
             findToolbarText(decorView)
+            archivedStatusCache[activity] = now to found
             return found
         } catch (_: Exception) {
             return false
@@ -948,8 +1138,6 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
 
     override fun doHook() {
         if (!prefs.getBoolean("ios_swipe_menu", true)) return
-
-
 
         try {
             val publishResultsMethod = Unobfuscator.loadGetFiltersMethod(classLoader)
@@ -960,9 +1148,31 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
             if (baseField != null) {
                 val adapterClass = baseField.type
                 XposedBridge.hookAllMethods(adapterClass, "getView", object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        val convertView = param.args[1] as? View ?: return
+                        if (openRow == convertView) {
+                            openRow = null
+                        }
+                        if (convertView.background is SwipeBackgroundDrawable) {
+                            val bg = convertView.background as SwipeBackgroundDrawable
+                            convertView.background = bg.originalBg
+                        }
+                        translateChildren(convertView, 0f)
+                    }
+
                     override fun afterHookedMethod(param: MethodHookParam) {
                         val row = param.result as? View ?: return
                         val position = param.args[0] as Int
+
+                        // Reset swiped state jika row ini di-update (misal ada pesan baru masuk)
+                        if (openRow == row) {
+                            openRow = null
+                        }
+                        if (row.background is SwipeBackgroundDrawable) {
+                            val bg = row.background as SwipeBackgroundDrawable
+                            row.background = bg.originalBg
+                        }
+                        translateChildren(row, 0f)
 
                         chatAdapter = param.thisObject as? android.widget.BaseAdapter
                         row.setTag(TAG_KEY_POSITION, position)
@@ -1056,6 +1266,19 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
             isFakeBoldText = true
         }
 
+        private val dip2 = Utils.dipToPixels(2f).toFloat()
+        private val dip2_5 = Utils.dipToPixels(2.5f).toFloat()
+        private val dip3 = Utils.dipToPixels(3f).toFloat()
+        private val dip4 = Utils.dipToPixels(4f).toFloat()
+        private val dip7 = Utils.dipToPixels(7f).toFloat()
+        private val dip8 = Utils.dipToPixels(8f).toFloat()
+        private val dip12 = Utils.dipToPixels(12f).toFloat()
+        private val dip24 = Utils.dipToPixels(24f).toFloat()
+        private val strokeW = Utils.dipToPixels(1.5f).toFloat()
+
+        private val boxRect = android.graphics.RectF()
+        private val arrowPath = android.graphics.Path()
+
         override fun draw(canvas: android.graphics.Canvas) {
             val h = bounds.height().toFloat()
             originalBg?.let { it.bounds = bounds; it.draw(canvas) }
@@ -1068,32 +1291,31 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
             val halfAbs = absDx / 2f
             val w = bounds.width().toFloat()
 
-            // 1. Tombol More (Abu-abu) di kiri (dari w - absDx sampai w - halfAbs)
-            bgPaint.color = if (isDarkMode) android.graphics.Color.parseColor("#5A5A5F") else android.graphics.Color.parseColor("#8E8E93")
+            // 1. Tombol More di kiri (dari w - absDx sampai w - halfAbs)
+            bgPaint.color = if (isDarkMode) INT_COLOR_MORE_DARK else INT_COLOR_MORE_LIGHT
             canvas.drawRect(w - absDx, 0f, w - halfAbs, h, bgPaint)
             if (absDx > 60f) {
                 canvas.save()
                 canvas.clipRect(w - absDx, 0f, w - halfAbs, h)
                 val cx1 = w - absDx + halfAbs / 2f
-                val cy = h / 2 - Utils.dipToPixels(8f)
+                val cy = h / 2 - dip8
                 drawMoreIcon(canvas, cx1, cy)
-                textPaint.color = android.graphics.Color.WHITE
-                canvas.drawText("More", cx1, cy + Utils.dipToPixels(24f), textPaint)
+                textPaint.color = Color.WHITE
+                canvas.drawText("More", cx1, cy + dip24, textPaint)
                 canvas.restore()
             }
 
             // 2. Tombol Archive/Unarchive di kanan (dari w - halfAbs sampai w)
-            // Use a softer green (#4CAF50) instead of bright green (#34C759)
-            bgPaint.color = if (isArchived) android.graphics.Color.parseColor("#007AFF") else android.graphics.Color.parseColor("#4CAF50")
+            bgPaint.color = if (isArchived) INT_COLOR_UNARCHIVE else INT_COLOR_ARCHIVE
             canvas.drawRect(w - halfAbs, 0f, w, h, bgPaint)
             if (absDx > 60f) {
                 canvas.save()
                 canvas.clipRect(w - halfAbs, 0f, w, h)
                 val cx2 = w - halfAbs + halfAbs / 2f
-                val cy = h / 2 - Utils.dipToPixels(8f)
+                val cy = h / 2 - dip8
                 drawArchiveIcon(canvas, cx2, cy, isArchived)
-                textPaint.color = android.graphics.Color.WHITE
-                canvas.drawText(if (isArchived) "Unarchive" else "Archive", cx2, cy + Utils.dipToPixels(24f), textPaint)
+                textPaint.color = Color.WHITE
+                canvas.drawText(if (isArchived) "Unarchive" else "Archive", cx2, cy + dip24, textPaint)
                 canvas.restore()
             }
 
@@ -1101,70 +1323,66 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
         }
 
         private fun drawMoreIcon(canvas: android.graphics.Canvas, cx: Float, cy: Float) {
-            val dotRadius = Utils.dipToPixels(2.5f).toFloat()
-            val spacing = Utils.dipToPixels(7f).toFloat()
-            
             iconFillPaint.color = android.graphics.Color.WHITE
             iconFillPaint.style = android.graphics.Paint.Style.FILL
-            
-            canvas.drawCircle(cx - spacing, cy, dotRadius, iconFillPaint)
-            canvas.drawCircle(cx, cy, dotRadius, iconFillPaint)
-            canvas.drawCircle(cx + spacing, cy, dotRadius, iconFillPaint)
+
+            canvas.drawCircle(cx - dip7, cy, dip2_5, iconFillPaint)
+            canvas.drawCircle(cx, cy, dip2_5, iconFillPaint)
+            canvas.drawCircle(cx + dip7, cy, dip2_5, iconFillPaint)
         }
 
         private fun drawArchiveIcon(canvas: android.graphics.Canvas, cx: Float, cy: Float, isArchived: Boolean) {
-            val s = Utils.dipToPixels(8f).toFloat()
-            
+            val s = dip8
+
             iconFillPaint.color = android.graphics.Color.WHITE
             iconFillPaint.style = android.graphics.Paint.Style.STROKE
-            iconFillPaint.strokeWidth = Utils.dipToPixels(1.5f).toFloat()
+            iconFillPaint.strokeWidth = strokeW
             iconFillPaint.strokeJoin = android.graphics.Paint.Join.ROUND
             iconFillPaint.strokeCap = android.graphics.Paint.Cap.ROUND
-            
+
             // Box
-            val rect = android.graphics.RectF(cx - s, cy - s + Utils.dipToPixels(2f), cx + s, cy + s)
-            canvas.drawRoundRect(rect, Utils.dipToPixels(2f).toFloat(), Utils.dipToPixels(2f).toFloat(), iconFillPaint)
-            
+            boxRect.set(cx - s, cy - s + dip2, cx + s, cy + s)
+            canvas.drawRoundRect(boxRect, dip2, dip2, iconFillPaint)
+
             // Lid line
-            canvas.drawLine(cx - s, cy - s + Utils.dipToPixels(2f) + Utils.dipToPixels(3f), cx + s, cy - s + Utils.dipToPixels(2f) + Utils.dipToPixels(3f), iconFillPaint)
-            
+            canvas.drawLine(cx - s, cy - s + dip2 + dip3, cx + s, cy - s + dip2 + dip3, iconFillPaint)
+
             // Arrow
-            val arrowPath = android.graphics.Path()
+            arrowPath.reset()
             if (isArchived) {
                 // Arrow pointing up
-                arrowPath.moveTo(cx, cy - Utils.dipToPixels(1f))
-                arrowPath.lineTo(cx - Utils.dipToPixels(2.5f), cy + Utils.dipToPixels(1.5f))
-                arrowPath.moveTo(cx, cy - Utils.dipToPixels(1f))
-                arrowPath.lineTo(cx + Utils.dipToPixels(2.5f), cy + Utils.dipToPixels(1.5f))
+                arrowPath.moveTo(cx, cy - Utils.dipToPixels(1f).toFloat())
+                arrowPath.lineTo(cx - dip2_5, cy + Utils.dipToPixels(1.5f).toFloat())
+                arrowPath.moveTo(cx, cy - Utils.dipToPixels(1f).toFloat())
+                arrowPath.lineTo(cx + dip2_5, cy + Utils.dipToPixels(1.5f).toFloat())
                 canvas.drawPath(arrowPath, iconFillPaint)
-                canvas.drawLine(cx, cy - Utils.dipToPixels(1f), cx, cy + Utils.dipToPixels(4f), iconFillPaint)
+                canvas.drawLine(cx, cy - Utils.dipToPixels(1f).toFloat(), cx, cy + dip4, iconFillPaint)
             } else {
                 // Arrow pointing down
-                arrowPath.moveTo(cx, cy + Utils.dipToPixels(3f))
-                arrowPath.lineTo(cx - Utils.dipToPixels(2.5f), cy + Utils.dipToPixels(0.5f))
-                arrowPath.moveTo(cx, cy + Utils.dipToPixels(3f))
-                arrowPath.lineTo(cx + Utils.dipToPixels(2.5f), cy + Utils.dipToPixels(0.5f))
+                arrowPath.moveTo(cx, cy + dip3)
+                arrowPath.lineTo(cx - dip2_5, cy + Utils.dipToPixels(0.5f).toFloat())
+                arrowPath.moveTo(cx, cy + dip3)
+                arrowPath.lineTo(cx + dip2_5, cy + Utils.dipToPixels(0.5f).toFloat())
                 canvas.drawPath(arrowPath, iconFillPaint)
-                canvas.drawLine(cx, cy - Utils.dipToPixels(2f), cx, cy + Utils.dipToPixels(3f), iconFillPaint)
+                canvas.drawLine(cx, cy - dip2, cx, cy + dip3, iconFillPaint)
             }
-            
+
             iconFillPaint.style = android.graphics.Paint.Style.FILL // reset
         }
 
         override fun setAlpha(alpha: Int) {}
         override fun setColorFilter(cf: android.graphics.ColorFilter?) {}
-        @Suppress("DEPRECATION")
+        @Deprecated("Deprecated in Java", ReplaceWith("PixelFormat.TRANSLUCENT", "android.graphics.PixelFormat"))
         override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
     }
 
     private fun updateSwipeBackground(row: View, dx: Float) {
-        val isArchived = isInArchivedView(row)
-        val isDarkMode = (row.context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
         var bg = row.background as? SwipeBackgroundDrawable
         if (bg == null) {
+            val isArchived = isInArchivedView(row)
+            val isDarkMode = (row.context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
             bg = SwipeBackgroundDrawable(row.background, isArchived, isDarkMode)
             row.background = bg
-            bg.isArchived = isArchived
             
             // Add a listener to reset the swipe state if the row is detached from the window (e.g. changing tabs)
             row.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
@@ -1183,7 +1401,6 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
                 }
             })
         }
-        bg.isDarkMode = isDarkMode
         bg.currentDx = dx
         row.invalidate()
     }

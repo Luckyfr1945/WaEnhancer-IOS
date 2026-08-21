@@ -22,6 +22,7 @@ import de.robv.android.xposed.XC_MethodHook
 import android.content.SharedPreferences 
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
+import java.lang.reflect.Method
 import java.text.DateFormat
 import java.util.Collections
 import java.util.Date
@@ -123,16 +124,44 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
                 val messageId = XposedHelpers.getObjectField(fMessage.getObject(), "A01") as String
 
 
+                val method = param.method as? Method
+                val returnType = method?.returnType
+
+                fun setBlockedResult() {
+                    if (returnType == java.lang.Boolean.TYPE || returnType == java.lang.Boolean::class.java) {
+                        param.result = true
+                    } else if (returnType != null && returnType.name.endsWith(".6ta")) {
+                        try {
+                            val constr = returnType.constructors.firstOrNull()
+                            if (constr != null) {
+                                val params = constr.parameterTypes
+                                val defaultArgs = arrayOfNulls<Any?>(params.size)
+                                for (i in params.indices) {
+                                    if (params[i] == java.lang.Boolean.TYPE) defaultArgs[i] = true
+                                    else defaultArgs[i] = null
+                                }
+                                param.result = constr.newInstance(*defaultArgs)
+                            } else {
+                                param.result = null
+                            }
+                        } catch (_: Throwable) {
+                            param.result = null
+                        }
+                    } else {
+                        param.result = null
+                    }
+                }
+
                 if (messageKey.remoteJid.isGroup) {
                     if (deviceJid != null && handleRevocationAttempt(fMessage, messageId) != 0) {
-                        param.result = true
+                        setBlockedResult()
                     }
                 } else if (!messageKey.isFromMe && handleRevocationAttempt(
                         fMessage,
                         messageId
                     ) != 0
                 ) {
-                    param.result = true
+                    setBlockedResult()
                 }
             }
         })

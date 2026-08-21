@@ -505,33 +505,46 @@ class SeenTick(
                 if (rootView.getTag(tagKey) == true) return@addListenerActivity
                 rootView.setTag(tagKey, true)
 
+                val sendId = Utils.getID("send", "id")
+                val voiceId = Utils.getID("voice_note_btn", "id")
+
+                val listenerTag = 0x7E11009A
+
                 val attachSendListeners = {
-                    val sendBtn = rootView.findViewById<View>(Utils.getID("send", "id"))
-                    sendBtn?.setOnTouchListener { _, event ->
-                        if (event.action == android.view.MotionEvent.ACTION_UP) {
-                            WppCore.getCurrentUserJid()?.let { jid ->
-                                if (!jid.isNull && !jid.isStatus) {
-                                    sendBlueTick(jid)
+                    val sendBtn = rootView.findViewById<View>(sendId)
+                    if (sendBtn != null && sendBtn.getTag(listenerTag) != true) {
+                        sendBtn.setTag(listenerTag, true)
+                        sendBtn.setOnTouchListener { _, event ->
+                            if (event.action == android.view.MotionEvent.ACTION_UP) {
+                                WppCore.getCurrentUserJid()?.let { jid ->
+                                    if (!jid.isNull && !jid.isStatus) {
+                                        sendBlueTick(jid)
+                                    }
                                 }
                             }
+                            false
                         }
-                        false
                     }
 
-                    val voiceBtn = rootView.findViewById<View>(Utils.getID("voice_note_btn", "id"))
-                    voiceBtn?.setOnTouchListener { _, event ->
-                        if (event.action == android.view.MotionEvent.ACTION_UP) {
-                            WppCore.getCurrentUserJid()?.let { jid ->
-                                if (!jid.isNull && !jid.isStatus) {
-                                    sendBlueTick(jid)
+                    val voiceBtn = rootView.findViewById<View>(voiceId)
+                    if (voiceBtn != null && voiceBtn.getTag(listenerTag) != true) {
+                        voiceBtn.setTag(listenerTag, true)
+                        voiceBtn.setOnTouchListener { _, event ->
+                            if (event.action == android.view.MotionEvent.ACTION_UP) {
+                                WppCore.getCurrentUserJid()?.let { jid ->
+                                    if (!jid.isNull && !jid.isStatus) {
+                                        sendBlueTick(jid)
+                                    }
                                 }
                             }
+                            false
                         }
-                        false
                     }
                 }
 
-                rootView.post { attachSendListeners() }
+                rootView.viewTreeObserver.addOnGlobalLayoutListener {
+                    attachSendListeners()
+                }
             }
         }
     }

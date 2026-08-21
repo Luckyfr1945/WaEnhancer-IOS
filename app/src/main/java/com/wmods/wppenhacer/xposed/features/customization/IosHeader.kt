@@ -341,13 +341,32 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                                         amv.viewTreeObserver.addOnPreDrawListener(object : android.view.ViewTreeObserver.OnPreDrawListener {
                                             private var cachedHdr: ViewGroup? = null
                                             private var cachedFab: View? = null
+                                            private var previousTitle = ""
 
                                             override fun onPreDraw(): Boolean {
                                                 try {
                                                     if (cachedHdr == null && headerId != 0) cachedHdr = activity.findViewById<ViewGroup>(headerId)
                                                     val hdr = cachedHdr
                                                     val largeTitle = if (hdr != null) getLargeTitleView(hdr) else null
-                                                    val isChatsTab = largeTitle != null && largeTitle.text == "Chats"
+                                                    val currentTitle = largeTitle?.text?.toString() ?: ""
+                                                    
+                                                    if (currentTitle != previousTitle) {
+                                                        if (previousTitle.isNotEmpty()) {
+                                                            try {
+                                                                com.wmods.wppenhacer.xposed.features.customization.IosSwipeMenu.closeSwipeMenu()
+                                                            } catch (e: Exception) {}
+                                                        }
+                                                        previousTitle = currentTitle
+                                                    }
+                                                    
+                                                    val isChatsTab = currentTitle == "Chats"
+                                                    
+                                                    try {
+                                                        val fakePlus = toolbar.findViewWithTag<ImageView>("fake_plus_btn")
+                                                        if (fakePlus != null && fakePlus.visibility != View.VISIBLE) {
+                                                            fakePlus.visibility = View.VISIBLE
+                                                        }
+                                                    } catch (e: Exception) {}
                                                     
                                                     if (fabId != 0) {
                                                         if (cachedFab == null) cachedFab = activity.findViewById<View>(fabId)
@@ -431,35 +450,17 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                                                         if (!isOverflow && btn.javaClass.name.contains("OverflowMenuButton")) isOverflow = true
                                                         
                                                         if (isOverflow && btn is ImageView) {
-                                                            if (isChatsTab) {
-                                                                val currentDrawable = btn.drawable
-                                                                if (currentDrawable !is IosPlusDrawable) {
-                                                                    val size = (32 * activity.resources.displayMetrics.density).toInt()
-                                                                    btn.setImageDrawable(IosPlusDrawable(size))
-                                                                    btn.setOnClickListener {
-                                                                        try {
-                                                                            if (fabId != 0) {
-                                                                                val realFab = activity.findViewById<View>(fabId)
-                                                                                realFab?.performClick()
-                                                                            }
-                                                                        } catch (e: Exception) {}
-                                                                    }
-                                                                }
-                                                                if (btn.visibility != View.VISIBLE) btn.visibility = View.VISIBLE
-                                                                val params = btn.layoutParams
-                                                                if (params != null && (params.width == 0 || params.height == 0)) {
-                                                                    params.width = ViewGroup.LayoutParams.WRAP_CONTENT
-                                                                    params.height = ViewGroup.LayoutParams.WRAP_CONTENT
-                                                                    btn.layoutParams = params
-                                                                }
-                                                            } else {
-                                                                if (btn.visibility != View.GONE) btn.visibility = View.GONE
-                                                                val params = btn.layoutParams
-                                                                if (params != null && (params.width != 0 || params.height != 0)) {
-                                                                    params.width = 0
-                                                                    params.height = 0
-                                                                    btn.layoutParams = params
-                                                                }
+                                                            btn.setImageDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+                                                            btn.alpha = 0f
+                                                            btn.translationX = - (activity.resources.displayMetrics.widthPixels).toFloat() + (150 * activity.resources.displayMetrics.density)
+                                                            btn.setOnTouchListener(null)
+                                                            
+                                                            if (btn.visibility != View.VISIBLE) btn.visibility = View.VISIBLE
+                                                            val params = btn.layoutParams
+                                                            if (params != null && (params.width == 0 || params.height == 0)) {
+                                                                params.width = ViewGroup.LayoutParams.WRAP_CONTENT
+                                                                params.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                                                                btn.layoutParams = params
                                                             }
                                                         } else if (isCustomAction || isSearch || isCamera || isPhone) {
                                                             // Biarkan Custom Actions (DND, Ghost, Freeze, Restart, WAE), Search, Camera & Phone tetap visible
@@ -527,7 +528,8 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
             "status" to "Status", "updates" to "Status", "pembaruan" to "Status",
             "communities" to "Communities", "komunitas" to "Communities",
             "calls" to "Calls", "panggilan" to "Calls",
-            "settings" to "Settings", "setelan" to "Settings", "pengaturan" to "Settings"
+            "settings" to "Settings", "setelan" to "Settings", "pengaturan" to "Settings",
+            "anda" to "Settings", "you" to "Settings", "profil" to "Settings", "profile" to "Settings"
         )
 
         knownTabs[rawTitle.lowercase()]?.let { return it }
@@ -749,6 +751,36 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                 ViewGroup.MarginLayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT)
             }
         }
+        val fakePlusBtn = ImageView(activity).apply {
+            tag = "fake_plus_btn"
+            background = null
+            scaleType = ImageView.ScaleType.CENTER
+            setPadding(btnPadding, btnPadding, btnPadding, btnPadding)
+            val plusLp = try {
+                val pClass = toolbar.javaClass.classLoader?.loadClass("androidx.appcompat.widget.Toolbar\$LayoutParams")
+                    ?: toolbar.javaClass.classLoader?.loadClass("android.widget.Toolbar\$LayoutParams")
+                val constructor = pClass?.getConstructor(Int::class.java, Int::class.java, Int::class.java)
+                val newLp = constructor?.newInstance(btnSize, btnSize, Gravity.END or Gravity.CENTER_VERTICAL) as? ViewGroup.LayoutParams
+                (newLp as? ViewGroup.MarginLayoutParams)?.marginEnd = (4 * density).toInt()
+                newLp ?: ViewGroup.MarginLayoutParams(btnSize, btnSize)
+            } catch (_: Throwable) {
+                ViewGroup.MarginLayoutParams(btnSize, btnSize)
+            }
+            layoutParams = plusLp
+            
+            val size = (32 * density).toInt()
+            setImageDrawable(IosPlusDrawable(size))
+            setOnClickListener {
+                try {
+                    val fabId = activity.resources.getIdentifier("fab", "id", activity.packageName)
+                    if (fabId != 0) {
+                        activity.findViewById<View>(fabId)?.performClick()
+                    }
+                } catch (e: Exception) {}
+            }
+            visibility = View.VISIBLE
+        }
+        toolbar.addView(fakePlusBtn)
 
         val container = LinearLayout(activity).apply {
             id = TAG_ACTION_BUTTONS_CONTAINER
@@ -891,6 +923,7 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
             }
         }
         container.addView(waeBtn)
+        
 
         // Tempelkan container tepat di sebelah kiri ActionMenuView (kamera)
         container.viewTreeObserver.addOnPreDrawListener {
@@ -907,6 +940,14 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                 val targetTranslation = amvLeft - container.left - container.width
                 if (Math.abs(container.translationX - targetTranslation) > 0.5f) {
                     container.translationX = targetTranslation
+                }
+                
+                val fakePlus = toolbar.findViewWithTag<ImageView>("fake_plus_btn")
+                if (fakePlus != null) {
+                    val targetPlusX = amv.right - fakePlus.right.toFloat()
+                    if (Math.abs(fakePlus.translationX - targetPlusX) > 0.5f) {
+                        fakePlus.translationX = targetPlusX
+                    }
                 }
             }
             true

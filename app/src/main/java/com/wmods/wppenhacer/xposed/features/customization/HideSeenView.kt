@@ -60,6 +60,9 @@ class HideSeenView(loader: ClassLoader, preferences:SharedPreferences) : Feature
             override fun onItemBind(fMessage: FMessageWpp, view: ViewGroup, position: Int, convertView: View?) {
                 if (fMessage.key.isFromMe) {
                     clearBubbleView(view)
+                    if (System.currentTimeMillis() - fMessage.timeStamp < 3000) {
+                        com.wmods.wppenhacer.xposed.features.general.SeenTick.triggerBlueOnReply(fMessage.key.remoteJid)
+                    }
                     return
                 }
                 updateBubbleView(fMessage, view)

@@ -8,7 +8,8 @@ import com.wmods.wppenhacer.xposed.core.devkit.Unobfuscator.loadCheckEmulator
 import com.wmods.wppenhacer.xposed.core.devkit.Unobfuscator.loadRootDetector
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XC_MethodReplacement
-import android.content.SharedPreferences 
+import com.wmods.wppenhacer.xposed.utils.ReflectionUtils
+import android.content.SharedPreferences
 import de.robv.android.xposed.XposedBridge
 import java.io.File
 
@@ -17,9 +18,13 @@ class AntiWa(classLoader: ClassLoader, preferences:SharedPreferences) :
 
     override fun doHook() {
         if (!prefs.getBoolean("bootloader_spoofer", false)) return
-        val rootDetector  = loadRootDetector(classLoader)
+        val rootDetector = loadRootDetector(classLoader)
         for (detector in rootDetector) {
-            XposedBridge.hookMethod(detector, XC_MethodReplacement.returnConstant(false))
+            if (detector.returnType == java.lang.Boolean.TYPE || detector.returnType == java.lang.Boolean::class.java) {
+                XposedBridge.hookMethod(detector, XC_MethodReplacement.returnConstant(false))
+            } else {
+                XposedBridge.hookMethod(detector, ReflectionUtils.DO_NOTHING)
+            }
         }
         val settingsGetInt = Settings.Global::class.java.getDeclaredMethod(
             "getInt",
@@ -37,7 +42,11 @@ class AntiWa(classLoader: ClassLoader, preferences:SharedPreferences) :
             }
         })
         val checkEmulator = loadCheckEmulator(classLoader)
-        XposedBridge.hookMethod(checkEmulator, XC_MethodReplacement.returnConstant(false))
+        if (checkEmulator.returnType == java.lang.Boolean.TYPE || checkEmulator.returnType == java.lang.Boolean::class.java) {
+            XposedBridge.hookMethod(checkEmulator, XC_MethodReplacement.returnConstant(false))
+        } else {
+            XposedBridge.hookMethod(checkEmulator, ReflectionUtils.DO_NOTHING)
+        }
         // File Check
         val FileConstructor = File::class.java.getConstructor(String::class.java)
         XposedBridge.hookMethod(FileConstructor, object : XC_MethodHook() {
@@ -52,7 +61,11 @@ class AntiWa(classLoader: ClassLoader, preferences:SharedPreferences) :
         })
 
         val checkCustomRom = loadCheckCustomRom(classLoader)
-        XposedBridge.hookMethod(checkCustomRom, XC_MethodReplacement.returnConstant(false))
+        if (checkCustomRom.returnType == java.lang.Boolean.TYPE || checkCustomRom.returnType == java.lang.Boolean::class.java) {
+            XposedBridge.hookMethod(checkCustomRom, XC_MethodReplacement.returnConstant(false))
+        } else {
+            XposedBridge.hookMethod(checkCustomRom, ReflectionUtils.DO_NOTHING)
+        }
     }
 
     override fun getPluginName(): String {

@@ -169,10 +169,18 @@ class MediaQuality(loader: ClassLoader, preferences: SharedPreferences) :
             try {
                 val hookMediaQualitySelection =
                     Unobfuscator.loadMediaQualitySelectionMethod(classLoader)
-                XposedBridge.hookMethod(
-                    hookMediaQualitySelection,
-                    XC_MethodReplacement.returnConstant(true)
-                )
+                if (hookMediaQualitySelection.returnType == java.lang.Boolean.TYPE || hookMediaQualitySelection.returnType == java.lang.Boolean::class.java) {
+                    XposedBridge.hookMethod(
+                        hookMediaQualitySelection,
+                        XC_MethodReplacement.returnConstant(true)
+                    )
+                } else {
+                    XposedBridge.hookMethod(hookMediaQualitySelection, object : XC_MethodHook() {
+                        override fun beforeHookedMethod(param: MethodHookParam) {
+                            ReflectionUtils.blockMethodExecution(param)
+                        }
+                    })
+                }
                 legacyQualitySelection = 1
             } catch (_: Exception) {
                 legacyQualitySelection = 0
