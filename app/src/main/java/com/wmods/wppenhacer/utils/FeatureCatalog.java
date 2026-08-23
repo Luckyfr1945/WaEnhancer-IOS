@@ -461,6 +461,22 @@ public class FeatureCatalog {
                 null,
                 Arrays.asList("toast", "viewed", "status", "notification")));
 
+        catalog.add(new SearchableFeature("status_replay_tracker",
+                context.getString(R.string.status_replay_tracker),
+                context.getString(R.string.status_replay_tracker_sum),
+                SearchableFeature.Category.GENERAL,
+                SearchableFeature.FragmentType.GENERAL,
+                null,
+                Arrays.asList("replay", "rewatch", "status", "views", "tracker", "count")));
+
+        catalog.add(new SearchableFeature("toast_status_replay",
+                context.getString(R.string.toast_status_replay),
+                context.getString(R.string.toast_status_replay_sum),
+                SearchableFeature.Category.GENERAL,
+                SearchableFeature.FragmentType.GENERAL,
+                null,
+                Arrays.asList("toast", "replay", "status", "notification")));
+
         // PRIVACY FRAGMENT
         catalog.add(new SearchableFeature("typearchive",
                 context.getString(R.string.hide_archived_chat),

@@ -72,6 +72,7 @@ import com.wmods.wppenhacer.xposed.features.media.DownloadProfile
 import com.wmods.wppenhacer.xposed.features.media.DownloadViewOnce
 import com.wmods.wppenhacer.xposed.features.media.MediaPreview
 import com.wmods.wppenhacer.xposed.features.media.MediaQuality
+import com.wmods.wppenhacer.xposed.features.general.StatusReplayTracker
 import com.wmods.wppenhacer.xposed.features.media.StatusDownload
 import com.wmods.wppenhacer.xposed.features.others.ActivityController
 import com.wmods.wppenhacer.xposed.features.others.AudioTranscript
@@ -575,7 +576,8 @@ class FeatureLoader {
                 AboutContactPicker::class.java,
                 DefaultEmoji::class.java,
                 IosTextEntry::class.java,
-                IosContextMenu::class.java
+                IosContextMenu::class.java,
+                StatusReplayTracker::class.java
             )
 
             XposedBridge.log("Loading Plugins")

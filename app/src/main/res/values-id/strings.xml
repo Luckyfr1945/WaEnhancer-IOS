@@ -520,4 +520,12 @@ Saat Anda mengaktifkan bekukan \"terakhir dilihat dan online\", Anda tidak dapat
     <string name="remove_sticker_white_outline_sum">Remove the white border when creating stickers</string>
     <string name="remove_sticker_white_outline">Remove sticker white outline</string>
     <string name="stickers">Stickers</string>
+
+    <!-- Status Replay Tracker -->
+    <string name="status_replay_tracker">Pelacak Putar Ulang Status</string>
+    <string name="status_replay_tracker_sum">Lacak dan tampilkan berapa kali orang melihat ulang status WhatsApp Anda</string>
+    <string name="toast_status_replay">Notifikasi Lihat Ulang Status</string>
+    <string name="toast_status_replay_sum">Tampilkan toast ketika seseorang memutar ulang status Anda</string>
+    <string name="replayed_your_status">%1$s melihat ulang status Anda (%2$dx)</string>
+    <string name="status_replay_history_title">Riwayat Putar Ulang Status</string>
 </resources>

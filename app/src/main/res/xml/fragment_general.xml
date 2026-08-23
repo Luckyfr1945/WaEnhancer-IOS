@@ -35,6 +35,16 @@
             app:summary="@string/toast_on_viewed_status_sum"
             app:title="@string/toast_on_viewed_status" />
 
+        <rikka.material.preference.MaterialSwitchPreference
+            app:key="status_replay_tracker"
+            app:summary="@string/status_replay_tracker_sum"
+            app:title="@string/status_replay_tracker" />
+
+        <rikka.material.preference.MaterialSwitchPreference
+            app:dependency="status_replay_tracker"
+            app:key="toast_status_replay"
+            app:summary="@string/toast_status_replay_sum"
+            app:title="@string/toast_status_replay" />
 
     </PreferenceCategory>
 
