@@ -33,7 +33,7 @@ class IGStatus(loader: ClassLoader, preferences:SharedPreferences) : Feature(loa
 
     @Throws(Throwable::class)
     override fun doHook() {
-        if (!prefs.getBoolean("igstatus", false)) return
+        if (!prefs.getBoolean("igstatus", true)) return
 
         val fabintMethod = Unobfuscator.loadFabMethod(classLoader)
 

@@ -52,8 +52,6 @@
         @Volatile
         private var nativeLoaded = false
 
-        val cacheClasses = HashMap<String, Class<*>>()
-
         /**
         * O bridge do DexKit indexa todo o dex do WhatsApp em memória nativa (~150-250MB).
         * Como o [UnobfuscatorCache] persiste todos os resultados, na maioria dos inícios
@@ -1777,28 +1775,94 @@
         @JvmStatic
         fun loadGroupCheckAdminMethod(loader: ClassLoader): Method {
             return UnobfuscatorCache.getInstance().getMethod(loader) {
-                val classData = bridge.findClass {
-                    matcher {
-                        addUsingString("saveGroupParticipants/INSERT_GROUP_PARTICIPANT_USER")
+                // Strategy 1: Search invokes in ConversationRow setupUserNameInGroupView
+                try {
+                    val convRowMethods = bridge.findMethod {
+                        matcher {
+                            addUsingString("ConversationRow/setupUserNameInGroupView/")
+                        }
                     }
-                }.singleOrNull() ?: throw RuntimeException("GroupCheckAdmin class data not found")
-                val groupChatClass =
-                    findFirstClassUsingName(loader, StringMatchType.EndsWith, "GroupChatInfoActivity")
-                val onCreateMenu = ReflectionUtils.findMethodUsingFilter(groupChatClass) { method ->
-                    method.name == "onCreateContextMenu"
-                }
-                val onCreateMenuData = bridge.getMethodData(onCreateMenu)
-                val invokes = onCreateMenuData!!.invokes.stream()
-                    .filter { m -> m.declaredClassName == classData.name }
-                    .collect(Collectors.toList())
-                for (invoke in invokes) {
-                    val invokeMethod = invoke.getMethodInstance(loader)
-                    if (invokeMethod.parameterCount != 2 || invokeMethod.returnType != Boolean::class.javaPrimitiveType) continue
-                    if (invokeMethod.parameterTypes[1].name.contains("jid.UserJid")) {
-                        XposedBridge.log("FIND: $invokeMethod")
-                        return@getMethod invokeMethod
+                    for (m in convRowMethods) {
+                        for (invoke in m.invokes) {
+                            val invokeMethod = try { invoke.getMethodInstance(loader) } catch (_: Throwable) { null } ?: continue
+                            if (invokeMethod.parameterCount == 2 && invokeMethod.returnType == Boolean::class.javaPrimitiveType) {
+                                val p0 = invokeMethod.parameterTypes[0].name
+                                val p1 = invokeMethod.parameterTypes[1].name
+                                if ((p0.contains("Jid", ignoreCase = true) || p0.contains("Group", ignoreCase = true)) &&
+                                    (p1.contains("Jid", ignoreCase = true) || p1.contains("User", ignoreCase = true))) {
+                                    return@getMethod invokeMethod
+                                }
+                            }
+                        }
                     }
-                }
+                } catch (_: Throwable) {}
+
+                // Strategy 2: Search in GroupChatInfoActivity
+                try {
+                    val groupChatClasses = bridge.findClass {
+                        matcher {
+                            className("GroupChatInfoActivity", StringMatchType.EndsWith)
+                        }
+                    }
+                    for (cData in groupChatClasses) {
+                        val cls = try { cData.getInstance(loader) } catch (_: Throwable) { null } ?: continue
+                        for (method in cls.declaredMethods) {
+                            val methodData = try { bridge.getMethodData(method) } catch (_: Throwable) { null } ?: continue
+                            for (invoke in methodData.invokes) {
+                                val invokeMethod = try { invoke.getMethodInstance(loader) } catch (_: Throwable) { null } ?: continue
+                                if (invokeMethod.parameterCount == 2 && invokeMethod.returnType == Boolean::class.javaPrimitiveType) {
+                                    val p0 = invokeMethod.parameterTypes[0].name
+                                    val p1 = invokeMethod.parameterTypes[1].name
+                                    if ((p0.contains("Jid", ignoreCase = true) || p0.contains("Group", ignoreCase = true)) &&
+                                        (p1.contains("Jid", ignoreCase = true) || p1.contains("User", ignoreCase = true))) {
+                                        return@getMethod invokeMethod
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (_: Throwable) {}
+
+                // Strategy 3: Search all methods matching (GroupJid, UserJid) -> Boolean
+                try {
+                    val groupJidClass = findFirstClassUsingName(loader, StringMatchType.EndsWith, "jid.GroupJid")
+                    val userJidClass = findFirstClassUsingName(loader, StringMatchType.EndsWith, "jid.UserJid")
+                    if (groupJidClass != null && userJidClass != null) {
+                        val methods = bridge.findMethod {
+                            matcher {
+                                paramCount(2)
+                                returnType(Boolean::class.javaPrimitiveType!!)
+                                addParamType(groupJidClass.name)
+                                addParamType(userJidClass.name)
+                            }
+                        }
+                        if (methods.isNotEmpty()) {
+                            return@getMethod methods[0].getMethodInstance(loader)
+                        }
+                    }
+                } catch (_: Throwable) {}
+
+                // Strategy 4: Fallback find method taking 2 Jid parameters returning boolean
+                try {
+                    val jidClass = findFirstClassUsingName(loader, StringMatchType.EndsWith, "jid.Jid")
+                    if (jidClass != null) {
+                        val methods = bridge.findMethod {
+                            matcher {
+                                paramCount(2)
+                                returnType(Boolean::class.javaPrimitiveType!!)
+                            }
+                        }
+                        for (m in methods) {
+                            val invokeMethod = try { m.getMethodInstance(loader) } catch (_: Throwable) { null } ?: continue
+                            val p0 = invokeMethod.parameterTypes[0]
+                            val p1 = invokeMethod.parameterTypes[1]
+                            if (jidClass.isAssignableFrom(p0) && jidClass.isAssignableFrom(p1)) {
+                                return@getMethod invokeMethod
+                            }
+                        }
+                    }
+                } catch (_: Throwable) {}
+
                 throw RuntimeException("GroupCheckAdmin method not found")
             }
         }
@@ -2581,16 +2645,7 @@
         @Throws(ClassNotFoundException::class)
         @JvmStatic
         fun getClassByName(className: String, classLoader: ClassLoader): Class<*> {
-            if (cacheClasses.containsKey(className)) return cacheClasses[className]!!
-            val classDataList = bridge.findClass {
-                matcher {
-                    className(className, StringMatchType.EndsWith)
-                }
-            }
-            if (classDataList.isEmpty()) throw RuntimeException("Class $className not found!")
-            val clazz = classDataList[0].getInstance(classLoader)
-            cacheClasses[className] = clazz
-            return clazz
+            return findFirstClassUsingName(classLoader, StringMatchType.EndsWith, className)
         }
 
         @Throws(Exception::class)
@@ -3289,6 +3344,18 @@
 
         @Throws(Exception::class)
         @JvmStatic
+        fun loadStatusMessageStateUpdateReceiptHandlerIsDuplicateMethod(classLoader: ClassLoader): Method? {
+            return UnobfuscatorCache.getInstance().getMethod(classLoader) {
+                findFirstMethodUsingStrings(
+                    classLoader,
+                    StringMatchType.Contains,
+                    "StatusMessageStateUpdateReceiptHandler/isDuplicateReceipt"
+                )
+            }
+        }
+
+        @Throws(Exception::class)
+        @JvmStatic
         fun loadOnConversationsListChangedMethod(classLoader: ClassLoader): Method? {
             return UnobfuscatorCache.getInstance().getMethod(classLoader) {
                 findFirstMethodUsingStringsFilter(
@@ -3473,4 +3540,70 @@
             }
         }
 
+        @Throws(Exception::class)
+        @JvmStatic
+        fun loadStatusViewerRowBindMethod(loader: ClassLoader): Method {
+            return UnobfuscatorCache.getInstance().getMethod(loader) {
+                // Strategy 1: Anchor on "StatusDetailsAdapter/getPrimaryName"
+                try {
+                    val anchorMethod = findFirstMethodUsingStrings(
+                        loader,
+                        StringMatchType.Contains,
+                        "StatusDetailsAdapter/getPrimaryName"
+                    )
+                    if (anchorMethod != null) {
+                        val adapterClass = anchorMethod.declaringClass
+                        val bindMethod = adapterClass.declaredMethods.firstOrNull { m ->
+                            m.parameterCount == 2 &&
+                            m.parameterTypes[1] == java.lang.Integer.TYPE &&
+                            !Modifier.isStatic(m.modifiers) &&
+                            m.returnType == java.lang.Void.TYPE
+                        }
+                        if (bindMethod != null) return@getMethod bindMethod
+                    }
+                } catch (_: Throwable) {}
+
+                // Strategy 2: Anchor on "StatusDetailsAdapter"
+                try {
+                    val cls = findFirstClassUsingStrings(
+                        loader,
+                        StringMatchType.Contains,
+                        "StatusDetailsAdapter"
+                    )
+                    if (cls != null) {
+                        val bindMethod = cls.declaredMethods.firstOrNull { m ->
+                            m.parameterCount == 2 &&
+                            m.parameterTypes[1] == java.lang.Integer.TYPE &&
+                            !Modifier.isStatic(m.modifiers) &&
+                            m.returnType == java.lang.Void.TYPE
+                        }
+                        if (bindMethod != null) return@getMethod bindMethod
+                    }
+                } catch (_: Throwable) {}
+
+                // Strategy 3: Find by method string in DexKit
+                try {
+                    val methods = bridge.findMethod {
+                        matcher {
+                            addUsingString("StatusDetailsAdapter/getPrimaryName")
+                        }
+                    }
+                    if (methods.isNotEmpty()) {
+                        val mInstance = methods[0].getMethodInstance(loader)
+                        val adapterClass = mInstance.declaringClass
+                        val bindMethod = adapterClass.declaredMethods.firstOrNull { m ->
+                            m.parameterCount == 2 &&
+                            m.parameterTypes[1] == java.lang.Integer.TYPE &&
+                            !Modifier.isStatic(m.modifiers) &&
+                            m.returnType == java.lang.Void.TYPE
+                        }
+                        if (bindMethod != null) return@getMethod bindMethod
+                    }
+                } catch (_: Throwable) {}
+
+                throw RuntimeException("StatusViewerRowBindMethod not found")
+            }
+        }
+
     }
+

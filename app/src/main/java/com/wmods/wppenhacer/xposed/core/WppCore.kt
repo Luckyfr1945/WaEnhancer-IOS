@@ -101,7 +101,6 @@ object WppCore {
 
         // ActionUser
         actionUser = Unobfuscator.loadActionUser(loader)
-        XposedBridge.log("ActionUser: ${actionUser?.name}")
         XposedBridge.hookAllConstructors(actionUser, object : XC_MethodHook() {
             @Throws(Throwable::class)
             override fun afterHookedMethod(param: MethodHookParam) {
@@ -429,9 +428,9 @@ object WppCore {
     }
 
     @JvmStatic
-    fun getCurrentUserJid(): FMessageWpp.UserJid? {
+    fun getConversationDelegate(): Any? {
         return try {
-            val conversation = getCurrentConversation() ?: return null
+            val conversation = getCurrentConversation() ?: return mConversationDelegate
             var conversationDelegate = mConversationDelegate
             if (conversation.javaClass.simpleName == "HomeActivity") {
                 val convFragmentMethod =
@@ -441,9 +440,21 @@ object WppCore {
                     Unobfuscator.loadAntiRevokeConvFragmentField(conversation.classLoader)
                 conversationDelegate = convField.get(convFragment)
             }
-            FMessageWpp.UserJid(conversationJidField?.get(conversationDelegate))
+            conversationDelegate ?: mConversationDelegate
         } catch (_: Exception) {
-            FMessageWpp.UserJid()
+            mConversationDelegate
+        }
+    }
+
+    @JvmStatic
+    fun getCurrentUserJid(): FMessageWpp.UserJid? {
+        return try {
+            val conversationDelegate = getConversationDelegate() ?: return null
+            val jidObj = conversationJidField?.get(conversationDelegate) ?: return null
+            val uj = FMessageWpp.UserJid(jidObj)
+            if (uj.isNull) null else uj
+        } catch (_: Exception) {
+            null
         }
     }
 

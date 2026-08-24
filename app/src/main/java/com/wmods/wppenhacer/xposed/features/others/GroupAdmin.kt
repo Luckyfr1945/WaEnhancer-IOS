@@ -16,17 +16,18 @@ import com.wmods.wppenhacer.xposed.utils.Utils
 import android.content.SharedPreferences 
 import java.lang.reflect.Method
 
-class GroupAdmin(classLoader: ClassLoader, preferences:SharedPreferences) : Feature(classLoader, preferences) {
+class GroupAdmin(classLoader: ClassLoader, preferences: SharedPreferences) : Feature(classLoader, preferences) {
 
     override fun doHook() {
         if (!prefs.getBoolean("admin_grp", false)) return
 
-        val jidFactory = Unobfuscator.loadJidFactory(classLoader)
-        val grpcheckAdmin = Unobfuscator.loadGroupCheckAdminMethod(classLoader)
-        var cachedField: java.lang.reflect.Field? = null
+        try {
+            val jidFactory = Unobfuscator.loadJidFactory(classLoader)
+            val grpcheckAdmin = Unobfuscator.loadGroupCheckAdminMethod(classLoader)
+            var cachedField: java.lang.reflect.Field? = null
 
-        ConversationItemListener.conversationListeners.add(object :
-            ConversationItemListener.OnConversationItemListener() {
+            ConversationItemListener.conversationListeners.add(object :
+                ConversationItemListener.OnConversationItemListener() {
 
             override fun onItemBind(fMessage: FMessageWpp, view: ViewGroup, position: Int, convertView: View?) {
                 val chatCurrentJid = WppCore.getCurrentUserJid()
@@ -92,6 +93,9 @@ class GroupAdmin(classLoader: ClassLoader, preferences:SharedPreferences) : Feat
                 iconAdmin.visibility = if (result != null && result as Boolean) View.VISIBLE else View.GONE
             }
         })
+        } catch (e: Throwable) {
+            logDebug("GroupAdmin: hook failed: ${e.message}")
+        }
     }
 
     private fun resolveParticipantJidForAdminCheck(userJid: FMessageWpp.UserJid?, grpcheckAdmin: Method): Any? {

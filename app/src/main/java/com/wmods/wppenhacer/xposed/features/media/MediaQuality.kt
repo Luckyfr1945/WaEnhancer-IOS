@@ -1,9 +1,6 @@
 package com.wmods.wppenhacer.xposed.features.media
 
 import android.content.SharedPreferences
-import android.graphics.Bitmap
-import android.graphics.RecordingCanvas
-import android.os.Build
 import androidx.core.content.edit
 import com.wmods.wppenhacer.xposed.core.Feature
 import com.wmods.wppenhacer.xposed.core.devkit.Unobfuscator
@@ -13,8 +10,6 @@ import com.wmods.wppenhacer.xposed.utils.ReflectionUtils
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XC_MethodReplacement
 import de.robv.android.xposed.XposedBridge
-import de.robv.android.xposed.XposedHelpers
-import java.lang.reflect.Field
 
 class MediaQuality(loader: ClassLoader, preferences: SharedPreferences) :
     Feature(loader, preferences) {
@@ -72,47 +67,28 @@ class MediaQuality(loader: ClassLoader, preferences: SharedPreferences) :
                 Unobfuscator.getAllMapFields(mediaDataVideoConfiguration)
 
             val videoTranscoderStart = Unobfuscator.loadVideoTranscoderStartMethod(classLoader)
-            XposedBridge.hookMethod(videoTranscoderStart, object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) {
-                    val videoProcessor = param.args[0]
-                    val booleanParams = ReflectionUtils.getFieldsByType(
-                        videoProcessor.javaClass,
-                        java.lang.Boolean.TYPE
-                    )
-                    if (booleanParams.size > 2) {
-                        val field: Field = booleanParams[2]
-                        field.setBoolean(videoProcessor, false)
-                    }
-                    val fieldMediaDataVideoConfiguration = ReflectionUtils.getFieldByType(
-                        videoProcessor.javaClass,
-                        mediaDataVideoConfiguration
-                    )
-                    val mediaDataVideoConfigObj =
-                        fieldMediaDataVideoConfiguration!!.get(videoProcessor)
-                    val fieldforceSingleTranscoding =
-                        fieldsMediaDataVideoConfiguration["forceSingleTranscoding"]
-                    fieldforceSingleTranscoding?.setBoolean(mediaDataVideoConfigObj, true)
-                }
-            })
-
-            Others.propsBoolean[18888] = true
-            XposedBridge.hookMethod(
-                Unobfuscator.loadMediaTranscoderStart(classLoader),
-                object : XC_MethodHook() {
+            if (videoTranscoderStart != null) {
+                XposedBridge.hookMethod(videoTranscoderStart, object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) {
-                        val processSpec = param.args[0] ?: return
-                        val booleanField = processSpec.javaClass.declaredFields.firstOrNull {
-                            it.type == Boolean::class.javaPrimitiveType
-                        } ?: return
-                        booleanField.isAccessible = true
-                        booleanField.set(
-                            processSpec,
-                            true
-                        )
+                        try {
+                            val videoProcessor = param.args.getOrNull(0) ?: return
+                            val fieldMediaDataVideoConfiguration = ReflectionUtils.getFieldByType(
+                                videoProcessor.javaClass,
+                                mediaDataVideoConfiguration
+                            ) ?: return
+                            val mediaDataVideoConfigObj =
+                                fieldMediaDataVideoConfiguration.get(videoProcessor) ?: return
+                            val fieldforceSingleTranscoding =
+                                fieldsMediaDataVideoConfiguration["forceSingleTranscoding"]
+                            fieldforceSingleTranscoding?.setBoolean(mediaDataVideoConfigObj, true)
+                        } catch (e: Throwable) {
+                            logDebug("MediaQuality: forceSingleTranscoding failed: ${e.message}")
+                        }
                     }
                 })
+            }
 
-            Others.propsBoolean[5549] = true
+            Others.propsBoolean[18888] = true
             listOf(594, 12852).forEach { Others.propsInteger[it] = targetEdge }
             listOf(4686, 3654, 3183, 4685).forEach { Others.propsInteger[it] = targetEdge }
             listOf(3755, 3756, 3757, 3758).forEach { Others.propsInteger[it] = targetBitrate }
@@ -126,7 +102,7 @@ class MediaQuality(loader: ClassLoader, preferences: SharedPreferences) :
             val fieldsProcessImageQuality = Unobfuscator.getAllMapFields(processImageQualityClass)
 
             val maxKb = 100 * 1024
-            val targetImageMaxEdge = 12000
+            val targetImageMaxEdge = 4096 // Conservative 4K-class limit for stability
 
             XposedBridge.hookAllConstructors(processImageQualityClass, object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
@@ -148,16 +124,6 @@ class MediaQuality(loader: ClassLoader, preferences: SharedPreferences) :
             Others.propsBoolean[6033] = true
             Others.propsBoolean[9569] = false
             listOf(1576, 2654, 6032, 15748, 3068).forEach { Others.propsInteger[it] = targetImageMaxEdge }
-
-            // Prevent crashes in Media preview
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                XposedHelpers.findAndHookMethod(
-                    RecordingCanvas::class.java,
-                    "throwIfCannotDraw",
-                    Bitmap::class.java,
-                    XC_MethodReplacement.DO_NOTHING
-                )
-            }
         }
     }
 
@@ -198,7 +164,7 @@ class MediaQuality(loader: ClassLoader, preferences: SharedPreferences) :
             })
             legacyQualitySelection = 0
         }
-        prefs.edit(commit = true) {
+        prefs.edit {
             putInt("legacy_quality_selection", legacyQualitySelection)
         }
     }

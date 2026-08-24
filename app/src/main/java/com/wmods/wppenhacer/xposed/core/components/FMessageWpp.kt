@@ -40,29 +40,48 @@ class FMessageWpp(fMessage: Any?) {
         fun initialize(classLoader: ClassLoader) {
             try {
                 TYPE = Unobfuscator.loadFMessageClass(classLoader)
-                UserJid.initialize(classLoader)
-                userJidMethod =
-                    ReflectionUtils.findMethodUsingFilter(TYPE) { method -> method.parameterCount == 0 && method.returnType == UserJid.TYPE_USERJID }
+            } catch (e: Throwable) {
+                XposedBridge.log(e)
+                return
+            }
+
+            runCatching { UserJid.initialize(classLoader) }.onFailure { XposedBridge.log(it) }
+            runCatching {
+                userJidMethod = ReflectionUtils.findMethodUsingFilter(TYPE) { method ->
+                    method.parameterCount == 0 && method.returnType == UserJid.TYPE_USERJID
+                }
+            }.onFailure { XposedBridge.log(it) }
+
+            runCatching {
                 keyMessage = Unobfuscator.loadMessageKeyField(classLoader)
                 Key.TYPE = keyMessage!!.type
-                messageMethod = Unobfuscator.loadNewMessageMethod(classLoader)
-                messageWithMediaMethod = Unobfuscator.loadNewMessageWithMediaMethod(classLoader)
-                getFieldIdMessage = Unobfuscator.loadSetEditMessageField(classLoader)
+            }.onFailure { XposedBridge.log(it) }
+
+            runCatching { messageMethod = Unobfuscator.loadNewMessageMethod(classLoader) }
+                .onFailure {
+                    // Fallback for messageMethod: find 0-arg method in TYPE returning String
+                    messageMethod = TYPE.declaredMethods.firstOrNull { m ->
+                        m.parameterCount == 0 && m.returnType == String::class.java && !java.lang.reflect.Modifier.isStatic(m.modifiers)
+                    }
+                }
+
+            runCatching { messageWithMediaMethod = Unobfuscator.loadNewMessageWithMediaMethod(classLoader) }
+            runCatching { getFieldIdMessage = Unobfuscator.loadSetEditMessageField(classLoader) }
+
+            runCatching {
                 val deviceJidClass = Unobfuscator.findFirstClassUsingName(
                     classLoader,
                     StringMatchType.EndsWith,
                     "jid.DeviceJid"
                 )
-                deviceJidField =
-                    ReflectionUtils.findFieldUsingFilter(TYPE) { field -> field.type == deviceJidClass }
-                mediaTypeField = Unobfuscator.loadMediaTypeField(classLoader)
-                getOriginalMessageKey = Unobfuscator.loadOriginalMessageKey(classLoader)
-                abstractMediaMessageClass = Unobfuscator.loadAbstractMediaMessageClass(classLoader)
-                broadcastField = Unobfuscator.loadBroadcastTagField(classLoader)
-                timestampField = Unobfuscator.loadFmessageTimestampField(classLoader)
-            } catch (e: Exception) {
-                XposedBridge.log(e)
-            }
+                deviceJidField = ReflectionUtils.findFieldUsingFilter(TYPE) { field -> field.type == deviceJidClass }
+            }.onFailure { XposedBridge.log(it) }
+
+            runCatching { mediaTypeField = Unobfuscator.loadMediaTypeField(classLoader) }
+            runCatching { getOriginalMessageKey = Unobfuscator.loadOriginalMessageKey(classLoader) }
+            runCatching { abstractMediaMessageClass = Unobfuscator.loadAbstractMediaMessageClass(classLoader) }
+            runCatching { broadcastField = Unobfuscator.loadBroadcastTagField(classLoader) }
+            runCatching { timestampField = Unobfuscator.loadFmessageTimestampField(classLoader) }
         }
 
         @JvmStatic
@@ -283,9 +302,9 @@ class FMessageWpp(fMessage: Any?) {
          */
         constructor(key: Any?) {
             this.thisObject = key
-            this.messageID = XposedHelpers.getObjectField(key, "A01") as String
-            this.isFromMe = XposedHelpers.getBooleanField(key, "A02")
-            this.remoteJid = UserJid(XposedHelpers.getObjectField(key, "A00"))
+            this.remoteJid = UserJid(try { XposedHelpers.getObjectField(key, "A00") } catch (_: Throwable) { null })
+            this.messageID = (try { XposedHelpers.getObjectField(key, "A01") as? String } catch (_: Throwable) { null }) ?: ""
+            this.isFromMe = try { XposedHelpers.getBooleanField(key, "A02") } catch (_: Throwable) { false }
             val fmessageObj = WppCore.getFMessageFromKey(key)
             if (fmessageObj != null) {
                 this.fMessage = FMessageWpp(fmessageObj)
@@ -294,9 +313,9 @@ class FMessageWpp(fMessage: Any?) {
 
         constructor(key: Any?, fmessage: FMessageWpp) {
             this.thisObject = key
-            this.messageID = XposedHelpers.getObjectField(key, "A01") as String
-            this.isFromMe = XposedHelpers.getBooleanField(key, "A02")
-            this.remoteJid = UserJid(XposedHelpers.getObjectField(key, "A00"))
+            this.remoteJid = UserJid(try { XposedHelpers.getObjectField(key, "A00") } catch (_: Throwable) { null })
+            this.messageID = (try { XposedHelpers.getObjectField(key, "A01") as? String } catch (_: Throwable) { null }) ?: ""
+            this.isFromMe = try { XposedHelpers.getBooleanField(key, "A02") } catch (_: Throwable) { false }
             this.fMessage = fmessage
         }
 
@@ -304,17 +323,26 @@ class FMessageWpp(fMessage: Any?) {
             this.messageID = messageID
             this.isFromMe = isFromMe
             this.remoteJid = remoteJid
-            var keyObj = XposedHelpers.newInstance(TYPE, remoteJid.userJid, messageID, isFromMe)
-            var fmessageObj = WppCore.getFMessageFromKey(keyObj)
-            if (fmessageObj != null) {
-                this.thisObject = keyObj
-                this.fMessage = FMessageWpp(fmessageObj)
-            } else {
-                keyObj = XposedHelpers.newInstance(TYPE, remoteJid.phoneJid, messageID, isFromMe)
-                fmessageObj = WppCore.getFMessageFromKey(keyObj)
-                if (fmessageObj != null) {
-                    this.thisObject = keyObj
-                    this.fMessage = FMessageWpp(fmessageObj)
+            val jidArg = remoteJid.userJid ?: remoteJid.phoneJid
+            if (jidArg != null) {
+                val constructor = TYPE.declaredConstructors.firstOrNull { c ->
+                    c.parameterCount == 3 &&
+                    !c.parameterTypes[0].isPrimitive &&
+                    c.parameterTypes[1] == String::class.java &&
+                    (c.parameterTypes[2] == java.lang.Boolean.TYPE || c.parameterTypes[2] == java.lang.Boolean::class.java)
+                }
+                if (constructor != null) {
+                    try {
+                        constructor.isAccessible = true
+                        val keyObj = constructor.newInstance(jidArg, messageID, isFromMe)
+                        this.thisObject = keyObj
+                        val fmessageObj = WppCore.getFMessageFromKey(keyObj)
+                        if (fmessageObj != null) {
+                            this.fMessage = FMessageWpp(fmessageObj)
+                        }
+                    } catch (e: Throwable) {
+                        XposedBridge.log(e)
+                    }
                 }
             }
         }

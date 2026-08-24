@@ -3,6 +3,7 @@ package com.wmods.wppenhacer.xposed.features.customization
 import android.view.ViewParent
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.res.ColorStateList
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ColorFilter
@@ -80,6 +81,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         private const val TAG_FLOATING_WRAPPER = 0x46_42_41_52 // 'FBAR'
         private const val TAG_BACKDROP = 0x46_42_42_44 // 'FBBD'
         private const val TAG_FAB_OFFSET = 0x46_41_42_4F // 'FABO'
+        private const val TAG_ITEM_INITIALIZED = 0x46_42_49_49 // 'FBII'
 
         // Visual & Physics Parameters
         private const val BAR_HEIGHT_DP = 64f
@@ -189,6 +191,25 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         var isTabsReordered: Boolean = false
         var lastParentChildCount: Int = -1
 
+        var activeColorState: android.content.res.ColorStateList? = null
+        var inactiveColorState: android.content.res.ColorStateList? = null
+
+        // Direct cache from setSelected hook — avoids per-frame drawableState scan
+        var checkedViewRef: java.lang.ref.WeakReference<View>? = null
+
+        // --- Named Spring Physics Constants ---
+        companion object {
+            const val SPRING_CENTER_LERP = 0.50f  // How fast pill center tracks target
+            const val SPRING_WIDTH_LERP  = 0.50f  // How fast pill width tracks target
+            const val SPRING_SCALE_LERP  = 0.42f  // Squash/stretch recovery speed
+            const val SPRING_PRESS_LERP  = 0.38f  // Press progress fade speed
+            const val JELLY_STRETCH_MAX  = 0.40f  // Max horizontal stretch at high velocity
+            const val JELLY_SQUASH_MAX   = 0.20f  // Max vertical squash at high velocity
+            const val JELLY_VEL_SCALE    = 25f    // px/frame threshold for max jelly
+            const val SETTLE_THRESHOLD_X = 0.2f   // px delta below which position is settled
+            const val SETTLE_THRESHOLD_S = 0.01f  // scale delta below which scale is settled
+        }
+
         // --- Spring Physics Model State ---
         var isChoreographerActive: Boolean = false
         var currentCenterX: Float = 0f
@@ -210,7 +231,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
 
         /** Layout sync listener */
         var layoutSync: View.OnLayoutChangeListener? = null
-        
+
         val createdAt: Long = android.os.SystemClock.elapsedRealtime()
     }
 
@@ -527,16 +548,21 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             indicator.top = inset
                             indicator.bottom = (barH - inset).coerceAtLeast(inset + 1f)
 
-                            state.currentCenterX = targetCenter
+                            // Only set target – let Choreographer spring-animate to it smoothly
                             state.targetCenterX = targetCenter
-                            state.currentHalfWidth = targetHalfW
                             state.targetHalfWidth = targetHalfW
 
-                            indicator.centerX = targetCenter
-                            indicator.halfWidth = targetHalfW
-                            indicator.active = true
-                            indicator.invalidateSelf()
-                            bar.invalidate()
+                            if (!indicator.active) {
+                                state.currentCenterX = targetCenter
+                                state.currentHalfWidth = targetHalfW
+                                indicator.centerX = targetCenter
+                                indicator.halfWidth = targetHalfW
+                                indicator.active = true
+                                indicator.invalidateSelf()
+                                bar.invalidate()
+                            } else {
+                                startPillPhysics(bar, state)
+                            }
                         }
                     }
                 }
@@ -548,12 +574,29 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             for (clsName in itemClasses) {
                 try {
                     val itemClass = classLoader.loadClass(clsName)
+                    // Critical: directly drive the pill when an item becomes selected
                     XposedBridge.hookAllMethods(itemClass, "setSelected", object : XC_MethodHook() {
                         override fun afterHookedMethod(param: MethodHookParam) {
                             val view = param.thisObject as? View ?: return
                             if (!isBarOrChild(view)) return
+                            // Always suppress native indicator, regardless of argument type
                             disableNativeActiveIndicator(view)
                             resetAnimations(view)
+                            val isNowSelected = param.args.getOrNull(0) as? Boolean ?: return
+                            if (isNowSelected) {
+                                for ((bar, state) in barStates) {
+                                    val items = state.items
+                                    val idx = items.indexOf(view)
+                                    if (idx >= 0 && !state.isDragging && !state.isScrubbing) {
+                                        state.checkedViewRef = java.lang.ref.WeakReference(view)
+                                        if (idx != state.selectedIndex) {
+                                            state.selectedIndex = idx
+                                            view.post { animateToItem(bar, state, items, idx) }
+                                        }
+                                        break
+                                    }
+                                }
+                            }
                         }
                     })
                     XposedBridge.hookAllMethods(itemClass, "refreshDrawableState", object : XC_MethodHook() {
@@ -580,7 +623,9 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             param.result = null
                         }
                     })
-                } catch (_: Throwable) {}
+                } catch (e: Throwable) {
+                    logDebug("BottomBar: failed to hook item class '$clsName': ${e.message}")
+                }
             }
         } catch (e: Throwable) {
             logDebug("BottomBar item hook failed: ${e.message}")
@@ -1123,52 +1168,151 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
     private fun reorderMenuTabsSafely(bar: ViewGroup, state: BarState) {
         val items = findItemViews(bar)
         if (items.size < 3) return
-        val parent = items[0].parent as? ViewGroup ?: return
+        if (items.first().width == 0) return
 
-        val currentChildren = (0 until parent.childCount).map { parent.getChildAt(it) }
-        val sorted = currentChildren.sortedBy { getTabRank(it) }
-
-        if (currentChildren != sorted && !state.isTabsReordered) {
-            state.isTabsReordered = true
-            parent.post {
-                if (parent.childCount == sorted.size) {
-                    parent.removeAllViews()
-                    for (child in sorted) {
-                        parent.addView(child)
-                    }
-                    parent.requestLayout()
-                    parent.invalidate()
-                    state.items = sorted
-                }
+        val sortedByRank = items.sortedBy { getTabRank(it) }
+        
+        val startLeft = items.minOf { it.left }
+        var currentLeft = startLeft
+        
+        for (child in sortedByRank) {
+            val tx = currentLeft - child.left
+            if (child.translationX != tx.toFloat()) {
+                child.translationX = tx.toFloat()
             }
-        } else if (currentChildren == sorted) {
-            state.isTabsReordered = true
-            state.items = sorted
+            currentLeft += child.width
         }
+        
+        state.isTabsReordered = true
+        state.items = items
+    }
+
+    private fun isViewChecked(view: View): Boolean {
+        // 1. Standard Android drawableState
+        val states = view.drawableState
+        if (states != null && (states.contains(android.R.attr.state_checked) || states.contains(android.R.attr.state_selected))) {
+            return true
+        }
+        if (view.isSelected || view.isActivated) return true
+
+        // 2. XposedHelpers getItemData (WhatsApp-specific)
+        try {
+            val itemData = de.robv.android.xposed.XposedHelpers.callMethod(view, "getItemData")
+            if (itemData != null) {
+                val isChecked = de.robv.android.xposed.XposedHelpers.callMethod(itemData, "isChecked") as? Boolean
+                if (isChecked == true) return true
+            }
+        } catch (_: Throwable) {}
+
+        // 3. Deep reflection — last resort, skip Drawable/primitives to avoid false matches
+        try {
+            val fields = view.javaClass.declaredFields
+            for (field in fields) {
+                field.isAccessible = true
+                val obj = field.get(view) ?: continue
+                if (obj is Int || obj is Boolean || obj is String || obj is android.graphics.drawable.Drawable) continue
+                try {
+                    val m = obj.javaClass.getMethod("isChecked")
+                    if (m.returnType == Boolean::class.java || m.returnType == Boolean::class.javaObjectType) {
+                        if (m.invoke(obj) == true) return true
+                    }
+                } catch (_: Throwable) {}
+            }
+        } catch (_: Throwable) {}
+
+        return false
+    }
+
+    private fun getTrueSelectedIndex(items: List<View>, state: BarState): Int {
+        // Fast path: view cached directly from setSelected hook
+        val cached = state.checkedViewRef?.get()
+        if (cached != null) {
+            val idx = items.indexOf(cached)
+            if (idx >= 0) return idx
+        }
+        // Slow path: scan drawableState of each item
+        for (i in items.indices) {
+            if (isViewChecked(items[i])) return i
+        }
+        return state.selectedIndex
     }
 
     private fun syncSelection(bar: ViewGroup, state: BarState) {
         var items = state.items
         val needsInit = items.isEmpty() || items[0].parent == null
-        if (needsInit) {
+        if (needsInit || bar.childCount != state.lastParentChildCount) {
             reorderMenuTabsSafely(bar, state)
-            items = findItemViews(bar)
-            state.items = items
-            if (items.isNotEmpty()) {
-                items.forEach {
+            items = state.items
+            state.lastParentChildCount = bar.childCount
+        } else {
+            reorderMenuTabsSafely(bar, state)
+            items = state.items
+        }
+        
+        // Disable Material 3 BottomNavigationView touch delegate so that clicks respect translationX
+        if (bar.touchDelegate != null) {
+            bar.touchDelegate = null
+        }
+        
+        if (items.isNotEmpty()) {
+            items.forEach {
+                if (it.getTag(TAG_ITEM_INITIALIZED) != true) {
+                    it.setTag(TAG_ITEM_INITIALIZED, true)
                     clearBackgroundsRecursively(it)
                     disableNativeActiveIndicator(it)
                     morphAndaToSettings(it)
+                } else {
+                    if (it.background != null) it.background = null
                 }
             }
         }
         if (items.isEmpty()) return
 
-        val selected = selectedIndexOf(items)
-        if (selected < 0 || selected == state.selectedIndex) return
+        val selected = getTrueSelectedIndex(items, state)
+        if (selected < 0) return
+        
         if (items[selected].width <= 0) return
+        
+        // Ensure manual tinting so native wrong selection doesn't bleed through
+        val activeColor = resolveBarColor(bar).let { if (isLightColor(it)) Color.BLACK else Color.WHITE }
+        val inactiveColor = Color.argb(128, Color.red(activeColor), Color.green(activeColor), Color.blue(activeColor))
+        
+        val activeColorState = state.activeColorState ?: android.content.res.ColorStateList.valueOf(activeColor).also { state.activeColorState = it }
+        val inactiveColorState = state.inactiveColorState ?: android.content.res.ColorStateList.valueOf(inactiveColor).also { state.inactiveColorState = it }
+        
+        for (i in items.indices) {
+            val view = items[i]
+            val isActive = (i == selected)
+            val targetColorState = if (isActive) activeColorState else inactiveColorState
+            val targetColor = if (isActive) activeColor else inactiveColor
+            
+            // Tint ImageView and TextView manually
+            val group = view as? ViewGroup
+            if (group != null) {
+                for (j in 0 until group.childCount) {
+                    val child = group.getChildAt(j)
+                    if (child is ImageView) {
+                        if (child.imageTintList !== targetColorState) {
+                            child.imageTintList = targetColorState
+                        }
+                    } else if (child is TextView) {
+                        if (child.currentTextColor != targetColor) {
+                            child.setTextColor(targetColor)
+                        }
+                    }
+                }
+            }
+        }
 
-        animateToItem(bar, state, items, selected)
+        // Only animate pill when selected tab actually changes, and not during swipe/drag
+        if (selected != state.selectedIndex && !state.isDragging && !state.isScrubbing) {
+            state.selectedIndex = selected
+            animateToItem(bar, state, items, selected)
+        } else if (state.selectedIndex < 0) {
+            // First time init
+            state.selectedIndex = selected
+            animateToItem(bar, state, items, selected)
+        }
         state.wrapper?.let { wrap ->
             val rv = findRootView(bar) ?: (bar.rootView as? ViewGroup)
             rv?.let { positionFabsAboveBar(it, wrap) }
@@ -1345,13 +1489,14 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         return -1
     }
 
+    /** Posição de [child] no sistema de coordenadas de [bar]. */
     private fun offsetInBar(bar: ViewGroup, child: View): Pair<Int, Int> {
-        var x = child.left
-        var y = child.top
-        var current: View? = child.parent as? View
+        var x = 0
+        var y = 0
+        var current: View? = child
         while (current != null && current !== bar) {
-            x += current.left
-            y += current.top
+            x += (current.left + current.translationX).toInt()
+            y += (current.top + current.translationY).toInt()
             current = current.parent as? View
         }
         return x to y
@@ -1380,16 +1525,22 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                 val deltaSy = state.targetScaleY - state.currentScaleY
                 val deltaP = state.targetPressProgress - state.pressProgress
 
-                state.currentCenterX += deltaX * 0.32f
-                state.currentHalfWidth += deltaW * 0.32f
-                state.currentScaleX += deltaSx * 0.35f
-                state.currentScaleY += deltaSy * 0.35f
-                state.pressProgress += deltaP * 0.30f
+                val velocity = deltaX * BarState.SPRING_CENTER_LERP
+                state.currentCenterX += velocity
+                state.currentHalfWidth += deltaW * BarState.SPRING_WIDTH_LERP
+                state.currentScaleX += deltaSx * BarState.SPRING_SCALE_LERP
+                state.currentScaleY += deltaSy * BarState.SPRING_SCALE_LERP
+                state.pressProgress += deltaP * BarState.SPRING_PRESS_LERP
+
+                // Jelly stretch: pill stretches horizontally and squashes vertically at high velocity
+                val velocityFactor = abs(velocity) / BarState.JELLY_VEL_SCALE
+                val stretchX = 1f + velocityFactor.coerceAtMost(BarState.JELLY_STRETCH_MAX)
+                val squashY = 1f - (velocityFactor * 0.5f).coerceAtMost(BarState.JELLY_SQUASH_MAX)
 
                 indicator.centerX = state.currentCenterX
                 indicator.halfWidth = state.currentHalfWidth
-                indicator.scaleX = state.currentScaleX
-                indicator.scaleY = state.currentScaleY
+                indicator.scaleX = state.currentScaleX * stretchX
+                indicator.scaleY = state.currentScaleY * squashY
                 indicator.pressProgress = state.pressProgress
                 indicator.active = true
                 indicator.invalidateSelf()
@@ -1407,11 +1558,11 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                     item.scaleY += (targetItemScale - item.scaleY) * 0.35f
                 }
 
-                val isSettled = abs(deltaX) < 0.2f &&
-                                abs(deltaW) < 0.2f &&
-                                abs(deltaSx) < 0.01f &&
-                                abs(deltaSy) < 0.01f &&
-                                abs(deltaP) < 0.01f
+                val isSettled = abs(deltaX) < BarState.SETTLE_THRESHOLD_X &&
+                                abs(deltaW) < BarState.SETTLE_THRESHOLD_X &&
+                                abs(deltaSx) < BarState.SETTLE_THRESHOLD_S &&
+                                abs(deltaSy) < BarState.SETTLE_THRESHOLD_S &&
+                                abs(deltaP) < BarState.SETTLE_THRESHOLD_S
 
                 if (!isSettled || state.isScrubbing) {
                     choreographer.postFrameCallback(this)

@@ -39,7 +39,8 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
         const val TAG_SEARCH_ORIGINAL_MARGIN = 0x7E110002
         const val TAG_LARGE_TITLE_VIEW = 0x7E110003
         const val TAG_ACTION_BUTTONS_CONTAINER = 0x7E120099
-        var isToolbarHooked = false
+        const val TAG_CONFIGURED_TYPE = 0x7E12009A
+        val hookedToolbarClasses: MutableSet<Class<*>> = java.util.Collections.synchronizedSet(mutableSetOf<Class<*>>())
     }
 
     private fun getLargeTitleView(header: ViewGroup): TextView? {
@@ -106,10 +107,9 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                             return
                         }
 
-                        // Hook setTitle ke CLASS ASLI toolbar
+                        // Hook setTitle ke CLASS ASLI toolbar (menggunakan Set untuk multi-toolbar support)
                         try {
-                            if (!isToolbarHooked) {
-                                isToolbarHooked = true
+                            if (hookedToolbarClasses.add(toolbar.javaClass)) {
                                 XposedBridge.hookAllMethods(toolbar.javaClass, "setTitle", object : XC_MethodHook() {
                                     override fun beforeHookedMethod(param2: MethodHookParam) {
                                         val t = param2.thisObject as? View ?: return
@@ -126,9 +126,6 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                                         
                                         val title = param2.args.getOrNull(0) as? CharSequence
                                         val rawTitle = title?.toString()?.trim() ?: ""
-                                        // Validasi per-tab: cocokkan ke daftar label yang dikenal (ID & EN)
-                                        // dulu, baru fallback ke "Chats" — supaya Settings/Status/Communities
-                                        // tidak ikut ke-anggap tab Chats hanya gara-gara title kosong.
                                         val newTitle = resolveTabTitle(rawTitle)
 
                                         val largeTitle = getLargeTitleView(header)
@@ -138,13 +135,10 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                                         } else {
                                             param2.args[0] = newTitle
                                         }
-                                        // Semua tab perlu margin — isChats tidak lagi menentukan apakah
-                                        // margin ditambah atau tidak, tapi tetap diteruskan untuk kompatibilitas
                                         val isChats = newTitle == "Chats"
-                                        // Post agar Large Title sudah ter-layout sebelum margin dihitung
                                         header.post {
                                             setContainerMargin(header, isChats)
-                                                        }
+                                        }
                                     }
                                     override fun afterHookedMethod(param2: MethodHookParam) {
                                         val t = param2.thisObject as? ViewGroup ?: return
@@ -163,7 +157,9 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                                     }
                                 })
                             }
-                        } catch (e: Throwable) {}
+                        } catch (e: Throwable) {
+                            logDebug("IosHeader: hook setTitle failed: ${e.message}")
+                        }
 
                         // Sembunyikan logo & title native
                         val logo = toolbar.findViewById<View>(Utils.getID("toolbar_logo", "id"))
@@ -205,19 +201,37 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
 
                         // Navigation icon: titik-tiga bulat khas iOS
                         try {
-                            val setNavIcon = toolbar.javaClass.getMethod("setNavigationIcon", Drawable::class.java)
-                            setNavIcon.invoke(toolbar, IosMenuDrawable(activity, isNight))
+                            val menuDrawable = IosMenuDrawable(activity, isNight)
+                            val setNavIcon = com.wmods.wppenhacer.xposed.utils.ReflectionUtils.findMethodUsingFilter(toolbar.javaClass) { m ->
+                                m.name == "setNavigationIcon" && m.parameterCount == 1 && Drawable::class.java.isAssignableFrom(m.parameterTypes[0])
+                            }
+                            if (setNavIcon != null) {
+                                setNavIcon.isAccessible = true
+                                setNavIcon.invoke(toolbar, menuDrawable)
+                            } else {
+                                XposedHelpers.callMethod(toolbar, "setNavigationIcon", menuDrawable)
+                            }
 
-                            val setNavOnClick = toolbar.javaClass.getMethod(
-                                "setNavigationOnClickListener", View.OnClickListener::class.java
-                            )
-                            setNavOnClick.invoke(toolbar, View.OnClickListener { activity.openOptionsMenu() })
-                        } catch (e: Exception) {}
+                            val setNavOnClick = com.wmods.wppenhacer.xposed.utils.ReflectionUtils.findMethodUsingFilter(toolbar.javaClass) { m ->
+                                m.name == "setNavigationOnClickListener" && m.parameterCount == 1 && View.OnClickListener::class.java.isAssignableFrom(m.parameterTypes[0])
+                            }
+                            val clickListener = View.OnClickListener { activity.openOptionsMenu() }
+                            if (setNavOnClick != null) {
+                                setNavOnClick.isAccessible = true
+                                setNavOnClick.invoke(toolbar, clickListener)
+                            } else {
+                                XposedHelpers.callMethod(toolbar, "setNavigationOnClickListener", clickListener)
+                            }
+                        } catch (e: Throwable) {
+                            logDebug("IosHeader: setNavigationIcon failed: ${e.message}")
+                        }
 
                         // Suntikkan Action Buttons (DND, Ghost, Freeze, Restart, WAE) ke toolbar
                         try {
                             injectActionButtons(activity, toolbar)
-                        } catch (e: Exception) {}
+                        } catch (e: Exception) {
+                            logDebug("IosHeader: injectActionButtons failed: ${e.message}")
+                        }
 
                         // Buat Large Title
                         val largeTitle = TextView(activity).apply {
@@ -342,6 +356,7 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                                             private var cachedHdr: ViewGroup? = null
                                             private var cachedFab: View? = null
                                             private var previousTitle = ""
+                                            private var lastIsChatsTab: Boolean? = null
 
                                             override fun onPreDraw(): Boolean {
                                                 try {
@@ -354,33 +369,30 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                                                         if (previousTitle.isNotEmpty()) {
                                                             try {
                                                                 com.wmods.wppenhacer.xposed.features.customization.IosSwipeMenu.closeSwipeMenu()
-                                                            } catch (e: Exception) {}
+                                                            } catch (_: Exception) {}
                                                         }
                                                         previousTitle = currentTitle
                                                     }
                                                     
                                                     val isChatsTab = currentTitle == "Chats"
+                                                    val tabChanged = lastIsChatsTab != isChatsTab
+                                                    lastIsChatsTab = isChatsTab
                                                     
                                                     try {
                                                         val fakePlus = toolbar.findViewWithTag<ImageView>("fake_plus_btn")
-                                                        if (fakePlus != null && fakePlus.visibility != View.VISIBLE) {
-                                                            fakePlus.visibility = View.VISIBLE
+                                                        if (fakePlus != null) {
+                                                            if (fakePlus.visibility != View.VISIBLE) fakePlus.visibility = View.VISIBLE
+                                                            if (fakePlus.alpha != 1f) fakePlus.alpha = 1f
                                                         }
-                                                    } catch (e: Exception) {}
+                                                    } catch (_: Exception) {}
                                                     
                                                     if (fabId != 0) {
                                                         if (cachedFab == null) cachedFab = activity.findViewById<View>(fabId)
                                                         val fab = cachedFab
                                                         if (fab != null) {
-                                                            if (isChatsTab) {
-                                                                if (fab.scaleX != 0f) fab.scaleX = 0f
-                                                                if (fab.scaleY != 0f) fab.scaleY = 0f
-                                                                if (fab.alpha != 0f) fab.alpha = 0f
-                                                            } else {
-                                                                if (fab.scaleX != 1f) fab.scaleX = 1f
-                                                                if (fab.scaleY != 1f) fab.scaleY = 1f
-                                                                if (fab.alpha != 1f) fab.alpha = 1f
-                                                            }
+                                                            if (fab.scaleX != 0f) fab.scaleX = 0f
+                                                            if (fab.scaleY != 0f) fab.scaleY = 0f
+                                                            if (fab.alpha != 0f) fab.alpha = 0f
                                                             
                                                             val parent = fab.parent as? ViewGroup
                                                             if (parent != null) {
@@ -413,46 +425,54 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                                                         }
                                                     }
                                                     
-                                                    for (j in 0 until amv.childCount) {
+                                                    val currentCount = amv.childCount
+                                                    for (j in 0 until currentCount) {
                                                         val btn = amv.getChildAt(j)
-                                                        var isOverflow = false
-                                                        var isSearch = false
-                                                        var isCamera = false
-                                                        var isPhone = false
-                                                        val btnId = btn.id
-                                                        var isCustomAction = (btnId == com.wmods.wppenhacer.xposed.features.others.MenuHome.ID_DND ||
-                                                                              btnId == com.wmods.wppenhacer.xposed.features.others.MenuHome.ID_GHOST ||
-                                                                              btnId == com.wmods.wppenhacer.xposed.features.others.MenuHome.ID_FREEZE ||
-                                                                              btnId == com.wmods.wppenhacer.xposed.features.others.MenuHome.ID_RESTART ||
-                                                                              btnId == com.wmods.wppenhacer.xposed.features.others.MenuHome.ID_OPEN_WAE)
+                                                        var type = btn.getTag(TAG_CONFIGURED_TYPE) as? Int
+                                                        if (type == null) {
+                                                            var isOverflow = false
+                                                            var isSearch = false
+                                                            var isCamera = false
+                                                            var isPhone = false
+                                                            val btnId = btn.id
+                                                            var isCustomAction = (btnId == com.wmods.wppenhacer.xposed.features.others.MenuHome.ID_DND ||
+                                                                                  btnId == com.wmods.wppenhacer.xposed.features.others.MenuHome.ID_GHOST ||
+                                                                                  btnId == com.wmods.wppenhacer.xposed.features.others.MenuHome.ID_FREEZE ||
+                                                                                  btnId == com.wmods.wppenhacer.xposed.features.others.MenuHome.ID_RESTART ||
+                                                                                  btnId == com.wmods.wppenhacer.xposed.features.others.MenuHome.ID_OPEN_WAE)
 
-                                                        if (overflowId != 0 && btn.id == overflowId) isOverflow = true
-                                                        if (searchId != 0 && btn.id == searchId) isSearch = true
-                                                        if (cameraId != 0 && btn.id == cameraId) isCamera = true
-                                                        if (callId != 0 && btn.id == callId) isPhone = true
-                                                        if (phoneId != 0 && btn.id == phoneId) isPhone = true
-                                                        val desc = btn.contentDescription?.toString() ?: ""
-                                                        if (desc.isNotEmpty()) {
-                                                            if (desc.contains("opsi", ignoreCase = true) || desc.contains("more", ignoreCase = true) || desc.contains("lainnya", ignoreCase = true)) isOverflow = true
-                                                            if (desc.contains("cari", ignoreCase = true) || desc.contains("search", ignoreCase = true)) isSearch = true
-                                                            if (desc.contains("kamera", ignoreCase = true) || desc.contains("camera", ignoreCase = true)) isCamera = true
-                                                            if (desc.contains("panggilan", ignoreCase = true) || desc.contains("call", ignoreCase = true) ||
-                                                                desc.contains("telepon", ignoreCase = true) || desc.contains("phone", ignoreCase = true)) isPhone = true
-                                                            if (desc.contains("dnd", ignoreCase = true) || desc.contains("pesawat", ignoreCase = true) || desc.contains("ganggu", ignoreCase = true) ||
-                                                                desc.contains("ghost", ignoreCase = true) || desc.contains("hantu", ignoreCase = true) ||
-                                                                desc.contains("bekukan", ignoreCase = true) || desc.contains("freeze", ignoreCase = true) || desc.contains("terakhir", ignoreCase = true) ||
-                                                                desc.contains("restart", ignoreCase = true) || desc.contains("ulang", ignoreCase = true) ||
-                                                                desc.contains("enhancer", ignoreCase = true) || desc.contains("wae", ignoreCase = true)) {
-                                                                isCustomAction = true
+                                                            if (overflowId != 0 && btn.id == overflowId) isOverflow = true
+                                                            if (searchId != 0 && btn.id == searchId) isSearch = true
+                                                            if (cameraId != 0 && btn.id == cameraId) isCamera = true
+                                                            if (callId != 0 && btn.id == callId) isPhone = true
+                                                            if (phoneId != 0 && btn.id == phoneId) isPhone = true
+                                                            val desc = btn.contentDescription?.toString() ?: ""
+                                                            if (desc.isNotEmpty()) {
+                                                                if (desc.contains("opsi", ignoreCase = true) || desc.contains("more", ignoreCase = true) || desc.contains("lainnya", ignoreCase = true)) isOverflow = true
+                                                                if (desc.contains("cari", ignoreCase = true) || desc.contains("search", ignoreCase = true)) isSearch = true
+                                                                if (desc.contains("kamera", ignoreCase = true) || desc.contains("camera", ignoreCase = true)) isCamera = true
+                                                                if (desc.contains("panggilan", ignoreCase = true) || desc.contains("call", ignoreCase = true) ||
+                                                                    desc.contains("telepon", ignoreCase = true) || desc.contains("phone", ignoreCase = true)) isPhone = true
+                                                                if (desc.contains("dnd", ignoreCase = true) || desc.contains("pesawat", ignoreCase = true) || desc.contains("ganggu", ignoreCase = true) ||
+                                                                    desc.contains("ghost", ignoreCase = true) || desc.contains("hantu", ignoreCase = true) ||
+                                                                    desc.contains("bekukan", ignoreCase = true) || desc.contains("freeze", ignoreCase = true) || desc.contains("terakhir", ignoreCase = true) ||
+                                                                    desc.contains("restart", ignoreCase = true) || desc.contains("ulang", ignoreCase = true) ||
+                                                                    desc.contains("enhancer", ignoreCase = true) || desc.contains("wae", ignoreCase = true)) {
+                                                                    isCustomAction = true
+                                                                }
                                                             }
+
+                                                            if (!isOverflow && btn.javaClass.name.contains("OverflowMenuButton")) isOverflow = true
+
+                                                            type = if (isOverflow) 1 else if (isCustomAction || isSearch || isCamera || isPhone) 2 else 3
+                                                            btn.setTag(TAG_CONFIGURED_TYPE, type)
                                                         }
 
-                                                        if (!isOverflow && btn.javaClass.name.contains("OverflowMenuButton")) isOverflow = true
-                                                        
-                                                        if (isOverflow && btn is ImageView) {
+                                                        if (type == 1 && btn is ImageView) {
                                                             btn.setImageDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
-                                                            btn.alpha = 0f
-                                                            btn.translationX = - (activity.resources.displayMetrics.widthPixels).toFloat() + (150 * activity.resources.displayMetrics.density)
+                                                            if (btn.alpha != 0f) btn.alpha = 0f
+                                                            val targetTransX = - (activity.resources.displayMetrics.widthPixels).toFloat() + (150 * activity.resources.displayMetrics.density)
+                                                            if (btn.translationX != targetTransX) btn.translationX = targetTransX
                                                             btn.setOnTouchListener(null)
                                                             
                                                             if (btn.visibility != View.VISIBLE) btn.visibility = View.VISIBLE
@@ -462,13 +482,14 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                                                                 params.height = ViewGroup.LayoutParams.WRAP_CONTENT
                                                                 btn.layoutParams = params
                                                             }
-                                                        } else if (isCustomAction || isSearch || isCamera || isPhone) {
-                                                            // Biarkan Custom Actions (DND, Ghost, Freeze, Restart, WAE), Search, Camera & Phone tetap visible
+                                                        } else if (type == 2) {
                                                             if (btn.visibility != View.VISIBLE) btn.visibility = View.VISIBLE
-                                                            btn.alpha = 1f
+                                                            if (btn.alpha != 1f) btn.alpha = 1f
                                                             val density = activity.resources.displayMetrics.density
                                                             val pad = (4 * density).toInt()
-                                                            btn.setPadding(pad, btn.paddingTop, pad, btn.paddingBottom)
+                                                            if (btn.paddingLeft != pad || btn.paddingRight != pad) {
+                                                                btn.setPadding(pad, btn.paddingTop, pad, btn.paddingBottom)
+                                                            }
                                                             val params = btn.layoutParams
                                                             if (params != null && (params.width == 0 || params.height == 0)) {
                                                                 params.width = ViewGroup.LayoutParams.WRAP_CONTENT
@@ -629,6 +650,12 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                 
                 // 1b. Biarkan Action Buttons Container (DND, Ghost, Freeze, Restart, WAE)
                 if (child.id == TAG_ACTION_BUTTONS_CONTAINER || child.tag == TAG_ACTION_BUTTONS_CONTAINER) {
+                    if (child.visibility != View.VISIBLE) child.visibility = View.VISIBLE
+                    continue
+                }
+
+                // 1c. Biarkan fake_plus_btn (tombol + buatan kita)
+                if (child.tag == "fake_plus_btn" || (child is ImageView && child.drawable is IosPlusDrawable)) {
                     if (child.visibility != View.VISIBLE) child.visibility = View.VISIBLE
                     continue
                 }
@@ -926,15 +953,19 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
         
 
         // Tempelkan container tepat di sebelah kiri ActionMenuView (kamera)
+        var cachedAmvForContainer: ViewGroup? = null
+        var cachedFakePlus: ImageView? = null
         container.viewTreeObserver.addOnPreDrawListener {
-            var amv: ViewGroup? = null
-            for (i in 0 until toolbar.childCount) {
-                val child = toolbar.getChildAt(i)
-                if (child.javaClass.name.contains("ActionMenuView")) {
-                    amv = child as ViewGroup
-                    break
+            if (cachedAmvForContainer == null || cachedAmvForContainer?.parent !== toolbar) {
+                for (i in 0 until toolbar.childCount) {
+                    val child = toolbar.getChildAt(i)
+                    if (child.javaClass.name.contains("ActionMenuView")) {
+                        cachedAmvForContainer = child as ViewGroup
+                        break
+                    }
                 }
             }
+            val amv = cachedAmvForContainer
             if (amv != null && amv.visibility == View.VISIBLE && amv.width > 0 && container.width > 0) {
                 val amvLeft = amv.left + amv.translationX
                 val targetTranslation = amvLeft - container.left - container.width
@@ -942,7 +973,10 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                     container.translationX = targetTranslation
                 }
                 
-                val fakePlus = toolbar.findViewWithTag<ImageView>("fake_plus_btn")
+                if (cachedFakePlus == null || cachedFakePlus?.parent !== toolbar) {
+                    cachedFakePlus = toolbar.findViewWithTag<ImageView>("fake_plus_btn")
+                }
+                val fakePlus = cachedFakePlus
                 if (fakePlus != null) {
                     val targetPlusX = amv.right - fakePlus.right.toFloat()
                     if (Math.abs(fakePlus.translationX - targetPlusX) > 0.5f) {

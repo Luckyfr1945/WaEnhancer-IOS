@@ -54,6 +54,14 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
         var lastSwipeTime = 0L
     }
 
+    private data class CachedChatState(
+        val isPinned: Boolean,
+        val isMuted: Boolean,
+        val isUnread: Boolean,
+        val timestamp: Long
+    )
+    private val chatStateCache = java.util.concurrent.ConcurrentHashMap<String, CachedChatState>()
+
     private val bgExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "IosSwipeMenu-Worker").apply {
             isDaemon = true
@@ -234,11 +242,21 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
     }
 
     private fun getChatState(row: View): Triple<Boolean, Boolean, Boolean> {
+        val jid = getJidStr(row)
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (jid != null) {
+            chatStateCache[jid]?.let { cached ->
+                if (now - cached.timestamp < 1500L) {
+                    return Triple(cached.isPinned, cached.isMuted, cached.isUnread)
+                }
+            }
+        }
+
         var isPinned = false
         var isMuted = false
         var isUnread = false
 
-        // 1. Cek accessibility contentDescription pada row dan child-nya
+        // 1. Cek accessibility contentDescription pada row dan child-nya (fast memory check)
         val rowDesc = row.contentDescription?.toString()?.lowercase() ?: ""
         if (rowDesc.contains("belum dibaca") || rowDesc.contains("unread") || rowDesc.contains("tidak dibaca")) {
             isUnread = true
@@ -267,25 +285,7 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
             }
         } catch (_: Exception) {}
 
-        // 3. Cek dari Objek Percakapan (Conversation Object via Reflection)
-        val conversationObj = try {
-            val pos = row.getTag(TAG_KEY_POSITION) as? Int
-            if (pos != null && chatAdapter != null) chatAdapter?.getItem(pos) else null
-        } catch (_: Exception) { null }
-            ?: row.getTag(TAG_KEY_CONVERSATION)
-            ?: row.tag
-
-        if (conversationObj != null) {
-            val objResult = readStateFromObject(conversationObj)
-            if (objResult != null) {
-                isPinned = isPinned || objResult.first
-                isMuted = isMuted || objResult.second
-                isUnread = isUnread || objResult.third
-            }
-        }
-
-        // 4. Cek SQLite (chatsettings.db & msgstore.db)
-        val jid = getJidStr(row)
+        // 3. Cek SQLite (chatsettings.db & msgstore.db) jika JID ada
         if (jid != null) {
             val contextFallback = row.context
 
@@ -334,6 +334,32 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
                     }
                 }
             } catch (_: Throwable) {}
+        }
+
+        // 4. Fallback: Cek dari Objek Percakapan (Conversation Object via Reflection) jika masih ada field yang belum terdeteksi
+        if (!isPinned || !isMuted || !isUnread) {
+            val conversationObj = try {
+                val pos = row.getTag(TAG_KEY_POSITION) as? Int
+                if (pos != null && chatAdapter != null) chatAdapter?.getItem(pos) else null
+            } catch (_: Exception) { null }
+                ?: row.getTag(TAG_KEY_CONVERSATION)
+                ?: row.tag
+
+            if (conversationObj != null) {
+                val objResult = readStateFromObject(conversationObj)
+                if (objResult != null) {
+                    isPinned = isPinned || objResult.first
+                    isMuted = isMuted || objResult.second
+                    isUnread = isUnread || objResult.third
+                }
+            }
+        }
+
+        if (jid != null) {
+            if (chatStateCache.size > 256) {
+                chatStateCache.entries.removeIf { now - it.value.timestamp >= 1500L }
+            }
+            chatStateCache[jid] = CachedChatState(isPinned, isMuted, isUnread, now)
         }
 
         return Triple(isPinned, isMuted, isUnread)
@@ -482,8 +508,11 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
 
     private fun triggerProgrammaticLongClick(row: View) {
         allowProgrammaticLongClick = true
-        forceLongClickDeep(row)
-        allowProgrammaticLongClick = false
+        try {
+            forceLongClickDeep(row)
+        } finally {
+            allowProgrammaticLongClick = false
+        }
     }
 
     private inner class IOSMenuDialog(ctx: android.content.Context) :
@@ -677,13 +706,23 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
 
     private fun executeDirectAction(row: View, action: String) {
         logDebug("IosSwipeMenu: executeDirectAction: $action")
+        val jid = getJidStr(row)
+        if (jid != null) {
+            chatStateCache.remove(jid)
+        }
         try {
             allowProgrammaticLongClick = true
-            forceLongClickDeep(row)
-            allowProgrammaticLongClick = false
+            try {
+                forceLongClickDeep(row)
+            } finally {
+                allowProgrammaticLongClick = false
+            }
 
             fun tryAction(attempt: Int) {
                 val success = silentToolbarAction(row, action)
+                if (success && jid != null) {
+                    chatStateCache.remove(jid)
+                }
                 if (!success && attempt < 10) {
                     row.postDelayed({ tryAction(attempt + 1) }, 60)
                 }
@@ -972,9 +1011,12 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
                 val itemLongClickListener = adapterView.onItemLongClickListener
                 if (itemLongClickListener != null && pos >= 0) {
                     allowProgrammaticLongClick = true
-                    val handled = itemLongClickListener.onItemLongClick(adapterView, view, pos, id)
-                    allowProgrammaticLongClick = false
-                    if (handled) return true
+                    try {
+                        val handled = itemLongClickListener.onItemLongClick(adapterView, view, pos, id)
+                        if (handled) return true
+                    } finally {
+                        allowProgrammaticLongClick = false
+                    }
                 }
             }
 
@@ -1071,7 +1113,7 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
         return null
     }
 
-    private val archivedStatusCache = java.util.WeakHashMap<android.app.Activity, Pair<Long, Boolean>>()
+    private val archivedStatusCache = java.util.Collections.synchronizedMap(java.util.WeakHashMap<android.app.Activity, Pair<Long, Boolean>>())
 
     private fun isInArchivedView(row: View): Boolean {
         try {
@@ -1217,8 +1259,11 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     if (allowProgrammaticLongClick) return
                     val view = param.thisObject as? View ?: return
-                    if (view.getTag(TAG_KEY_CONVERSATION) != null || view.getTag(TAG_KEY_POSITION) != null) {
-                        param.result = true
+                    val parent = view.parent
+                    if (parent is ViewGroup && verifiedChatContainers.contains(parent)) {
+                        if (view.getTag(TAG_KEY_CONVERSATION) != null || view.getTag(TAG_KEY_POSITION) != null) {
+                            param.result = true
+                        }
                     }
                 }
             })

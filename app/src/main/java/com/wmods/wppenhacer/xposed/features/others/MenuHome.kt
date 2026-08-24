@@ -40,7 +40,8 @@ class MenuHome(classLoader: ClassLoader, preferences:SharedPreferences) :
     override fun doHook() {
         hookMenu()
         val iosHeader = prefs.getBoolean("ios_header", false)
-        val action = prefs.getBoolean("buttonaction", true) || iosHeader
+        if (iosHeader) return
+        val action = prefs.getBoolean("buttonaction", true)
 
         // restart button
         addMenuItem { menu, activity ->
@@ -91,7 +92,8 @@ class MenuHome(classLoader: ClassLoader, preferences:SharedPreferences) :
     private fun insertOpenWae(menu: Menu, activity: Activity, showAsAction: Boolean) {
         val waeMenu = prefs.getBoolean("open_wae", true)
         if (!waeMenu) return
-        val itemMenu = menu.add(0, ID_OPEN_WAE, -6, " " + activity.getString(R.string.app_name))
+        menu.removeItem(ID_OPEN_WAE)
+        val itemMenu = menu.add(0, ID_OPEN_WAE, 0, " " + activity.getString(R.string.app_name))
         itemMenu.contentDescription = "Open WaEnhancer"
         val iconDraw = DesignUtils.getDrawableByName("ic_settings")
         if (iconDraw != null) {
@@ -124,7 +126,8 @@ class MenuHome(classLoader: ClassLoader, preferences:SharedPreferences) :
             }
             return
         }
-        val itemMenu = menu.add(0, ID_GHOST, -9, R.string.ghost_mode)
+        menu.removeItem(ID_GHOST)
+        val itemMenu = menu.add(0, ID_GHOST, 0, R.string.ghost_mode)
         itemMenu.contentDescription = "Ghost Mode"
 
         val iconDraw =
@@ -161,7 +164,8 @@ class MenuHome(classLoader: ClassLoader, preferences:SharedPreferences) :
         if (iconDraw != null) {
             iconDraw.setTint(if (showAsAction) DesignUtils.getPrimaryTextColor() else -0x796960)
         }
-        val itemMenu = menu.add(0, ID_RESTART, -7, R.string.restart_whatsapp).setIcon(iconDraw)
+        menu.removeItem(ID_RESTART)
+        val itemMenu = menu.add(0, ID_RESTART, 0, R.string.restart_whatsapp).setIcon(iconDraw)
         itemMenu.contentDescription = "Restart WhatsApp"
         if (showAsAction) {
             itemMenu.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
@@ -182,7 +186,8 @@ class MenuHome(classLoader: ClassLoader, preferences:SharedPreferences) :
             }
             return
         }
-        val item = menu.add(0, ID_DND, -10, activity.getString(R.string.dnd_mode_title))
+        menu.removeItem(ID_DND)
+        val item = menu.add(0, ID_DND, 0, activity.getString(R.string.dnd_mode_title))
         item.contentDescription = "DND Mode Pesawat"
         val drawable = Utils.application
             .getDrawable(if (dndmode) R.drawable.airplane_enabled else R.drawable.airplane_disabled)
@@ -222,7 +227,8 @@ class MenuHome(classLoader: ClassLoader, preferences:SharedPreferences) :
             return
         }
 
-        val item = menu.add(0, ID_FREEZE, -8, activity.getString(R.string.freezelastseen_title))
+        menu.removeItem(ID_FREEZE)
+        val item = menu.add(0, ID_FREEZE, 0, activity.getString(R.string.freezelastseen_title))
         item.contentDescription = "Freeze Last Seen"
         val drawable = Utils.application
             .getDrawable(if (freezelastseen) R.drawable.eye_disabled else R.drawable.eye_enabled)

@@ -142,6 +142,9 @@ private fun handleHideSeenChanged(
             val map = if (type == MessageHistoryStore.ReceiptType.READ) cache.readStatus else cache.playedStatus
             map[messageId] = viewed
         }
+        // Handle WhatsApp LID (LidUserJid) vs PN (PhoneUserJid) aliasing:
+        // Message IDs are globally unique stanza IDs. If the receipt comes with LID
+        // while the cache was loaded with Phone number (or vice-versa), update any matching entry.
         for ((_, v) in jidCache.snapshot()) {
             val map = if (type == MessageHistoryStore.ReceiptType.READ) v.readStatus else v.playedStatus
             if (map.containsKey(messageId)) {
@@ -197,10 +200,12 @@ private fun loadStatusMap(jid: String, type: MessageHistoryStore.ReceiptType): H
     return map
 }
 
-
 private fun requestRefresh() {
-    mainHandler.post {
-        ConversationItemListener.notifyDataSetChanged()
+    if (refreshScheduled.compareAndSet(false, true)) {
+        mainHandler.postDelayed({
+            refreshScheduled.set(false)
+            ConversationItemListener.notifyDataSetChanged()
+        }, REFRESH_DEBOUNCE_MS)
     }
 }
 

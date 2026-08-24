@@ -2,4 +2,6 @@
 <resources>
     <item name="tag_floating_wrapper" type="id"/>
     <item name="status_replay_tag" type="id"/>
+    <item name="status_replay_original_text" type="id"/>
+    <item name="status_replay_applied_jid" type="id"/>
 </resources>

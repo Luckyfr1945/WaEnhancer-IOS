@@ -7,6 +7,7 @@ import android.database.sqlite.SQLiteOpenHelper
 import com.wmods.wppenhacer.xposed.utils.Utils
 import org.json.JSONArray
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
 
 class StatusReplayStore private constructor(context: Context) {
 
@@ -19,7 +20,7 @@ class StatusReplayStore private constructor(context: Context) {
         val history: List<Long>
     )
 
-    private class DbHelper(context: Context) : SQLiteOpenHelper(context, "status_replays.db", null, 1) {
+    private class DbHelper(context: Context) : SQLiteOpenHelper(context, "status_replays.db", null, 2) {
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL(
                 """
@@ -39,48 +40,44 @@ class StatusReplayStore private constructor(context: Context) {
         }
 
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+            // CATATAN: ini menghapus seluruh histori replay saat schema berubah.
+            // Cukup aman untuk data cache non-kritis seperti ini; kalau nanti histori
+            // dianggap penting untuk dipertahankan lintas update, ganti dengan ALTER TABLE bertahap.
             db.execSQL("DROP TABLE IF EXISTS status_replays")
             onCreate(db)
         }
     }
 
     private val dbHelper = DbHelper(context.applicationContext)
-    private val memoryCache = ConcurrentHashMap<String, ReplayRecord>()
 
-    private fun cacheKey(statusId: String, viewerJid: String): String = "${statusId}_${viewerJid}"
+    // Key: Pair(statusId, viewerJid) — pakai Pair, bukan string concat, supaya
+    // tidak ada risiko tabrakan key kalau delimiter kebetulan muncul di salah satu nilai.
+    private val memoryCache = ConcurrentHashMap<Pair<String, String>, ReplayRecord>()
+    private val preloadedStatusIds = ConcurrentHashMap.newKeySet<String>()
+    private val ioExecutor = Executors.newSingleThreadExecutor()
 
     /**
-     * Records a status view event.
-     * Debounced by 5000ms (5 seconds) to prevent duplicate receipt packets from inflating the count.
-     * Returns the updated ReplayRecord.
+     * Mencatat satu event "seen" status. Debounce 15 detik supaya paket receipt duplikat
+     * dari WhatsApp tidak menggelembungkan hitungan.
      */
     @Synchronized
     fun recordStatusView(statusId: String, viewerJid: String, timestamp: Long = System.currentTimeMillis()): ReplayRecord {
-        val key = cacheKey(statusId, viewerJid)
-        val existing = getReplayRecord(statusId, viewerJid)
+        val key = statusId to viewerJid
+        val existing = memoryCache[key] ?: readFromDb(statusId, viewerJid)
 
         val newRecord: ReplayRecord
         if (existing == null) {
-            val history = listOf(timestamp)
-            newRecord = ReplayRecord(
-                statusId = statusId,
-                viewerJid = viewerJid,
-                viewCount = 1,
-                firstSeen = timestamp,
-                lastSeen = timestamp,
-                history = history
-            )
+            newRecord = ReplayRecord(statusId, viewerJid, 1, timestamp, timestamp, listOf(timestamp))
             insertRecord(newRecord)
         } else {
-            // Debounce: if receipt arrived within 5 seconds of the last recorded view, don't increment
-            if (timestamp - existing.lastSeen < 5000L) {
+            if (timestamp - existing.lastSeen < 15_000L) {
+                memoryCache[key] = existing
                 return existing
             }
-            val newHistory = existing.history + timestamp
             newRecord = existing.copy(
                 viewCount = existing.viewCount + 1,
                 lastSeen = timestamp,
-                history = newHistory
+                history = existing.history + timestamp
             )
             updateRecord(newRecord)
         }
@@ -89,31 +86,14 @@ class StatusReplayStore private constructor(context: Context) {
         return newRecord
     }
 
-    fun getReplayRecord(statusId: String, viewerJid: String): ReplayRecord? {
-        val key = cacheKey(statusId, viewerJid)
-        memoryCache[key]?.let { return it }
-
-        return try {
-            val db = dbHelper.readableDatabase
-            db.rawQuery(
-                "SELECT status_id, viewer_jid, view_count, first_seen, last_seen, history_json FROM status_replays WHERE status_id = ? AND viewer_jid = ?",
-                arrayOf(statusId, viewerJid)
-            ).use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val record = cursorToRecord(cursor)
-                    memoryCache[key] = record
-                    record
-                } else {
-                    null
-                }
-            }
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    fun getAllReplaysForStatus(statusId: String): Map<String, ReplayRecord> {
-        val result = mutableMapOf<String, ReplayRecord>()
+    /**
+     * Muat semua record untuk satu statusId ke memory cache dalam SATU query.
+     * WAJIB dipanggil di background thread (lihat preloadStatusReplaysAsync),
+     * idealnya begitu status aktif berganti — SEBELUM viewer list dirender.
+     * Idempotent: query kedua dst untuk statusId yang sama langsung no-op.
+     */
+    fun preloadStatusReplays(statusId: String) {
+        if (!preloadedStatusIds.add(statusId)) return
         try {
             val db = dbHelper.readableDatabase
             db.rawQuery(
@@ -122,17 +102,60 @@ class StatusReplayStore private constructor(context: Context) {
             ).use { cursor ->
                 while (cursor.moveToNext()) {
                     val record = cursorToRecord(cursor)
-                    result[record.viewerJid] = record
-                    memoryCache[cacheKey(record.statusId, record.viewerJid)] = record
+                    memoryCache[record.statusId to record.viewerJid] = record
                 }
             }
-        } catch (_: Exception) {}
-        return result
+        } catch (_: Exception) {
+            preloadedStatusIds.remove(statusId) // biar dicoba ulang kalau gagal
+        }
     }
 
-    fun getReplayCount(statusId: String, viewerJid: String): Int {
-        return getReplayRecord(statusId, viewerJid)?.viewCount ?: 0
+    fun preloadStatusReplaysAsync(statusId: String) {
+        ioExecutor.execute { preloadStatusReplays(statusId) }
     }
+
+    /**
+     * Lookup CACHE-ONLY — aman dipanggil dari UI thread (mis. di onBindViewHolder).
+     * Tidak pernah menyentuh SQLite. Pastikan preloadStatusReplaysAsync() sudah
+     * dipanggil untuk statusId ini sebelumnya.
+     */
+    fun getReplayRecordCached(statusId: String, viewerJid: String): ReplayRecord? {
+        memoryCache[statusId to viewerJid]?.let { return it }
+        val userPart = viewerJid.substringBefore("@")
+        return memoryCache.entries.firstOrNull { (k, _) ->
+            k.first == statusId && (k.second == viewerJid || k.second.substringBefore("@") == userPart)
+        }?.value
+    }
+
+    /**
+     * Lookup dengan fallback ke SQLite kalau cache miss. JANGAN dipakai di loop bind UI —
+     * gunakan getReplayRecordCached() untuk itu. Cocok untuk pemanggilan sesekali
+     * (mis. dari dialog riwayat).
+     */
+    fun getReplayRecord(statusId: String, viewerJid: String): ReplayRecord? {
+        memoryCache[statusId to viewerJid]?.let { return it }
+        return readFromDb(statusId, viewerJid)?.also { memoryCache[statusId to viewerJid] = it }
+    }
+
+    private fun readFromDb(statusId: String, viewerJid: String): ReplayRecord? {
+        return try {
+            val db = dbHelper.readableDatabase
+            db.rawQuery(
+                "SELECT status_id, viewer_jid, view_count, first_seen, last_seen, history_json FROM status_replays WHERE status_id = ? AND viewer_jid = ?",
+                arrayOf(statusId, viewerJid)
+            ).use { cursor -> if (cursor.moveToFirst()) cursorToRecord(cursor) else null }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun getAllReplaysForStatus(statusId: String): Map<String, ReplayRecord> {
+        preloadStatusReplays(statusId) // idempotent, pastikan cache terisi dulu
+        return memoryCache.filterKeys { it.first == statusId }.mapKeys { it.key.second }
+    }
+
+    fun getReplayCount(statusId: String, viewerJid: String): Int =
+        getReplayRecordCached(statusId, viewerJid)?.viewCount ?: 0
 
     private fun insertRecord(record: ReplayRecord) {
         try {
@@ -187,12 +210,14 @@ class StatusReplayStore private constructor(context: Context) {
         return ReplayRecord(statusId, viewerJid, viewCount, firstSeen, lastSeen, historyList)
     }
 
-    fun pruneOldRecords(maxAgeMillis: Long = 72 * 60 * 60 * 1000L) { // 3 days
+    fun pruneOldRecords(maxAgeMillis: Long = 72 * 60 * 60 * 1000L) { // 3 hari
         try {
             val cutoff = System.currentTimeMillis() - maxAgeMillis
             val db = dbHelper.writableDatabase
             db.delete("status_replays", "last_seen < ?", arrayOf(cutoff.toString()))
-            memoryCache.clear()
+            // Hapus dari cache HANYA entri yang memang dipangkas, jangan nuke semuanya —
+            // supaya status lain yang masih aktif tidak perlu preload ulang dari nol.
+            memoryCache.entries.removeIf { it.value.lastSeen < cutoff }
         } catch (_: Exception) {}
     }
 

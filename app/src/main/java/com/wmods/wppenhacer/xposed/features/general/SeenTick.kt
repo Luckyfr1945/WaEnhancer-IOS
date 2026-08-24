@@ -8,7 +8,6 @@ import android.graphics.PorterDuff
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
-import android.util.Pair
 import android.view.Gravity
 import android.view.Menu
 import android.view.MenuItem
@@ -50,13 +49,15 @@ import java.util.concurrent.ConcurrentHashMap
 
 class SeenTick(
     loader: ClassLoader,
-    preferences:SharedPreferences
+    preferences: SharedPreferences
 ) : Feature(loader, preferences) {
 
     private val messageMap = ConcurrentHashMap<String, WeakReference<ImageView>>()
+    private val viewStatusFieldMap = ConcurrentHashMap<Class<*>, Field?>()
     val scope = CoroutineScope(Dispatchers.Default + SupervisorJob() + WaeCoroutineExceptionHandler)
 
     companion object {
+        @Volatile
         var instance: SeenTick? = null
 
         fun triggerBlueOnReply(userJid: FMessageWpp.UserJid) {
@@ -66,20 +67,32 @@ class SeenTick(
             }
         }
 
+        @Volatile
         private var mWaJobManager: Any? = null
+        @Volatile
         private var mSendReadClass: Class<*>? = null
+        @Volatile
         private var waJobManagerMethod: Method? = null
 
+        @Volatile
         private var cachedSeenDrawable: Drawable? = null
+        @Volatile
         private var cachedUnseenDrawable: Drawable? = null
 
+        @Volatile
         private var sendJobConstructor: Constructor<*>? = null
+        @Volatile
         private var sendJobParamTypes: Array<Class<*>>? = null
-        private var sendJobJidIndexes: List<Pair<Int, Class<*>>>? = null
+        @Volatile
+        private var sendJobJidIndices: List<Int> = emptyList()
+        @Volatile
         private var sendJobMessageIdIndex: Int = -1
 
+        @Volatile
         private var sendPlayedClass: Class<*>? = null
+        @Volatile
         private var sendPlayedConstructor: Constructor<*>? = null
+        @Volatile
         private var participantInfoConstructor: Constructor<*>? = null
 
         fun setSeenButton(buttonImage: ImageView, isSeen: Boolean) {
@@ -137,6 +150,9 @@ class SeenTick(
 
     private fun registerMessageView(messageId: String?, view: ImageView?) {
         if (messageId == null || view == null) return
+        if (messageMap.size > 200) {
+            messageMap.entries.removeIf { it.value.get() == null }
+        }
         messageMap[messageId] = WeakReference(view)
     }
 
@@ -155,22 +171,36 @@ class SeenTick(
 
         try {
             mSendReadClass?.let { cls ->
-                sendJobConstructor = cls.constructors.firstOrNull()
-                sendJobConstructor?.let { constr ->
-                    val paramTypes = constr.parameterTypes
+                val candidates = cls.declaredConstructors.filter { c ->
+                    c.parameterTypes.any { it == Array<String>::class.java }
+                }
+                val constr = candidates.maxByOrNull { it.parameterCount }
+                    ?: cls.declaredConstructors.maxByOrNull { it.parameterCount }
+                    ?: cls.declaredConstructors.firstOrNull()
+
+                constr?.let { c ->
+                    c.isAccessible = true
+                    sendJobConstructor = c
+                    val paramTypes = c.parameterTypes
                     sendJobParamTypes = paramTypes
 
-                    @Suppress("UNCHECKED_CAST")
-                    sendJobJidIndexes = ReflectionUtils.findClassesOfType(
-                        paramTypes as Array<Class<*>>,
-                        FMessageWpp.UserJid.TYPE_JID
-                    ) as List<Pair<Int, Class<*>>>
+                    val jidClass = FMessageWpp.UserJid.TYPE_JID
+                    val jidIndices = mutableListOf<Int>()
+                    var msgIdIdx = -1
 
-                    @Suppress("UNCHECKED_CAST")
-                    sendJobMessageIdIndex = ReflectionUtils.findIndexOfType(
-                        paramTypes as Array<Any?>,
-                        Array<String>::class.java
-                    )
+                    for (i in paramTypes.indices) {
+                        val p = paramTypes[i]
+                        if (p == Array<String>::class.java) {
+                            msgIdIdx = i
+                        } else if (jidClass != null && jidClass.isAssignableFrom(p)) {
+                            jidIndices.add(i)
+                        } else if (p.name.contains("jid", ignoreCase = true)) {
+                            jidIndices.add(i)
+                        }
+                    }
+
+                    sendJobJidIndices = jidIndices
+                    sendJobMessageIdIndex = msgIdIdx
                 }
             }
 
@@ -180,12 +210,24 @@ class SeenTick(
                 "SendPlayedReceiptJob"
             )
             sendPlayedClass?.let { cls ->
-                sendPlayedConstructor = cls.declaredConstructors.firstOrNull()
-                val classParticipantInfo = sendPlayedConstructor?.parameterTypes?.firstOrNull()
-                participantInfoConstructor =
-                    classParticipantInfo?.declaredConstructors?.firstOrNull()
+                val constr = cls.declaredConstructors.maxByOrNull { it.parameterCount }
+                    ?: cls.declaredConstructors.firstOrNull()
+                constr?.isAccessible = true
+                sendPlayedConstructor = constr
+
+                val classParticipantInfo = constr?.parameterTypes?.firstOrNull()
+                classParticipantInfo?.let { pCls ->
+                    val pConstr = pCls.declaredConstructors.filter { c ->
+                        c.parameterTypes.any { it == Array<String>::class.java }
+                    }.maxByOrNull { it.parameterCount }
+                        ?: pCls.declaredConstructors.maxByOrNull { it.parameterCount }
+                        ?: pCls.declaredConstructors.firstOrNull()
+
+                    pConstr?.isAccessible = true
+                    participantInfoConstructor = pConstr
+                }
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             logDebug("Error caching reflection: ${e.message}")
         }
 
@@ -220,13 +262,11 @@ class SeenTick(
                 override fun afterHookedMethod(param: MethodHookParam) {
                     if (!prefs.getBoolean("hidestatusview", false)) return
 
-                    if (viewStatusField == null) {
-                        viewStatusField =
-                            ReflectionUtils.findFieldUsingFilter(param.thisObject.javaClass) { f ->
-                                f.type == ifaceKeyStatusItemClass
-                            }
-                    }
-                    val ifaceStatusItem = viewStatusField.get(param.thisObject)
+                    val ifaceStatusItem = viewStatusFieldMap.computeIfAbsent(param.thisObject.javaClass) { cls ->
+                        ReflectionUtils.findFieldUsingFilter(cls) { f ->
+                            f.type == ifaceKeyStatusItemClass
+                        }
+                    }?.get(param.thisObject)
                     val fstatus = StatusItemWpp.from(ifaceStatusItem)
 
                     if (fstatus == null) {
@@ -632,40 +672,72 @@ class SeenTick(
         }
     }
 
+    private fun createSendReadReceiptJob(
+        chatJid: Any?,
+        fromJid: Any?,
+        participantJid: Any?,
+        messageIds: Array<String>,
+        isGroup: Boolean
+    ): Any? {
+        val constr = sendJobConstructor ?: return null
+        val paramTypes = sendJobParamTypes ?: return null
+        if (messageIds.isEmpty() || sendJobMessageIdIndex == -1) return null
+
+        val args = arrayOfNulls<Any>(paramTypes.size)
+
+        // 1. Isi default primitives secara realistis
+        for (i in paramTypes.indices) {
+            when (paramTypes[i]) {
+                java.lang.Long.TYPE, java.lang.Long::class.java -> args[i] = System.currentTimeMillis()
+                java.lang.Integer.TYPE, java.lang.Integer::class.java -> args[i] = 0
+                java.lang.Boolean.TYPE, java.lang.Boolean::class.java -> args[i] = isGroup
+                else -> args[i] = null
+            }
+        }
+
+        // 2. Set messageIds ke slot yang tepat
+        if (sendJobMessageIdIndex in args.indices) {
+            args[sendJobMessageIdIndex] = messageIds
+        }
+
+        // 3. Mapping Jid secara presisi
+        val jids = sendJobJidIndices
+        if (jids.isNotEmpty()) {
+            if (jids.size >= 1) args[jids[0]] = chatJid
+            if (jids.size >= 2) args[jids[1]] = fromJid ?: chatJid
+            if (jids.size >= 3) args[jids[2]] = participantJid
+        }
+
+        return try {
+            constr.newInstance(*args)
+        } catch (e: Throwable) {
+            logDebug("Error creating SendReadReceiptJob: ${e.message}")
+            null
+        }
+    }
+
     private fun sendBlueTickMsgDirect(userJid: FMessageWpp.UserJid, messageIds: Array<String>) {
         if (messageIds.isEmpty()) return
-        val constr = sendJobConstructor ?: return
-        val jidIndexes = sendJobJidIndexes ?: return
-        val paramTypes = sendJobParamTypes ?: return
-        if (jidIndexes.size < 2 || sendJobMessageIdIndex == -1) return
-
+        val targetJid = userJid.phoneJid ?: userJid.userJid ?: return
         try {
-            @Suppress("UNCHECKED_CAST")
-            val args = ReflectionUtils.initArray(paramTypes)
-            args[jidIndexes[0].first] = userJid.userJid
-            args[jidIndexes[1].first] = null
-            args[sendJobMessageIdIndex] = messageIds
+            val sendJob = createSendReadReceiptJob(
+                chatJid = targetJid,
+                fromJid = targetJid,
+                participantJid = null,
+                messageIds = messageIds,
+                isGroup = userJid.isGroup
+            ) ?: return
 
-            val sendJob = constr.newInstance(*args)
             XposedHelpers.setAdditionalInstanceField(sendJob, "blue_on_reply", true)
             waJobManagerMethod?.invoke(mWaJobManager, sendJob)
-        } catch (ex: Exception) {
+        } catch (ex: Throwable) {
             logDebug(ex)
         }
     }
 
     private fun sendBlueTickMsg(userJid: FMessageWpp.UserJid, messages: ArrayList<FMessageWpp>) {
         if (messages.isEmpty()) return
-
-        val constr = sendJobConstructor ?: return
-        val jidIndexes = sendJobJidIndexes ?: return
-        val paramTypes = sendJobParamTypes ?: return
-
-        if (jidIndexes.size < 2 || sendJobMessageIdIndex == -1) return
-
-        @Suppress("UNCHECKED_CAST")
-        val args = ReflectionUtils.initArray(paramTypes)
-        args[jidIndexes[0].first] = userJid.userJid
+        val targetJid = userJid.phoneJid ?: userJid.userJid ?: return
 
         val groupedMap = HashMap<FMessageWpp.UserJid, MutableList<FMessageWpp>>(4)
         val isGroup = userJid.isGroup
@@ -680,14 +752,19 @@ class SeenTick(
             try {
                 val groupSize = groupMessages.size
                 val messageIds = Array(groupSize) { i -> groupMessages[i].key.messageID }
+                val participantJid = if (isGroup) (userJidMsg.phoneJid ?: userJidMsg.userJid) else null
 
-                args[jidIndexes[1].first] = if (isGroup) userJidMsg.userJid else null
-                args[sendJobMessageIdIndex] = messageIds
+                val sendJob = createSendReadReceiptJob(
+                    chatJid = targetJid,
+                    fromJid = if (isGroup) participantJid else targetJid,
+                    participantJid = participantJid,
+                    messageIds = messageIds,
+                    isGroup = isGroup
+                ) ?: continue
 
-                val sendJob = constr.newInstance(*args)
                 XposedHelpers.setAdditionalInstanceField(sendJob, "blue_on_reply", true)
                 waJobManagerMethod?.invoke(mWaJobManager, sendJob)
-            } catch (ex: Exception) {
+            } catch (ex: Throwable) {
                 logDebug(ex)
             }
         }
@@ -696,22 +773,12 @@ class SeenTick(
     private fun sendBlueTickStatus(
         fstatus: List<StatusItemWpp>
     ) {
-
         if (fstatus.isEmpty()) return
-
         val currentJidTarget = fstatus.first().senderJid ?: return
 
         scope.launch {
             try {
                 val size = fstatus.size
-
-                val constr = sendJobConstructor ?: return@launch
-                val jidIndexes = sendJobJidIndexes ?: return@launch
-
-                val paramTypes = sendJobParamTypes ?: return@launch
-
-                if (jidIndexes.size < 2 || sendJobMessageIdIndex == -1) return@launch
-
                 val arrS = Array(size) { "" }
                 val messageHistory = MessageHistoryStore.getInstance()
 
@@ -726,44 +793,53 @@ class SeenTick(
                     )
                 }
 
-                val userJidSender = WppCore.createUserJid("status@broadcast")
+                val statusBroadcastJid = WppCore.createUserJid("status@broadcast")
+                val senderJid = currentJidTarget.phoneJid ?: currentJidTarget.userJid
 
-                @Suppress("UNCHECKED_CAST")
-                val args = ReflectionUtils.initArray(paramTypes)
+                val sendJob = createSendReadReceiptJob(
+                    chatJid = statusBroadcastJid,
+                    fromJid = senderJid,
+                    participantJid = senderJid,
+                    messageIds = arrS,
+                    isGroup = false
+                ) ?: return@launch
 
-                args[jidIndexes[0].first] = userJidSender
-                args[jidIndexes[1].first] = currentJidTarget.userJid
-                args[sendJobMessageIdIndex] = arrS
-
-                val sendJob2 = constr.newInstance(*args)
-                XposedHelpers.setAdditionalInstanceField(sendJob2, "blue_on_reply", true)
-                waJobManagerMethod?.invoke(mWaJobManager, sendJob2)
-            } catch (e: Exception) {
+                XposedHelpers.setAdditionalInstanceField(sendJob, "blue_on_reply", true)
+                waJobManagerMethod?.invoke(mWaJobManager, sendJob)
+            } catch (e: Throwable) {
                 logDebug(e)
             }
         }
-
     }
 
     private fun sendBlueTickMedia(fMessage: FMessageWpp) {
         scope.launch {
             try {
                 val userJid = fMessage.key.remoteJid
-                val participant = if (userJid.isGroup) fMessage.userJid.userJid else null
+                val participant = if (userJid.isGroup) (fMessage.userJid.phoneJid ?: fMessage.userJid.userJid) else null
 
                 val sPlayedClass = sendPlayedClass ?: return@launch
                 val pInfoConstructor = participantInfoConstructor ?: return@launch
 
                 val rowsId = arrayOf(fMessage.rowId)
                 val messageId = fMessage.key.messageID
+                val targetJid = userJid.phoneJid ?: userJid.userJid
 
                 val participantInfo = pInfoConstructor.newInstance(
-                    userJid.userJid,
+                    targetJid,
                     participant,
                     rowsId,
                     arrayOf(messageId)
                 )
-                val sendJob = XposedHelpers.newInstance(sPlayedClass, participantInfo, false)
+
+                val sPlayedConstr = sendPlayedConstructor
+                val sendJob = if (sPlayedConstr != null && sPlayedConstr.parameterCount == 2) {
+                    sPlayedConstr.newInstance(participantInfo, false)
+                } else if (sPlayedConstr != null && sPlayedConstr.parameterCount == 1) {
+                    sPlayedConstr.newInstance(participantInfo)
+                } else {
+                    XposedHelpers.newInstance(sPlayedClass, participantInfo, false)
+                }
 
                 waJobManagerMethod?.invoke(mWaJobManager, sendJob)
             } catch (e: Throwable) {

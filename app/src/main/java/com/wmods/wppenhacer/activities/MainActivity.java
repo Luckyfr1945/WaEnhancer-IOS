@@ -111,6 +111,18 @@ public class MainActivity extends BaseActivity {
         
         // Handle incoming navigation from search
         handleIncomingIntent(getIntent());
+
+        eightbitlab.com.blurview.BlurView blurView = findViewById(R.id.blur_view);
+        if (blurView != null) {
+            android.view.ViewGroup decorView = (android.view.ViewGroup) getWindow().getDecorView();
+            android.graphics.drawable.Drawable windowBackground = decorView.getBackground();
+            blurView.setupWith(decorView)
+                    .setFrameClearDrawable(windowBackground)
+                    .setBlurRadius(8f)
+                    .setOverlayColor(android.graphics.Color.TRANSPARENT)
+                    .setBlurAutoUpdate(true);
+            com.wmods.wppenhacer.utils.AgslHelper.applyAgsl(blurView, 32f);
+        }
     }
 
     private void createMainDir() {

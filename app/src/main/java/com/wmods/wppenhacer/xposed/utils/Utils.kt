@@ -34,14 +34,13 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.Properties
-import java.util.Random
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.regex.Pattern
 
 object Utils {
     lateinit var xprefs: SharedPreferences
-    private val ids = HashMap<String?, Int?>()
+    private val ids = HashMap<String, Int>()
     lateinit var appClassLoader: ClassLoader
 
     fun init() {
@@ -63,7 +62,7 @@ object Utils {
 
 
     val executor: ExecutorService by lazy {
-         Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+        Executors.newFixedThreadPool(minOf(4, Runtime.getRuntime().availableProcessors()))
     }
 
     @JvmStatic
@@ -105,13 +104,11 @@ object Utils {
             return -1
         }
 
-        val key = type + "_" + name
+        val key = "${type}_${name}"
 
         synchronized(ids) {
-            if (ids.containsKey(key)) {
-                val cachedId = ids[key]
-                return cachedId ?: -1
-            }
+            val cachedId = ids[key]
+            if (cachedId != null) return cachedId
         }
 
         try {
@@ -120,19 +117,19 @@ object Utils {
             val id = context.resources.getIdentifier(name, type, app.packageName)
 
             synchronized(ids) {
-                ids.put(key, id)
+                ids[key] = id
             }
 
             return id
         } catch (e: Exception) {
-            XposedBridge.log("Error getting resource ID: type=" + type + ", name=" + name + ", error: " + e.message)
+            XposedBridge.log("Error getting resource ID: type=$type, name=$name, error: ${e.message}")
             return -1
         }
     }
 
     @JvmStatic
     fun dipToPixels(dipValue: Int): Int {
-        val metrics = FeatureLoader.mApp!!.resources.displayMetrics
+        val metrics = application.resources.displayMetrics
         return TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, dipValue.toFloat(), metrics)
             .toInt()
     }
@@ -140,7 +137,7 @@ object Utils {
 
     @JvmStatic
     fun dipToPixels(dipValue: Float): Int {
-        val metrics = FeatureLoader.mApp!!.resources.displayMetrics
+        val metrics = application.resources.displayMetrics
         return TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, dipValue, metrics).toInt()
     }
 
@@ -226,18 +223,21 @@ object Utils {
 
     fun generateName(userJid: UserJid, fileFormat: String?): String {
         val contactName = getContactName(userJid)
-        val number = userJid.phoneRawString
+        val number = userJid.phoneRawString ?: userJid.phoneNumber ?: userJid.userRawString ?: "unknown"
         return toValidFileName(contactName) + "_" + number + "_" + SimpleDateFormat(
             "yyyyMMdd-HHmmss",
             Locale.getDefault()
         ).format(
             Date()
-        ) + "." + fileFormat
+        ) + "." + (fileFormat ?: "dat")
     }
 
 
     fun toValidFileName(input: String): String {
-        return input.replace("[:\\\\/*\"?|<>']".toRegex(), " ")
+        return input
+            .replace("[:\\\\/*\"?|<>']".toRegex(), " ")
+            .replace("\\s+".toRegex(), " ")
+            .trim()
     }
 
     fun scanFile(file: File) {
@@ -251,22 +251,21 @@ object Utils {
     fun getProperties(prefs: SharedPreferences, key: String?, checkKey: String?): Properties {
         val properties = Properties()
         if (checkKey != null && !prefs.getBoolean(checkKey, false)) return properties
-        val text = prefs.getString(key, "")!!
+        val text = prefs.getString(key, "") ?: return properties
         val pattern = Pattern.compile("^/\\*\\s*(.*?)\\s*\\*/", Pattern.DOTALL)
         val matcher = pattern.matcher(text)
 
         if (matcher.find()) {
-            val propertiesText = matcher.group(1)
-            val lines =
-                propertiesText!!.split("\\s*\\n\\s*".toRegex()).dropLastWhile { it.isEmpty() }
-                    .toTypedArray()
+            val propertiesText = matcher.group(1) ?: return properties
+            val lines = propertiesText.split("\\s*\\n\\s*".toRegex())
 
             for (line in lines) {
-                val keyValue =
-                    line.split("\\s*=\\s*".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray()
-                val skey = keyValue[0].trim()
-                val value =
-                    keyValue[1].trim().replace("^\"|\"$".toRegex(), "") // Remove quotes, if any
+                val separator = line.indexOf('=')
+                if (separator <= 0) continue
+                val skey = line.substring(0, separator).trim()
+                val value = line.substring(separator + 1)
+                    .trim()
+                    .replace("^\"|\"$".toRegex(), "") // Remove quotes, if any
                 properties[skey] = value
             }
         }
@@ -283,10 +282,11 @@ object Utils {
     }
 
     fun getMyNumber(): String {
-        return FeatureLoader.mApp!!.getSharedPreferences(
-            FeatureLoader.mApp!!.packageName + "_preferences_light",
+        val app = FeatureLoader.mApp ?: application
+        return app.getSharedPreferences(
+            "${app.packageName}_preferences_light",
             Context.MODE_PRIVATE
-        ).getString("ph", "")!!
+        ).getString("ph", "") ?: ""
     }
 
 
@@ -312,16 +312,13 @@ object Utils {
     fun showNotification(title: String?, content: String?) {
         val context: Application = application
         val notificationManager = NotificationManagerCompat.from(context)
-        val channel =
-            NotificationChannel("wppenhacer", "WAE Enhancer", NotificationManager.IMPORTANCE_HIGH)
-        notificationManager.createNotificationChannel(channel)
         val notification = NotificationCompat.Builder(context, "wppenhacer")
             .setSmallIcon(android.R.mipmap.sym_def_app_icon)
             .setContentTitle(title)
             .setContentText(content)
             .setAutoCancel(true)
             .setStyle(NotificationCompat.BigTextStyle().bigText(content))
-        notificationManager.notify(Random().nextInt(), notification.build())
+        notificationManager.notify((System.currentTimeMillis() and 0x7FFFFFFF).toInt(), notification.build())
     }
 
     @JvmStatic

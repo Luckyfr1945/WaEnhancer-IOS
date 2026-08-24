@@ -12,66 +12,81 @@ import com.wmods.wppenhacer.xposed.core.WppCore.addListenerActivity
 import com.wmods.wppenhacer.xposed.core.devkit.Unobfuscator.findFirstClassUsingName
 import com.wmods.wppenhacer.xposed.core.devkit.Unobfuscator.loadLockedAuthCheckMethod
 import de.robv.android.xposed.XC_MethodHook
-import android.content.SharedPreferences 
+import android.content.SharedPreferences
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import org.luckypray.dexkit.query.enums.StringMatchType
 import java.util.concurrent.atomic.AtomicBoolean
 
-
-class ActivityController(classLoader: ClassLoader, preferences:SharedPreferences) :
+class ActivityController(classLoader: ClassLoader, preferences: SharedPreferences) :
     Feature(classLoader, preferences) {
     private val disableAuth = AtomicBoolean(false)
 
     override fun doHook() {
-        val clazz = findFirstClassUsingName(classLoader, StringMatchType.EndsWith, ".SettingsNotifications")
+        val clazz = try {
+            findFirstClassUsingName(classLoader, StringMatchType.EndsWith, ".SettingsNotifications")
+        } catch (e: Throwable) {
+            logDebug("ActivityController: SettingsNotifications class not found: ${e.message}")
+            null
+        } ?: return
 
-        val authCheckMethod = loadLockedAuthCheckMethod(classLoader)
+        val authCheckMethod = try {
+            loadLockedAuthCheckMethod(classLoader)
+        } catch (e: Throwable) {
+            logDebug("ActivityController: loadLockedAuthCheckMethod failed: ${e.message}")
+            null
+        }
 
-        XposedBridge.hookMethod(authCheckMethod, object : XC_MethodHook() {
-            override fun beforeHookedMethod(param: MethodHookParam) {
-                if (disableAuth.get()) param.setResult(false)
-            }
-        })
-
-        addListenerActivity{ activity, type ->
-                if (clazz.isAssignableFrom(activity.javaClass) && type == ActivityChangeState.ChangeType.ENDED) {
-                    disableAuth.set(false)
+        if (authCheckMethod != null) {
+            XposedBridge.hookMethod(authCheckMethod, object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    if (disableAuth.get()) param.setResult(false)
                 }
+            })
+        }
+
+        addListenerActivity { activity, type ->
+            if (clazz.isAssignableFrom(activity.javaClass) && type == ActivityChangeState.ChangeType.ENDED) {
+                disableAuth.set(false)
+            }
         }
 
         XposedHelpers.findAndHookMethod(
-            Activity::class.java,
+            clazz,
             "onCreate",
             Bundle::class.java,
             object : XC_MethodHook() {
                 @Throws(Throwable::class)
                 override fun beforeHookedMethod(param: MethodHookParam) {
-                    if (clazz != param.thisObject.javaClass) return
-                    val activity = param.thisObject as Activity
+                    val activity = param.thisObject as? Activity ?: return
                     val intent = activity.intent
-                    if (intent.getBooleanExtra("contact_mode", false)) {
-                        disableAuth.set(true)
-                        contactController(intent, activity)
+                    if (intent != null && intent.getBooleanExtra("contact_mode", false)) {
+                        try {
+                            disableAuth.set(true)
+                            contactController(intent, activity)
+                        } catch (e: Throwable) {
+                            disableAuth.set(false)
+                            logDebug("ActivityController: contact picker launch failed: ${e.message}")
+                        }
                     }
                 }
             })
 
-
         XposedHelpers.findAndHookMethod(
-            Activity::class.java,
+            clazz,
             "onActivityResult",
             Int::class.javaPrimitiveType,
             Int::class.javaPrimitiveType,
             Intent::class.java,
             object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
-                    disableAuth.set(false)
-                    if (clazz != param.thisObject.javaClass) return
-                    val activity = param.thisObject as Activity
                     val id = param.args[0] as Int
-                    val intent = param.args[2] as Intent?
-                    if (id == ContactPickerPreference.REQUEST_CONTACT_PICKER && intent != null) {
+                    if (id != ContactPickerPreference.REQUEST_CONTACT_PICKER) return
+
+                    disableAuth.set(false)
+                    val activity = param.thisObject as? Activity ?: return
+                    val intent = param.args[2] as? Intent
+                    if (intent != null) {
                         processResultContact(intent, activity)
                     }
                     activity.finish()
@@ -84,11 +99,12 @@ class ActivityController(classLoader: ClassLoader, preferences:SharedPreferences
     }
 
     companion object {
-        private var Key: String? = null
         private fun processResultContact(intent: Intent, activity: Activity) {
-            if (!intent.hasExtra("key") && Key != null) {
-                intent.putExtra("key", Key)
+            val key = XposedHelpers.getAdditionalInstanceField(activity, "contact_picker_key") as? String
+            if (!intent.hasExtra("key") && key != null) {
+                intent.putExtra("key", key)
             }
+            XposedHelpers.removeAdditionalInstanceField(activity, "contact_picker_key")
             if (!intent.hasExtra("contacts")) {
                 intent.putStringArrayListExtra("contacts", ArrayList<String?>())
             }
@@ -98,15 +114,15 @@ class ActivityController(classLoader: ClassLoader, preferences:SharedPreferences
             activity.setResult(Activity.RESULT_OK, intent)
         }
 
-
         @Throws(Exception::class)
         private fun contactController(intent: Intent, activity: Activity) {
-            Key = intent.getStringExtra("key")
+            val key = intent.getStringExtra("key") ?: ""
+            XposedHelpers.setAdditionalInstanceField(activity, "contact_picker_key", key)
             val contacts = intent.getStringArrayListExtra("contacts")
             val pickerIntent = WhatsAppContactPickerLauncher.createAboutPickerIntent(
                 activity,
                 activity.packageName,
-                (if (Key == null) "" else Key)!!,
+                key,
                 contacts
             )
             activity.startActivityForResult(

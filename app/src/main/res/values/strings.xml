@@ -559,5 +559,7 @@
     <string name="toast_status_replay">Toast on Status Replay</string>
     <string name="toast_status_replay_sum">Show a toast notification when someone replays your status</string>
     <string name="replayed_your_status">%1$s viewed your status again (%2$dx)</string>
+    <string name="status_replay_count_suffix">%1$s • 🔄 Viewed %2$dx</string>
     <string name="status_replay_history_title">Status Replay History</string>
+    <string name="status_replay_history_message">Your status was replayed %1$d times by %2$s:\n\n</string>
 </resources>

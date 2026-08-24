@@ -1,11 +1,11 @@
 package com.wmods.wppenhacer.xposed.features.general
 
-import android.annotation.SuppressLint
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Button
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ListView
@@ -20,9 +20,7 @@ import com.wmods.wppenhacer.xposed.core.components.FMessageWpp
 import com.wmods.wppenhacer.xposed.core.db.MessageHistoryStore
 import com.wmods.wppenhacer.xposed.core.db.MessageHistoryStore.MessageItem
 import com.wmods.wppenhacer.xposed.core.db.MessageStore
-import com.wmods.wppenhacer.xposed.core.devkit.Unobfuscator.getMethodDescriptor
 import com.wmods.wppenhacer.xposed.core.devkit.Unobfuscator.loadCallerMessageEditMethod
-import com.wmods.wppenhacer.xposed.core.devkit.Unobfuscator.loadGetEditMessageMethod
 import com.wmods.wppenhacer.xposed.core.devkit.Unobfuscator.loadMessageEditMethod
 import com.wmods.wppenhacer.xposed.features.listeners.ConversationItemListener
 import com.wmods.wppenhacer.xposed.features.listeners.ConversationItemListener.OnConversationItemListener
@@ -30,61 +28,127 @@ import com.wmods.wppenhacer.xposed.utils.DesignUtils
 import com.wmods.wppenhacer.xposed.utils.ReflectionUtils
 import com.wmods.wppenhacer.xposed.utils.Utils
 import de.robv.android.xposed.XC_MethodHook
-import android.content.SharedPreferences 
+import android.content.SharedPreferences
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
+import java.lang.reflect.Method
+import java.util.concurrent.ConcurrentHashMap
 
-class ShowEditMessage(loader: ClassLoader, preferences:SharedPreferences) :
+class ShowEditMessage(loader: ClassLoader, preferences: SharedPreferences) :
     Feature(loader, preferences) {
+
+    companion object {
+        private val messageStringMethodCache = ConcurrentHashMap<Class<*>, Method>()
+    }
 
     override fun doHook() {
         if (!prefs.getBoolean("antieditmessages", false)) return
 
-        val onMessageEdit = loadMessageEditMethod(classLoader)
-        logDebug(getMethodDescriptor(onMessageEdit))
+        val onMessageEdit = try {
+            loadMessageEditMethod(classLoader)
+        } catch (e: Throwable) {
+            logDebug("ShowEditMessage: loadMessageEditMethod failed: ${e.message}")
+            null
+        } ?: return
 
-        val callerMessageEditMethod = loadCallerMessageEditMethod(classLoader)
-        logDebug(getMethodDescriptor(callerMessageEditMethod))
-
-        val getEditMessage = loadGetEditMessageMethod(classLoader)
-        logDebug(getMethodDescriptor(getEditMessage))
+        val callerMessageEditMethod = try {
+            loadCallerMessageEditMethod(classLoader)
+        } catch (e: Throwable) {
+            logDebug("ShowEditMessage: loadCallerMessageEditMethod failed: ${e.message}")
+            null
+        }
 
         XposedBridge.hookMethod(onMessageEdit, object : XC_MethodHook() {
-
             override fun beforeHookedMethod(param: MethodHookParam) {
-                val invoked = callerMessageEditMethod.invoke(null, param.args[0])
-                val timestamp = XposedHelpers.getLongField(invoked, "A00")
-                val fMessage = FMessageWpp(param.args[0])
+                val rawMsgObj = param.args.getOrNull(0) ?: return
+
+                var timestamp: Long = System.currentTimeMillis()
+                if (callerMessageEditMethod != null) {
+                    try {
+                        val invoked = callerMessageEditMethod.invoke(null, rawMsgObj)
+                        if (invoked != null) {
+                            val rawTime = try {
+                                XposedHelpers.getLongField(invoked, "A00")
+                            } catch (_: Throwable) {
+                                // Scan declared fields + superclasses for a realistic Unix epoch timestamp (ms or s)
+                                var foundTime: Long? = null
+                                var currClass: Class<*>? = invoked.javaClass
+                                while (currClass != null && currClass != Any::class.java) {
+                                    for (f in currClass.declaredFields) {
+                                        if (f.type == Long::class.javaPrimitiveType || f.type == Long::class.java) {
+                                            f.isAccessible = true
+                                            val v = try { f.getLong(invoked) } catch (_: Throwable) { continue }
+                                            if (v in 1_577_836_800_000L..2_524_608_000_000L) { // 2020 - 2050 ms
+                                                foundTime = v
+                                                break
+                                            } else if (v in 1_577_836_800L..2_524_608_000L) { // 2020 - 2050 s
+                                                foundTime = v * 1000L
+                                                break
+                                            }
+                                        }
+                                    }
+                                    if (foundTime != null) break
+                                    currClass = currClass.superclass
+                                }
+                                foundTime ?: System.currentTimeMillis()
+                            }
+                            if (rawTime > 0) {
+                                timestamp = if (rawTime < 10_000_000_000L) rawTime * 1000L else rawTime
+                            }
+                        }
+                    } catch (e: Throwable) {
+                        logDebug("callerMessageEditMethod invoke failed: ${e.message}")
+                    }
+                }
+
+                val fMessage = FMessageWpp(rawMsgObj)
                 val id = fMessage.rowId
                 val origMessage = MessageStore.getInstance().getCurrentMessageByID(id)
                 var newMessage = fMessage.messageStr
+
                 if (newMessage == null) {
-                    val methods = ReflectionUtils.findAllMethodsUsingFilter(
-                        param.args[0].javaClass
-                    ) { method ->
-                        method.returnType == String::class.java && ReflectionUtils.isOverridden(
-                            method
-                        )
-                    }
-                    for (method in methods) {
-                        newMessage = method!!.invoke(param.args[0]) as String?
-                        if (newMessage != null) break
+                    val msgClass = rawMsgObj.javaClass
+                    val cachedMethod = messageStringMethodCache[msgClass]
+                    if (cachedMethod != null) {
+                        newMessage = try { cachedMethod.invoke(rawMsgObj) as? String } catch (_: Throwable) { null }
+                    } else {
+                        val methods = ReflectionUtils.findAllMethodsUsingFilter(msgClass) { method ->
+                            method.returnType == String::class.java && ReflectionUtils.isOverridden(method)
+                        }
+                        for (method in methods) {
+                            val res = try { method.invoke(rawMsgObj) as? String } catch (_: Throwable) { null }
+                            if (res != null) {
+                                newMessage = res
+                                messageStringMethodCache[msgClass] = method
+                                break
+                            }
+                        }
                     }
                     if (newMessage == null) return
                 }
+
                 try {
-                    val message = MessageHistoryStore.getInstance().getMessages(id)
-                    if (message == null) {
-                        MessageHistoryStore.getInstance().insertMessage(id, origMessage, 0)
+                    val historyStore = MessageHistoryStore.getInstance()
+                    val existingHistory = historyStore.getMessages(id)
+
+                    if (existingHistory == null) {
+                        // Baseline: record the original message first if it exists and differs from the edited version
+                        if (!origMessage.isNullOrEmpty() && origMessage != newMessage) {
+                            historyStore.insertMessage(id, origMessage, 0L)
+                        }
+                        historyStore.insertMessage(id, newMessage, timestamp)
+                    } else {
+                        // Deduplicate: avoid re-inserting identical message + timestamp
+                        val isDuplicate = existingHistory.any { it.timestamp == timestamp && it.message == newMessage }
+                        if (!isDuplicate) {
+                            historyStore.insertMessage(id, newMessage, timestamp)
+                        }
                     }
-                    MessageHistoryStore.getInstance().insertMessage(id, newMessage, timestamp)
                 } catch (e: Exception) {
                     logDebug(e)
                 }
             }
         })
-
-        val strEmoji = "\uD83D\uDCDD"
 
         ConversationItemListener.conversationListeners.add(
             object : OnConversationItemListener() {
@@ -98,19 +162,13 @@ class ShowEditMessage(loader: ClassLoader, preferences:SharedPreferences) :
                         view.findViewById<View?>(Utils.getID("edit_label", "id")) as TextView?
                     if (textView != null) {
                         textView.paint.isUnderlineText = true
-                        if (!textView.text.toString().contains(strEmoji)) {
-                            textView.append(strEmoji)
-                        }
                         val messageId = fMessage.key.messageID
                         val rowId = fMessage.rowId
                         textView.setOnClickListener {
                             if (!ConversationItemListener.isViewBoundToMessage(view, messageId)) return@setOnClickListener
                             try {
-                                var messages = MessageHistoryStore.getInstance().getMessages(rowId)
-                                if (messages == null) {
-                                    messages = ArrayList()
-                                }
-                                showBottomDialog(messages)
+                                val messages = MessageHistoryStore.getInstance().getMessages(rowId) ?: ArrayList()
+                                showBottomDialog(ArrayList(messages))
                             } catch (exception0: Exception) {
                                 logDebug(exception0)
                             }
@@ -121,98 +179,106 @@ class ShowEditMessage(loader: ClassLoader, preferences:SharedPreferences) :
         )
     }
 
-    @SuppressLint("SetTextI18n")
     private fun showBottomDialog(messages: ArrayList<MessageItem>) {
-        WppCore.getCurrentActivity()?.runOnUiThread {
-            val ctx = WppCore.getCurrentActivity()
-            val dialog = WppCore.createBottomDialog(ctx!!)
-            // NestedScrollView
-            val nestedScrollView0 = NestedScrollView(ctx, null)
-            nestedScrollView0.layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
-            nestedScrollView0.isFillViewport = true
-            nestedScrollView0.fitsSystemWindows = true
-            // Main Layout
-            val linearLayout = LinearLayout(ctx)
-            linearLayout.orientation = LinearLayout.VERTICAL
-            val layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.MATCH_PARENT
-            )
-            linearLayout.fitsSystemWindows = true
-            linearLayout.minimumHeight = (Utils.application.resources
-                .displayMetrics.heightPixels / 4).also { layoutParams.height = it }
-            linearLayout.layoutParams = layoutParams
-            val dip = Utils.dipToPixels(20)
-            linearLayout.setPadding(dip, dip, dip, 0)
-            val bg =
-                DesignUtils.createDrawable("rc_dialog_bg", DesignUtils.getPrimarySurfaceColor())
-            linearLayout.background = bg
+        val currentAct = WppCore.getCurrentActivity() ?: return
+        currentAct.runOnUiThread {
+            val ctx = WppCore.getCurrentActivity() ?: return@runOnUiThread
+            val dialog = WppCore.createBottomDialog(ctx)
+
+            // Main Container
+            val linearLayout = LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                val dip = Utils.dipToPixels(20)
+                setPadding(dip, dip, dip, Utils.dipToPixels(16))
+                background = DesignUtils.createDrawable("rc_dialog_bg", DesignUtils.getPrimarySurfaceColor())
+            }
+
+            // Top drag handle indicator
+            val handleView = ImageView(ctx).apply {
+                val handleParams = LinearLayout.LayoutParams(Utils.dipToPixels(48), Utils.dipToPixels(5)).apply {
+                    gravity = Gravity.CENTER_HORIZONTAL
+                    setMargins(0, 0, 0, Utils.dipToPixels(12))
+                }
+                layoutParams = handleParams
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadius = Utils.dipToPixels(3).toFloat()
+                    setColor(DesignUtils.getPrimaryTextColor())
+                    alpha = 50
+                }
+            }
 
             // Title View
-            val titleView = TextView(ctx)
-            val layoutParams1 = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            layoutParams1.weight = 1.0f
-            layoutParams1.setMargins(0, 0, 0, Utils.dipToPixels(10))
-            titleView.layoutParams = layoutParams1
-            titleView.textSize = 16.0f
-            titleView.setTextColor(DesignUtils.getPrimaryTextColor())
-            titleView.setTypeface(null, Typeface.BOLD)
-            titleView.setText(R.string.edited_history)
+            val titleView = TextView(ctx).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    setMargins(0, 0, 0, Utils.dipToPixels(12))
+                }
+                textSize = 17f
+                setTextColor(DesignUtils.getPrimaryTextColor())
+                setTypeface(null, Typeface.BOLD)
+                setText(R.string.edited_history)
+            }
 
-            // List View
+            // Message History List View
             val adapter = MessageAdapter(ctx, messages)
-            val listView: ListView = NoScrollListView(ctx)
-            val layoutParams2 = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.MATCH_PARENT
-            )
-            layoutParams2.weight = 1.0f
-            listView.layoutParams = layoutParams2
-            listView.adapter = adapter
-            val imageView0 = ImageView(ctx)
-            val layoutParams4 =
-                LinearLayout.LayoutParams(Utils.dipToPixels(70), Utils.dipToPixels(8))
-            layoutParams4.gravity = 17
-            layoutParams4.setMargins(0, Utils.dipToPixels(5), 0, Utils.dipToPixels(5))
-            val bg2 = DesignUtils.createDrawable("rc_dotline_dialog", Color.BLACK)
-            imageView0.background = DesignUtils.alphaDrawable(
-                bg2,
-                DesignUtils.getPrimaryTextColor(),
-                33
-            )
-            imageView0.layoutParams = layoutParams4
-            // Button View
-            val okButton = Button(ctx)
-            val layoutParams3 = LinearLayout.LayoutParams(-1, -2)
-            layoutParams3.setMargins(0, Utils.dipToPixels(10), 0, Utils.dipToPixels(10))
-            layoutParams3.gravity = 80
-            okButton.layoutParams = layoutParams3
-            okButton.gravity = 17
-            val drawable = DesignUtils.createDrawable("selector_bg", Color.BLACK)
-            okButton.background = DesignUtils.alphaDrawable(
-                drawable,
-                DesignUtils.getPrimaryTextColor(),
-                25
-            )
-            okButton.text = "OK"
-            okButton.setOnClickListener { dialog.dismissDialog() }
-            linearLayout.addView(imageView0)
+            val listView: ListView = NoScrollListView(ctx).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                this.adapter = adapter
+                divider = null
+                dividerHeight = 0
+            }
+
+            // Scroll Container
+            val nestedScrollView = NestedScrollView(ctx).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    0
+                ).apply {
+                    weight = 1f
+                }
+                isFillViewport = true
+                addView(listView)
+            }
+
+            // Close Button
+            val okButton = TextView(ctx).apply {
+                val btnParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    Utils.dipToPixels(44)
+                ).apply {
+                    setMargins(0, Utils.dipToPixels(14), 0, 0)
+                }
+                layoutParams = btnParams
+                gravity = Gravity.CENTER
+                text = "OK"
+                textSize = 15f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(DesignUtils.getPrimaryTextColor())
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadius = Utils.dipToPixels(12).toFloat()
+                    setColor(DesignUtils.getPrimaryTextColor())
+                    alpha = 25
+                }
+                setOnClickListener { dialog.dismissDialog() }
+            }
+
+            linearLayout.addView(handleView)
             linearLayout.addView(titleView)
-            linearLayout.addView(listView)
+            linearLayout.addView(nestedScrollView)
             linearLayout.addView(okButton)
-            nestedScrollView0.addView(linearLayout)
-            dialog.setContentView(nestedScrollView0)
+
+            dialog.setContentView(linearLayout)
             dialog.setCanceledOnTouchOutside(true)
             dialog.showDialog()
         }
     }
-
 
     override fun getPluginName(): String {
         return "Show Edit Message"

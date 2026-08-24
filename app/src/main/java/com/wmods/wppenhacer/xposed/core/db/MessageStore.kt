@@ -15,13 +15,36 @@ class MessageStore private constructor() {
     private var sqLiteDatabase: SQLiteDatabase? = null
 
     init {
-        val dbFile = File(Utils.application.filesDir.parentFile, "/databases/msgstore.db")
-        if (dbFile.exists()) {
-            sqLiteDatabase = SQLiteDatabase.openDatabase(
-                dbFile.absolutePath,
-                null,
-                SQLiteDatabase.OPEN_READWRITE
+        openDb()
+    }
+
+    private fun openDb() {
+        try {
+            val app = Utils.application
+            val dbPath = try { app.getDatabasePath("msgstore.db") } catch (_: Throwable) { null }
+            val candidateFiles = listOfNotNull(
+                dbPath,
+                File(app.filesDir.parentFile, "databases/msgstore.db"),
+                File(app.filesDir.parentFile, "/databases/msgstore.db"),
+                File("/data/data/com.whatsapp/databases/msgstore.db"),
+                File("/data/data/com.whatsapp.w4b/databases/msgstore.db"),
+                File("/data/user/0/com.whatsapp/databases/msgstore.db"),
+                File("/data/user/0/com.whatsapp.w4b/databases/msgstore.db")
             )
+            for (file in candidateFiles) {
+                if (file.exists() && file.canRead()) {
+                    sqLiteDatabase = SQLiteDatabase.openDatabase(
+                        file.absolutePath,
+                        null,
+                        SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.NO_LOCALIZED_COLLATORS
+                    )
+                    if (sqLiteDatabase?.isOpen == true) {
+                        break
+                    }
+                }
+            }
+        } catch (e: Throwable) {
+            XposedBridge.log("[WaEnhancer] MessageStore openDb failed: ${e.message}")
         }
     }
 
@@ -31,16 +54,14 @@ class MessageStore private constructor() {
 
         @JvmStatic
         fun getInstance(): MessageStore {
-            return mInstance?.takeIf { it.sqLiteDatabase?.isOpen == true }
-                ?: synchronized(this) {
-                    mInstance?.takeIf { it.sqLiteDatabase?.isOpen == true }
-                        ?: MessageStore().also { mInstance = it }
-                }
+            return mInstance ?: synchronized(this) {
+                mInstance ?: MessageStore().also { mInstance = it }
+            }
         }
     }
 
     fun getMessageById(id: Long): String {
-        val db = sqLiteDatabase ?: return ""
+        val db = getDatabase() ?: return ""
         var message = ""
         try {
             val columns = arrayOf("c0content")
@@ -60,7 +81,7 @@ class MessageStore private constructor() {
     }
 
     fun getCurrentMessageByKey(message_key: String): String {
-        val db = sqLiteDatabase ?: return ""
+        val db = getDatabase() ?: return ""
         val columns = arrayOf("text_data")
         val selection = "key_id=?"
         val selectionArgs = arrayOf(message_key)
@@ -77,7 +98,7 @@ class MessageStore private constructor() {
     }
 
     fun getIdfromKey(message_key: String): Long {
-        val db = sqLiteDatabase ?: return -1
+        val db = getDatabase() ?: return -1
         val columns = arrayOf("_id")
         val selection = "key_id=?"
         val selectionArgs = arrayOf(message_key)
@@ -94,7 +115,7 @@ class MessageStore private constructor() {
     }
 
     fun getMediaFromID(id: Long): String? {
-        val db = sqLiteDatabase ?: return null
+        val db = getDatabase() ?: return null
         val columns = arrayOf("file_path")
         val selection = "message_row_id=?"
         val selectionArgs = arrayOf(id.toString())
@@ -111,11 +132,20 @@ class MessageStore private constructor() {
         return null
     }
 
-    fun getCurrentMessageByID(row_id: Long): String {
-        val db = sqLiteDatabase ?: return ""
+    fun getMediaFromKey(message_key: String): String? {
+        val db = getDatabase() ?: return null
+        val id = getIdfromKey(message_key)
+        if (id != -1L) {
+            return getMediaFromID(id)
+        }
+        return null
+    }
+
+    fun getCurrentMessageByID(id: Long): String {
+        val db = getDatabase() ?: return ""
         val columns = arrayOf("text_data")
         val selection = "_id=?"
-        val selectionArgs = arrayOf(row_id.toString())
+        val selectionArgs = arrayOf(id.toString())
         try {
             db.query("message", columns, selection, selectionArgs, null, null, null).use { cursor ->
                 if (cursor.moveToFirst()) {
@@ -129,7 +159,7 @@ class MessageStore private constructor() {
     }
 
     fun getOriginalMessageKey(id: Long): String {
-        val db = sqLiteDatabase ?: return ""
+        val db = getDatabase() ?: return ""
         var message = ""
         val sql =
             "SELECT parent_message_row_id, key_id FROM message_add_on WHERE parent_message_row_id=\"$id\""
@@ -212,6 +242,9 @@ class MessageStore private constructor() {
     }
 
     fun getDatabase(): SQLiteDatabase? {
+        if (sqLiteDatabase == null || sqLiteDatabase?.isOpen != true) {
+            openDb()
+        }
         return sqLiteDatabase
     }
 
@@ -220,39 +253,76 @@ class MessageStore private constructor() {
     fun getFirstMessageInfoByChatRawJid(rawJid: String): MessageInfo? {
         val db = getDatabase()
         if (db == null || TextUtils.isEmpty(rawJid)) {
+            XposedBridge.log("[WaEnhancer] getFirstMessageInfoByChatRawJid: db is null or rawJid is empty ($rawJid)")
             return null
         }
 
+        val sanitizedJid = rawJid.replaceFirst("\\.[\\d:]+@".toRegex(), "@")
+        val stripped = if (sanitizedJid.contains("@")) sanitizedJid.substringBefore("@") else sanitizedJid
+
         val sql = """
             WITH resolved(jid_row_id) AS (
-                SELECT _id FROM jid WHERE raw_string=?
+                SELECT _id FROM jid WHERE raw_string=? OR raw_string=? OR user=?
                 UNION
                 SELECT jm.jid_row_id FROM jid_map jm
                 INNER JOIN jid j ON j._id = jm.lid_row_id
-                WHERE j.raw_string=?
+                WHERE j.raw_string=? OR j.raw_string=? OR j.user=?
                 UNION
                 SELECT jm.lid_row_id FROM jid_map jm
                 INNER JOIN jid j ON j._id = jm.jid_row_id
-                WHERE j.raw_string=?
+                WHERE j.raw_string=? OR j.raw_string=? OR j.user=?
             ), chat_target AS (
                 SELECT _id FROM chat WHERE jid_row_id IN (SELECT jid_row_id FROM resolved)
             )
-            SELECT m._id, m.sort_id, m.chat_row_id
+            SELECT m._id, m.sort_id, m.chat_row_id, m.key_id, m.from_me
             FROM message m
-            INNER JOIN chat_target c ON c._id = m.chat_row_id
-            ORDER BY m.sort_id ASC, m._id ASC
+            WHERE m.chat_row_id IN (SELECT _id FROM chat_target)
+              AND m.message_type NOT IN (7, 15, 64, 65, 66, 67)
+            ORDER BY CASE WHEN m.sort_id > 0 THEN m.sort_id ELSE m._id END ASC, m.timestamp ASC, m._id ASC
             LIMIT 1
         """.trimIndent()
 
         try {
-            db.rawQuery(sql, arrayOf(rawJid, rawJid, rawJid)).use { cursor ->
+            db.rawQuery(sql, arrayOf(rawJid, sanitizedJid, stripped, rawJid, sanitizedJid, stripped, rawJid, sanitizedJid, stripped)).use { cursor ->
                 if (cursor.moveToFirst()) {
-                    return MessageInfo(cursor.getLong(0), cursor.getLong(1), cursor.getLong(2))
+                    val messageId = cursor.getLong(0)
+                    val sortId = cursor.getLong(1)
+                    val chatRowId = cursor.getLong(2)
+                    val keyId = cursor.getString(3) ?: ""
+                    val fromMe = cursor.getInt(4) == 1
+                    return MessageInfo(messageId, sortId, chatRowId, keyId, fromMe)
                 }
             }
         } catch (e: Exception) {
-            XposedBridge.log(e)
+            XposedBridge.log("[WaEnhancer] getFirstMessageInfoByChatRawJid SQL error: ${e.message}")
         }
+
+        // Direct fallback: query by matching chat table directly if jid_map join was elusive
+        try {
+            val fallbackSql = """
+                SELECT m._id, m.sort_id, m.chat_row_id, m.key_id, m.from_me
+                FROM message m
+                INNER JOIN chat c ON c._id = m.chat_row_id
+                INNER JOIN jid j ON j._id = c.jid_row_id
+                WHERE (j.raw_string = ? OR j.raw_string = ? OR j.user = ?)
+                  AND m.message_type NOT IN (7, 15, 64, 65, 66, 67)
+                ORDER BY CASE WHEN m.sort_id > 0 THEN m.sort_id ELSE m._id END ASC, m.timestamp ASC, m._id ASC
+                LIMIT 1
+            """.trimIndent()
+            db.rawQuery(fallbackSql, arrayOf(rawJid, sanitizedJid, stripped)).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val messageId = cursor.getLong(0)
+                    val sortId = cursor.getLong(1)
+                    val chatRowId = cursor.getLong(2)
+                    val keyId = cursor.getString(3) ?: ""
+                    val fromMe = cursor.getInt(4) == 1
+                    return MessageInfo(messageId, sortId, chatRowId, keyId, fromMe)
+                }
+            }
+        } catch (e: Exception) {
+            XposedBridge.log("[WaEnhancer] getFirstMessageInfoByChatRawJid fallback SQL error: ${e.message}")
+        }
+
         return null
     }
 
@@ -446,5 +516,11 @@ class MessageStore private constructor() {
         }
     }
 
-    data class MessageInfo(val rowId: Long, val sortId: Long, val chatRowId: Long)
+    data class MessageInfo(
+        val rowId: Long,
+        val sortId: Long,
+        val chatRowId: Long,
+        val keyId: String = "",
+        val fromMe: Boolean = false
+    )
 }

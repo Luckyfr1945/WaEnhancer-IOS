@@ -1,17 +1,17 @@
 [ADDED]
-* Added support and compatibility for WhatsApp 2.26.32.xx
-* Added auto-restart recommendation dialog when settings are changed in WaEnhancer
-* Added action buttons (DND, Ghost, Freeze, Restart, WAE) integration in iOS Header style
+* Status Replay Tracker: Track and display how many times contacts replay/re-watch your status updates (badge "🔄 Dilihat Nx" with relative timestamps in viewer list)
+* Status Replay History Dialog: Tap on status replay badge to view exact timestamps of every view/replay for each contact
+* Automatic DB Management: Persistent SQLite storage (StatusReplayStore) with automatic 24-hour cleanup for expired status replays
+* Floating Bottom Bar: Fluid iOS-style floating navigation bar with real-time blur and theme customization
 
 [IMPROVED]
-* Optimized UI rendering performance by replacing heavy invalidate hooks with attached lifecycle listeners
-* Improved toolbar action items spacing and dynamic pre-draw alignment
+* Seen Tick Architecture Refactor: Deterministic constructor resolution with strict parameter signature matching (replacing fragile firstOrNull)
+* Job Dispatch Reliability: Explicit parameter slot mapping for SendReadReceiptJob and SendPlayedReceiptJob with valid timestamp/boolean defaults to prevent JobQueue stalls
+* Multi-thread Visibility: Added @Volatile across all shared companion state for thread-safe access from coroutine dispatchers
+* Memory Management: Automatic garbage cleanup for WeakReference view caches in SeenTick
+* Dynamic Field Caching: Thread-safe per-class cache for status playback reflection fields
 
 [FIXED]
-* Fixed "Show Blue Ticks on Reply" failing to send read receipts when replying with stickers, voice notes, or physical keyboards
-* Fixed XMPP connection drops (messages stuck on clock icon) caused by malformed receipt nodes in Hide Seen feature
-* Fixed runtime method hook compatibility issues in MediaPreview and AboutContactPicker
-* Fixed memory leak and duplicate menu hook registration in CustomToolbar
-* Fixed duplicate download buttons in ViewOnce and Profile
-* Fixed IG Status bug appearing on archived and blocked chats
-* Fixed action buttons visibility across Indonesian and English locales
+* Fixed outgoing message transmission (clock 🕒 icon bug) caused by NoSuchMethodError in FMessageWpp.Key constructor reflection
+* Fixed cascading component initialization failures in FMessageWpp with isolated try-catch blocks and safe fallbacks
+* Fixed status viewer row binding across WhatsApp 2.26.32+ obfuscated adapter models

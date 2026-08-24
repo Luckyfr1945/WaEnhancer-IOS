@@ -52,33 +52,39 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
         }
 
 
+        private fun getJidKey(fMessage: FMessageWpp): String? {
+            val remoteJid = fMessage.key.remoteJid
+            if (remoteJid.isStatus) return "status@broadcast"
+            return remoteJid.phoneRawString ?: remoteJid.userRawString ?: remoteJid.phoneNumber ?: remoteJid.rawJidString
+        }
+
         private fun getRevokedMessagesForJid(fMessage: FMessageWpp): MutableSet<String> {
-            val stripJID =
-                fMessage.key.remoteJid.phoneNumber ?: return Collections.synchronizedSet(HashSet())
+            val stripJID = getJidKey(fMessage) ?: return Collections.synchronizedSet(HashSet())
             val cached = messageRevokedMap[stripJID]
             if (cached != null) return cached
 
             val emptySet = Collections.synchronizedSet(HashSet<String>())
-            messageRevokedMap[stripJID] = emptySet
+            val existing = messageRevokedMap.putIfAbsent(stripJID, emptySet)
+            val targetSet = existing ?: emptySet
 
-            CompletableFuture.runAsync {
-                try {
-                    val messages = DelMessageStore.getInstance(Utils.application).getMessagesByJid(stripJID)
-                    if (messages.isNotEmpty()) {
-                        emptySet.addAll(messages)
-                        WppCore.getCurrentActivity()?.runOnUiThread {
-                            ConversationItemListener.notifyDataSetChanged()
+            if (existing == null) {
+                CompletableFuture.runAsync {
+                    try {
+                        val messages = DelMessageStore.getInstance(Utils.application).getMessagesByJid(stripJID)
+                        if (messages.isNotEmpty()) {
+                            targetSet.addAll(messages)
+                            WppCore.getCurrentActivity()?.runOnUiThread {
+                                ConversationItemListener.notifyDataSetChanged()
+                            }
                         }
-                    }
-                } catch (_: Exception) {}
+                    } catch (_: Exception) {}
+                }
             }
-            return emptySet
+            return targetSet
         }
 
         private fun persistRevokedMessage(fMessage: FMessageWpp, messageID: String) {
-            val stripJID = fMessage.key.remoteJid.phoneNumber!!
-            val messages = getRevokedMessagesForJid(fMessage)
-            messages.add(messageID)
+            val stripJID = getJidKey(fMessage) ?: return
             DelMessageStore.getInstance(Utils.application).insertMessage(
                 stripJID,
                 messageID,
@@ -121,7 +127,15 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
                 val fMessage = FMessageWpp(fMessageObj)
                 val messageKey = fMessage.key
                 val deviceJid = fMessage.deviceJid
-                val messageId = XposedHelpers.getObjectField(fMessage.getObject(), "A01") as String
+                val messageId = try {
+                    fMessage.key.messageID.takeIf { it.isNotEmpty() }
+                } catch (_: Throwable) {
+                    null
+                } ?: try {
+                    XposedHelpers.getObjectField(fMessage.getObject(), "A01") as? String
+                } catch (_: Throwable) {
+                    null
+                } ?: return
 
 
                 val method = param.method as? Method
@@ -300,12 +314,15 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
         if (revokeBoolean == 0) return 0
 
         val messageRevokedList = getRevokedMessagesForJid(fMessage)
-        if (!messageRevokedList.contains(messageId)) {
+        if (messageRevokedList.add(messageId)) {
             CompletableFuture.runAsync {
                 try {
                     persistRevokedMessage(fMessage, messageId)
                     val mConversation = WppCore.getCurrentConversation()
-                    if (mConversation != null && fMessage.key.remoteJid.phoneNumber == WppCore.getCurrentUserJid()?.phoneNumber) {
+                    val currentChatJid = WppCore.getCurrentUserJid()
+                    val currentKey = currentChatJid?.phoneRawString ?: currentChatJid?.userRawString ?: currentChatJid?.phoneNumber
+                    val msgKey = getJidKey(fMessage)
+                    if (mConversation != null && msgKey != null && (msgKey == currentKey || msgKey == currentChatJid?.rawJidString)) {
                         mConversation.runOnUiThread {
                             ConversationItemListener.notifyDataSetChanged()
                         }
@@ -334,9 +351,19 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
         return if (jidAuthor.isGroup) {
             var participantJid = fMessage.userJid
             if (participantJid.isNull) {
-                val deletedAdminUser = XposedHelpers.getObjectField(fMessage.getObject(), "A00")
+                val deletedAdminUser = try {
+                    XposedHelpers.getObjectField(fMessage.getObject(), "A00")
+                } catch (_: Throwable) {
+                    null
+                }
                 if (deletedAdminUser != null) {
                     participantJid = FMessageWpp.UserJid(deletedAdminUser)
+                }
+                if (participantJid.isNull) {
+                    val extracted = FMessageWpp.UserJid.extractFrom(fMessage.getObject())
+                    if (extracted != null && !extracted.isNull) {
+                        participantJid = extracted
+                    }
                 }
             }
             val participantWaContact = WaContactWpp.getWaContactFromJid(participantJid)

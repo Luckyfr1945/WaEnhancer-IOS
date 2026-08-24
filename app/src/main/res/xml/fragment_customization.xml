@@ -231,6 +231,7 @@
 
         <rikka.material.preference.MaterialSwitchPreference
             app:key="igstatus"
+            app:defaultValue="true"
             app:summary="@string/igstatus_on_home_screen_sum"
             app:title="@string/igstatus_on_home_screen" />
 

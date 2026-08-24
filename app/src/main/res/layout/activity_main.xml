@@ -31,22 +31,32 @@
         android:id="@+id/viewPager"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        app:layout_constraintBottom_toTopOf="@id/nav_view"
+        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintTop_toBottomOf="@id/appBarLayout" />
 
-    <View
-        android:id="@+id/nav_shadow"
-        android:layout_width="match_parent"
-        android:layout_height="4dp"
-        android:background="@drawable/shadow_top"
-        app:layout_constraintBottom_toTopOf="@id/nav_view" />
+    <eightbitlab.com.blurview.BlurView
+        android:id="@+id/blur_view"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:background="@drawable/floating_nav_bg"
+        android:elevation="16dp"
+        android:outlineProvider="background"
+        android:clipToOutline="true"
+        app:layout_constraintTop_toTopOf="@id/nav_view"
+        app:layout_constraintBottom_toBottomOf="@id/nav_view"
+        app:layout_constraintLeft_toLeftOf="@id/nav_view"
+        app:layout_constraintRight_toRightOf="@id/nav_view" />
 
     <com.google.android.material.bottomnavigation.BottomNavigationView
         android:id="@+id/nav_view"
         style="@style/BottomNavStyle"
-        android:layout_width="0dp"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/nav_background"
+        android:layout_marginHorizontal="24dp"
+        android:layout_marginBottom="24dp"
+        android:background="@android:color/transparent"
+        android:elevation="16dp"
+        app:itemRippleColor="@null"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintLeft_toLeftOf="parent"
         app:layout_constraintRight_toRightOf="parent"

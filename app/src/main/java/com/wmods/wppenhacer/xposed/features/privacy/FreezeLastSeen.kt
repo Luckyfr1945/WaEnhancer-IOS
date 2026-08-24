@@ -1,14 +1,13 @@
 package com.wmods.wppenhacer.xposed.features.privacy
 
+import android.content.SharedPreferences
 import com.wmods.wppenhacer.xposed.core.Feature
 import com.wmods.wppenhacer.xposed.core.WppCore.getPrivBoolean
-import com.wmods.wppenhacer.xposed.core.devkit.Unobfuscator.getMethodDescriptor
 import com.wmods.wppenhacer.xposed.core.devkit.Unobfuscator.loadFreezeSeenMethod
-import android.content.SharedPreferences 
+import com.wmods.wppenhacer.xposed.utils.ReflectionUtils
 import de.robv.android.xposed.XposedBridge
-import de.robv.android.xposed.XC_MethodReplacement
 
-class FreezeLastSeen(loader: ClassLoader, preferences:SharedPreferences) :
+class FreezeLastSeen(loader: ClassLoader, preferences: SharedPreferences) :
     Feature(loader, preferences) {
 
     override fun doHook() {
@@ -17,9 +16,12 @@ class FreezeLastSeen(loader: ClassLoader, preferences:SharedPreferences) :
         val ghostmode = getPrivBoolean("ghostmode", false) && prefs.getBoolean("ghostmode", false)
 
         if (freezeLastSeen || freezeLastSeenOption || ghostmode) {
-            val method = loadFreezeSeenMethod(classLoader)
-            logDebug(getMethodDescriptor(method))
-            XposedBridge.hookMethod(method, com.wmods.wppenhacer.xposed.utils.ReflectionUtils.DO_NOTHING)
+            try {
+                val method = loadFreezeSeenMethod(classLoader)
+                XposedBridge.hookMethod(method, ReflectionUtils.DO_NOTHING)
+            } catch (e: Throwable) {
+                logDebug("FreezeLastSeen: hook failed: ${e.message}")
+            }
         }
     }
 

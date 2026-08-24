@@ -2,6 +2,10 @@ name: Release
 
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - '1.5.*'
+      - 'v*'
 
 jobs:
   release:

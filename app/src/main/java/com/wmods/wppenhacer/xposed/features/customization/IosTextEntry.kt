@@ -22,6 +22,12 @@ import com.wmods.wppenhacer.xposed.utils.Utils
 class IosTextEntry(loader: ClassLoader, prefs: SharedPreferences) : Feature(loader, prefs) {
 
     private var plusBitmap: Bitmap? = null
+    private var plusBitmapColor: Int? = null
+    private var plusDrawable: BitmapDrawable? = null
+
+    private var stickerBitmap: Bitmap? = null
+    private var stickerBitmapColor: Int? = null
+    private var stickerDrawable: BitmapDrawable? = null
 
     companion object {
         // Semua nilai "rasa" iOS dikumpulkan di satu tempat biar gampang di-tuning
@@ -89,35 +95,45 @@ class IosTextEntry(loader: ClassLoader, prefs: SharedPreferences) : Feature(load
                             }
                             val editLayout = cachedEditLayout
 
-                        // Full restructure only once
-                        if (textEntryLayout.tag != "ios_styled") {
-                            textEntryLayout.tag = "ios_styled"
-                            logDebug("IosTextEntry: Applying iOS style")
-                            restructureInput(entry, textEntryLayout, editLayout)
-                        }
+                            val inputContentId = Utils.getID("input_layout_content", "id")
+                            if (cachedInputContent == null && inputContentId > 0) cachedInputContent = rootView.findViewById<ViewGroup>(inputContentId)
+                            val inputContent = cachedInputContent
 
-                        // Always maintain the + icon (WhatsApp overwrites it when emoji panel opens)
-                        val emojiId = Utils.getID("emoji_picker_btn", "id")
-                        if (cachedEmojiBtn == null && emojiId > 0) cachedEmojiBtn = rootView.findViewById<ImageView>(emojiId)
-                        val emojiBtn = cachedEmojiBtn
-                        if (emojiBtn != null && plusBitmap != null) {
-                            val currentBmp = (emojiBtn.drawable as? BitmapDrawable)?.bitmap
-                            if (currentBmp !== plusBitmap) {
-                                emojiBtn.setImageDrawable(BitmapDrawable(entry.resources, plusBitmap))
-                                emojiBtn.imageTintList = null
+                            val isStyled = textEntryLayout.tag == "ios_styled"
+                            val pillExists = inputContent?.findViewWithTag<View>("ios_pill") != null
+
+                            // Full restructure if not yet styled or if pill was removed/rebuilt by WhatsApp
+                            if (!isStyled || !pillExists) {
+                                textEntryLayout.tag = "ios_styled"
+                                logDebug("IosTextEntry: Applying iOS style")
+                                restructureInput(entry, textEntryLayout, editLayout)
                             }
-                        }
 
-                        // Dynamically update pill background based on real button widths
-                        val inputContentId = Utils.getID("input_layout_content", "id")
-                        if (cachedInputContent == null && inputContentId > 0) cachedInputContent = rootView.findViewById<ViewGroup>(inputContentId)
-                        val inputContent = cachedInputContent
-                        
-                        val cameraId = Utils.getID("camera_btn", "id")
-                        if (cachedCameraBtn == null && cameraId > 0) cachedCameraBtn = rootView.findViewById<View>(cameraId)
-                        val cameraBtn = cachedCameraBtn
+                            // Always maintain the + icon (WhatsApp overwrites it when emoji panel opens)
+                            val emojiId = Utils.getID("emoji_picker_btn", "id")
+                            if (cachedEmojiBtn == null && emojiId > 0) cachedEmojiBtn = rootView.findViewById<ImageView>(emojiId)
+                            val emojiBtn = cachedEmojiBtn
+                            if (emojiBtn != null) {
+                                val ctx = emojiBtn.context
+                                val isDark = isDarkMode(ctx)
+                                val plusColor = if (isDark) Color.parseColor(PLUS_DARK) else Color.parseColor(PLUS_LIGHT)
+                                if (plusDrawable == null || plusBitmapColor != plusColor) {
+                                    plusBitmapColor = plusColor
+                                    plusBitmap = createPlusDrawable(plusColor)
+                                    plusDrawable = BitmapDrawable(ctx.resources, plusBitmap)
+                                }
+                                if (emojiBtn.drawable !== plusDrawable) {
+                                    emojiBtn.setImageDrawable(plusDrawable)
+                                    emojiBtn.imageTintList = null
+                                }
+                            }
 
-                        if (inputContent != null) {
+                            // Dynamically update pill background based on real button widths
+                            val cameraId = Utils.getID("camera_btn", "id")
+                            if (cachedCameraBtn == null && cameraId > 0) cachedCameraBtn = rootView.findViewById<View>(cameraId)
+                            val cameraBtn = cachedCameraBtn
+
+                            if (inputContent != null) {
                             val cameraVisible = cameraBtn != null && cameraBtn.visibility == View.VISIBLE
                             val gap = Utils.dipToPixels(PILL_GAP_DP)
                             val fallback = Utils.dipToPixels(BTN_FALLBACK_DP)
@@ -243,15 +259,23 @@ class IosTextEntry(loader: ClassLoader, prefs: SharedPreferences) : Feature(load
                 logDebug("IosTextEntry: emojiListener=${emojiClickListener != null}, attachListener=${attachClickListener != null}")
 
                 val plusColor = if (isDark) Color.parseColor(PLUS_DARK) else Color.parseColor(PLUS_LIGHT)
-                plusBitmap = createPlusDrawable(plusColor)
-                emojiBtn.setImageDrawable(BitmapDrawable(ctx.resources, plusBitmap))
+                if (plusDrawable == null || plusBitmapColor != plusColor) {
+                    plusBitmapColor = plusColor
+                    plusBitmap = createPlusDrawable(plusColor)
+                    plusDrawable = BitmapDrawable(ctx.resources, plusBitmap)
+                }
+                emojiBtn.setImageDrawable(plusDrawable)
                 emojiBtn.scaleType = ImageView.ScaleType.CENTER
                 emojiBtn.background = null
                 emojiBtn.imageTintList = null
 
                 val stickerColor = if (isDark) Color.parseColor(PLUS_DARK) else Color.parseColor(PLUS_LIGHT)
-                val stickerBitmap = createStickerDrawable(stickerColor)
-                attachBtn.setImageDrawable(BitmapDrawable(ctx.resources, stickerBitmap))
+                if (stickerDrawable == null || stickerBitmapColor != stickerColor) {
+                    stickerBitmapColor = stickerColor
+                    stickerBitmap = createStickerDrawable(stickerColor)
+                    stickerDrawable = BitmapDrawable(ctx.resources, stickerBitmap)
+                }
+                attachBtn.setImageDrawable(stickerDrawable)
                 attachBtn.scaleType = ImageView.ScaleType.CENTER
                 attachBtn.visibility = View.VISIBLE
                 attachBtn.background = null
@@ -294,6 +318,7 @@ class IosTextEntry(loader: ClassLoader, prefs: SharedPreferences) : Feature(load
                 inputContent.removeView(attachBtn)
 
                 val pillContainer = android.widget.LinearLayout(ctx).apply {
+                    tag = "ios_pill"
                     orientation = android.widget.LinearLayout.HORIZONTAL
                     layoutParams = android.widget.LinearLayout.LayoutParams(
                         0, 
