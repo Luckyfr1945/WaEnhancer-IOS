@@ -233,94 +233,21 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         var layoutSync: View.OnLayoutChangeListener? = null
 
         val createdAt: Long = android.os.SystemClock.elapsedRealtime()
+
+        // --- Dirty-check cache for predraw sync (avoids full resync every frame) ---
+        var lastSyncWidth: Int = -1
+        var lastSyncChildCount: Int = -1
+        var lastSyncCheckedRef: java.lang.ref.WeakReference<View>? = null
+        var syncSkipStreak: Int = 0
     }
 
     /**
-     * High-Vibrancy Optical AGSL Glass Refraction Shader (Android 13+):
-     * - 7-Channel Rainbow Spectral Splitting (Red, Orange, Yellow, Green, Cyan, Blue, Purple)
-     * - High-Vibrancy Saturation Amplification (1.70x color depth)
-     * - Seamless peripheral bevel glass refraction (0 lines, 0 seams)
-     * - Crisp glowing crystalline glass rim
+     * High-Vibrancy Optical AGSL Glass Refraction Shader (Android 13+)
+     * Single source of truth in AgslHelper.java.
      */
     private object LiquidGlassShader {
-        const val SHADER_SRC = """
-            uniform shader image;
-            uniform float2 resolution;
-            uniform float cornerRadius;
-            uniform float refractionStrength;
-            uniform float chromaticAberration;
-            uniform float brightnessBoost;
-            uniform float rimIntensity;
-
-            float sdRoundedBox(float2 p, float2 b, float r) {
-                float2 q = abs(p) - b + float2(r);
-                return min(max(q.x, q.y), 0.0) + length(max(q, float2(0.0))) - r;
-            }
-
-            vec4 main(float2 fragCoord) {
-                float2 uv = fragCoord / resolution;
-                float2 halfRes = resolution * 0.5;
-                float2 p = fragCoord - halfRes;
-                float2 boxSize = halfRes - float2(0.5);
-                
-                float dist = sdRoundedBox(p, boxSize, cornerRadius);
-                float alphaMask = clamp(0.5 - dist, 0.0, 1.0);
-                if (alphaMask <= 0.0) {
-                    return vec4(0.0);
-                }
-                
-                // 1. Precise Bevel & Continuous Lens Profile
-                float distFromEdge = -dist;
-                float bevelWidth = max(cornerRadius * 0.75, 12.0);
-                float edgeFactor = 1.0 - smoothstep(0.0, bevelWidth, distFromEdge);
-                float lensCurve = sin(edgeFactor * 1.5707963);
-                
-                // 2. Continuous 2D surface normal
-                float2 q = abs(p) - (boxSize - float2(cornerRadius));
-                float2 normal = sign(p) * normalize(max(q, float2(0.0)) + float2(0.0001));
-                
-                // 3. Multi-layer Optical Refraction & Dispersion
-                float refrMag = refractionStrength * 0.028 * lensCurve;
-                float dispMag = chromaticAberration * 0.022 * pow(lensCurve, 1.2);
-                
-                float2 refractOffset = -normal * refrMag;
-                float2 dispOffset = normal * dispMag;
-                float2 baseUV = clamp(uv + refractOffset, float2(0.001), float2(0.999));
-                
-                // 4. 7-Channel Rainbow Spectral Splitting
-                vec4 red    = image.eval(clamp(baseUV + dispOffset * 1.00, float2(0.0), float2(1.0)) * resolution);
-                vec4 orange = image.eval(clamp(baseUV + dispOffset * 0.66, float2(0.0), float2(1.0)) * resolution);
-                vec4 yellow = image.eval(clamp(baseUV + dispOffset * 0.33, float2(0.0), float2(1.0)) * resolution);
-                vec4 green  = image.eval(clamp(baseUV, float2(0.0), float2(1.0)) * resolution);
-                vec4 cyan   = image.eval(clamp(baseUV - dispOffset * 0.33, float2(0.0), float2(1.0)) * resolution);
-                vec4 blue   = image.eval(clamp(baseUV - dispOffset * 0.66, float2(0.0), float2(1.0)) * resolution);
-                vec4 purple = image.eval(clamp(baseUV - dispOffset * 1.00, float2(0.0), float2(1.0)) * resolution);
-                
-                vec4 col;
-                col.r = (red.r * 2.8 + orange.r * 2.2 + yellow.r * 1.2) / 6.2;
-                col.g = (yellow.g * 1.2 + green.g * 2.8 + cyan.g * 1.8) / 5.8;
-                col.b = (cyan.b * 1.8 + blue.b * 2.8 + purple.b * 2.2) / 6.8;
-                col.a = (red.a + green.a + blue.a) / 3.0;
-                
-                // 5. Rich Vibrancy & Saturation Enhancement
-                float luma = dot(col.rgb, vec3(0.2126, 0.7152, 0.0722));
-                col.rgb = mix(vec3(luma), col.rgb, 1.45) * brightnessBoost;
-                
-                // 6. Directional Specular Light Catch (Apple Glass Top-Left Key Light)
-                float2 lightDir = normalize(float2(-0.35, -0.93));
-                float lightCatch = max(dot(-normal, lightDir), 0.0) * edgeFactor;
-                float specular = pow(lightCatch, 3.5) * 0.35;
-                
-                // 7. Ambient Liquid Rim Glow & Edge Reflection
-                float rim = smoothstep(-1.8, 0.0, dist) * rimIntensity;
-                float innerGlow = pow(edgeFactor, 2.0) * 0.12;
-                
-                col.rgb += vec3(specular + rim + innerGlow);
-                col.a *= alphaMask;
-                
-                return col;
-            }
-        """
+        val SHADER_SRC: String
+            get() = com.wmods.wppenhacer.utils.AgslHelper.SHADER_SRC
     }
 
     override fun doHook() {
@@ -1134,7 +1061,9 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         }
         val listener = ViewTreeObserver.OnPreDrawListener {
             try {
-                syncSelection(bar, state)
+                if (shouldResync(bar, state)) {
+                    syncSelection(bar, state)
+                }
             } catch (e: Throwable) {
                 logDebug("FloatingBottomBar: selection sync failed: ${e.message}")
             }
@@ -1142,6 +1071,45 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         }
         state.preDraw = listener
         bar.viewTreeObserver.addOnPreDrawListener(listener)
+    }
+
+    /**
+     * Cheap pre-check before paying for reorderMenuTabsSafely() + tinting + BFS traversal.
+     * - Selalu resync selama drag/scrub/spring animasi jalan (state itu emang berubah tiap frame).
+     * - Kalau idle, cuma resync kalau width/childCount/checked-view berubah.
+     * - Safety net: paksa resync tiap ~45 frame (≈0.75s @60fps) buat jaga-jaga kalau WA
+     *   reset translationX/tint dari internal tanpa lewat jalur yang kita pantau.
+     */
+    private fun shouldResync(bar: ViewGroup, state: BarState): Boolean {
+        if (state.isDragging || state.isScrubbing || state.isChoreographerActive) {
+            state.syncSkipStreak = 0
+            return true
+        }
+
+        val width = bar.width
+        val childCount = bar.childCount
+        val checkedNow = state.checkedViewRef?.get()
+        val needsInit = state.items.isEmpty() || state.items.firstOrNull()?.parent == null
+
+        val changed = width != state.lastSyncWidth ||
+                childCount != state.lastSyncChildCount ||
+                checkedNow !== state.lastSyncCheckedRef?.get() ||
+                needsInit
+
+        if (changed) {
+            state.lastSyncWidth = width
+            state.lastSyncChildCount = childCount
+            state.lastSyncCheckedRef = checkedNow?.let { java.lang.ref.WeakReference(it) }
+            state.syncSkipStreak = 0
+            return true
+        }
+
+        state.syncSkipStreak++
+        if (state.syncSkipStreak >= 45) {
+            state.syncSkipStreak = 0
+            return true
+        }
+        return false
     }
 
     private fun getItemLabel(view: View): String {
@@ -1199,6 +1167,34 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         state.items = items
     }
 
+    private data class CheckedAccessor(
+        val field: java.lang.reflect.Field,
+        val method: java.lang.reflect.Method
+    )
+
+    // Class-level cache — struktur field/method itu sama untuk semua instance dari class yang sama,
+    // jadi cukup di-resolve sekali per class, bukan di-scan ulang tiap panggilan.
+    private val checkedAccessorCache =
+        java.util.concurrent.ConcurrentHashMap<Class<*>, List<CheckedAccessor>>()
+
+    private fun getCheckedAccessors(view: View): List<CheckedAccessor> {
+        return checkedAccessorCache.getOrPut(view.javaClass) {
+            val result = mutableListOf<CheckedAccessor>()
+            for (field in view.javaClass.declaredFields) {
+                field.isAccessible = true
+                val obj = try { field.get(view) } catch (_: Throwable) { null } ?: continue
+                if (obj is Int || obj is Boolean || obj is String || obj is Drawable) continue
+                try {
+                    val m = obj.javaClass.getMethod("isChecked")
+                    if (m.returnType == Boolean::class.java || m.returnType == Boolean::class.javaObjectType) {
+                        result.add(CheckedAccessor(field, m))
+                    }
+                } catch (_: Throwable) {}
+            }
+            result
+        }
+    }
+
     private fun isViewChecked(view: View): Boolean {
         // 1. Standard Android drawableState
         val states = view.drawableState
@@ -1216,21 +1212,13 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             }
         } catch (_: Throwable) {}
 
-        // 3. Deep reflection — last resort, skip Drawable/primitives to avoid false matches
-        try {
-            val fields = view.javaClass.declaredFields
-            for (field in fields) {
-                field.isAccessible = true
-                val obj = field.get(view) ?: continue
-                if (obj is Int || obj is Boolean || obj is String || obj is android.graphics.drawable.Drawable) continue
-                try {
-                    val m = obj.javaClass.getMethod("isChecked")
-                    if (m.returnType == Boolean::class.java || m.returnType == Boolean::class.javaObjectType) {
-                        if (m.invoke(obj) == true) return true
-                    }
-                } catch (_: Throwable) {}
-            }
-        } catch (_: Throwable) {}
+        // 3. Cached reflection accessors
+        for (accessor in getCheckedAccessors(view)) {
+            try {
+                val obj = accessor.field.get(view) ?: continue
+                if (accessor.method.invoke(obj) == true) return true
+            } catch (_: Throwable) {}
+        }
 
         return false
     }
@@ -1687,7 +1675,20 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
     private fun positionFabsAboveBar(rootView: ViewGroup, container: ViewGroup) {
         val additionalMargin = getFabAdditionalMargin()
         findAndPositionAllFabs(rootView, additionalMargin)
-        container.postDelayed({ findAndPositionAllFabs(rootView, additionalMargin) }, 150L)
+
+        // One-shot: nunggu container beneran punya ukuran (bukan nebak lewat delay 150ms),
+        // lalu posisikan ulang & lepas listener-nya sendiri.
+        container.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
+            override fun onLayoutChange(
+                v: View, left: Int, top: Int, right: Int, bottom: Int,
+                oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int
+            ) {
+                if (bottom - top > 0) {
+                    findAndPositionAllFabs(rootView, additionalMargin)
+                    v.removeOnLayoutChangeListener(this)
+                }
+            }
+        })
     }
 
     private fun positionFabAboveCurrentBar(fab: View, bottomNavId: Int) {
