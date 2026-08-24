@@ -70,11 +70,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             "fab_second",
             "fab_auxiliary",
             "extended_mini_fab",
-            "addon_button",
-            "meta_ai_button",
-            "meta_ai_fab",
-            "bot_fab",
-            "auxiliary_fab",
             "status_btn",
             "call_btn",
             "new_chat_btn",
@@ -85,11 +80,11 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         // Unique tag keys
         private const val TAG_FLOATING_WRAPPER = 0x46_42_41_52 // 'FBAR'
         private const val TAG_BACKDROP = 0x46_42_42_44 // 'FBBD'
-        private const val TAG_BASE_MARGIN = 0x46_41_42_4D // 'FABM'
+        private const val TAG_FAB_OFFSET = 0x46_41_42_4F // 'FABO'
         private const val TAG_ITEM_INITIALIZED = 0x46_42_49_49 // 'FBII'
 
         // Visual & Physics Parameters
-        private const val BAR_HEIGHT_DP = 68f
+        private const val BAR_HEIGHT_DP = 64f
         private const val BAR_PADDING_DP = 4f
         private const val INDICATOR_INSET_DP = 4f
         private const val INDICATOR_WIDTH_RATIO = 0.90f
@@ -597,7 +592,10 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
     }
 
     private fun scheduleSetup(bar: ViewGroup) {
-        if (processedBars.containsKey(bar)) return
+        if (processedBars.containsKey(bar)) {
+            ensureBarOverlay(bar)
+            return
+        }
 
         bar.post {
             if (setupFloatingBar(bar)) {
@@ -606,162 +604,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                 return@post
             }
             retrySetup(bar)
-        }
-    }
-
-    private val hookedBarClasses = java.util.Collections.synchronizedSet(mutableSetOf<Class<*>>())
-
-    private fun hookBarTouch(barClass: Class<*>, bottomNavId: Int) {
-        if (!hookedBarClasses.add(barClass)) return
-        try {
-            XposedHelpers.findAndHookMethod(
-                barClass,
-                "dispatchTouchEvent",
-                MotionEvent::class.java,
-                object : XC_MethodHook() {
-                    override fun beforeHookedMethod(param: MethodHookParam) {
-                        val bar = param.thisObject as? ViewGroup ?: return
-                        if (bar.id != bottomNavId) return
-                        val state = barStates[bar] ?: return
-                        val items = state.items
-                        val indicator = state.indicator ?: return
-                        if (items.isEmpty() || !indicator.active) return
-                        val ev = param.args[0] as? MotionEvent ?: return
-
-                        when (ev.actionMasked) {
-                            MotionEvent.ACTION_DOWN -> {
-                                state.dragStartX = ev.x
-                                state.lastDragX = ev.x
-                                state.pillStartCenterX = indicator.centerX
-                                state.isDragging = false
-                                state.targetPressProgress = 1f
-                                startPillPhysics(bar, state)
-                            }
-                            MotionEvent.ACTION_MOVE -> {
-                                val dx = ev.x - state.dragStartX
-                                val stepDx = ev.x - state.lastDragX
-                                state.lastDragX = ev.x
-
-                                if (!state.isDragging && abs(dx) > Utils.dipToPixels(4f)) {
-                                    state.isDragging = true
-                                    state.isScrubbing = true
-                                    bar.parent?.requestDisallowInterceptTouchEvent(true)
-                                    try {
-                                        val cancelEv = MotionEvent.obtain(ev).apply { action = MotionEvent.ACTION_CANCEL }
-                                        for (i in 0 until bar.childCount) {
-                                            bar.getChildAt(i).dispatchTouchEvent(cancelEv)
-                                        }
-                                        cancelEv.recycle()
-                                    } catch (_: Throwable) {}
-                                }
-
-                                if (state.isDragging) {
-                                    val firstItem = items.first()
-                                    val lastItem = items.last()
-                                    val minX = offsetInBar(bar, firstItem).first + firstItem.width / 2f
-                                    val maxX = offsetInBar(bar, lastItem).first + lastItem.width / 2f
-
-                                    // Rubber band resistance
-                                    val rawCenterX = state.pillStartCenterX + dx
-                                    var newCenterX = when {
-                                        rawCenterX < minX -> minX - sqrt((minX - rawCenterX) * Utils.dipToPixels(RUBBER_BAND_DP * 2f))
-                                        rawCenterX > maxX -> maxX + sqrt((rawCenterX - maxX) * Utils.dipToPixels(RUBBER_BAND_DP * 2f))
-                                        else -> rawCenterX
-                                    }
-
-                                    val closestIndex = items.indices.minByOrNull { idx ->
-                                        val item = items[idx]
-                                        val center = offsetInBar(bar, item).first + item.width / 2f
-                                        abs(center - newCenterX)
-                                    } ?: state.selectedIndex
-                                    val targetWidth = items[closestIndex].width * INDICATOR_WIDTH_RATIO / 2f
-
-                                    val safeMargin = Utils.dipToPixels(10f).toFloat()
-                                    val minCenter = safeMargin + targetWidth
-                                    val maxCenter = if (bar.width > 0) bar.width - safeMargin - targetWidth else minCenter
-                                    if (maxCenter > minCenter) {
-                                        newCenterX = newCenterX.coerceIn(minCenter, maxCenter)
-                                    }
-
-                                    // Velocity-driven stretch and press scale
-                                    val dragVelocityNorm = (stepDx / Utils.dipToPixels(12f)).coerceIn(-0.35f, 0.35f)
-                                    val stretchX = PRESSED_SCALE * (1f + abs(dragVelocityNorm) * 0.25f)
-                                    val squashY = PRESSED_SCALE * (1f - abs(dragVelocityNorm) * 0.10f)
-
-                                    state.currentCenterX = newCenterX
-                                    state.targetCenterX = newCenterX
-                                    state.currentHalfWidth = targetWidth
-                                    state.targetHalfWidth = targetWidth
-                                    state.currentScaleX = stretchX
-                                    state.currentScaleY = squashY
-                                    state.targetScaleX = 1f
-                                    state.targetScaleY = 1f
-                                    state.targetPressProgress = 1f
-
-                                    indicator.centerX = newCenterX
-                                    indicator.halfWidth = targetWidth
-                                    indicator.scaleX = stretchX
-                                    indicator.scaleY = squashY
-                                    indicator.pressProgress = 1f
-                                    indicator.invalidateSelf()
-                                    bar.invalidate()
-
-                                    // Interactive tab item hover scale
-                                    for (item in items) {
-                                        val center = offsetInBar(bar, item).first + item.width / 2f
-                                        val dist = abs(center - newCenterX)
-                                        val maxDist = item.width.toFloat().coerceAtLeast(1f)
-                                        val hoverFraction = (1f - dist / maxDist).coerceIn(0f, 1f)
-                                        val targetScale = 1f + 0.12f * hoverFraction
-                                        item.scaleX = targetScale
-                                        item.scaleY = targetScale
-                                    }
-
-                                    param.result = true
-                                    return
-                                }
-                            }
-                            MotionEvent.ACTION_UP -> {
-                                state.targetPressProgress = 0f
-                                if (state.isDragging) {
-                                    state.isDragging = false
-                                    state.isScrubbing = false
-
-                                    val currentX = indicator.centerX
-                                    val closestIndex = items.indices.minByOrNull { idx ->
-                                        val item = items[idx]
-                                        val center = offsetInBar(bar, item).first + item.width / 2f
-                                        abs(center - currentX)
-                                    } ?: state.selectedIndex
-
-                                    if (closestIndex in items.indices) {
-                                        items[closestIndex].performClick()
-                                        animateToItem(bar, state, items, closestIndex)
-                                    }
-                                    param.result = true
-                                    return
-                                } else {
-                                    startPillPhysics(bar, state)
-                                }
-                            }
-                            MotionEvent.ACTION_CANCEL -> {
-                                state.targetPressProgress = 0f
-                                if (state.isDragging) {
-                                    state.isDragging = false
-                                    state.isScrubbing = false
-                                    if (state.selectedIndex in items.indices) {
-                                        animateToItem(bar, state, items, state.selectedIndex)
-                                    }
-                                } else {
-                                    startPillPhysics(bar, state)
-                                }
-                            }
-                        }
-                    }
-                }
-            )
-        } catch (e: Throwable) {
-            logDebug("FloatingBottomBar: failed to hook bar touch: ${e.message}")
         }
     }
 
@@ -780,43 +622,79 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         }, 100L)
     }
 
+    private fun ensureBarOverlay(bar: ViewGroup) {
+        val container = bar.parent as? ViewGroup ?: return
+        if (container.parent !is FrameLayout) {
+            bar.post { setupFloatingBar(bar) }
+        }
+    }
+
     private fun setupFloatingBar(bar: ViewGroup): Boolean {
         try {
-            val parent = bar.parent as? ViewGroup ?: return false
-            parent.clipChildren = false
-            parent.clipToPadding = false
+            val existingParent = bar.parent as? FrameLayout
+            if (existingParent?.getTag(TAG_FLOATING_WRAPPER) == true) {
+                val rootView = findRootView(bar) ?: return false
+                val state = barStates.getOrPut(bar) { BarState() }
+                state.wrapper = existingParent
+                updateOverlayLayout(rootView, existingParent, bar)
+                applyTransparentShadowStyle(rootView, existingParent, bar)
+                positionFabsAboveBar(rootView, existingParent)
+                setupVisibilitySync(rootView, existingParent, bar, state)
+                return true
+            }
 
-            val grandParent = parent.parent as? ViewGroup
-            grandParent?.clipChildren = false
-            grandParent?.clipToPadding = false
+            val originalParent = bar.parent as? ViewGroup ?: return false
+            val rootView = findRootView(bar) ?: return false
+
+            if (originalParent.parent === rootView &&
+                originalParent.getTag(TAG_FLOATING_WRAPPER) == true) {
+                return true
+            }
+            originalParent.removeView(bar)
 
             val state = barStates.getOrPut(bar) { BarState() }
-            state.originalParent = parent
+            state.originalParent = originalParent
 
-            val sideMargin = Utils.dipToPixels(SIDE_MARGIN_DP)
+            val wrapper = FrameLayout(bar.context).apply {
+                setTag(TAG_FLOATING_WRAPPER, true)
+                setBackgroundColor(Color.TRANSPARENT)
+                clipChildren = false
+                clipToPadding = false
+            }
+            state.wrapper = wrapper
+
             val barHeight = Utils.dipToPixels(BAR_HEIGHT_DP)
-            val bottomMargin = Utils.dipToPixels(BOTTOM_MARGIN_DP)
 
-            val barParams = bar.layoutParams as? ViewGroup.MarginLayoutParams
-            if (barParams != null) {
-                barParams.width = ViewGroup.LayoutParams.MATCH_PARENT
-                barParams.height = barHeight
-                barParams.leftMargin = sideMargin
-                barParams.rightMargin = sideMargin
-                barParams.bottomMargin = bottomMargin
-                bar.layoutParams = barParams
-            }
-            bar.setPadding(Utils.dipToPixels(BAR_PADDING_DP), 0, Utils.dipToPixels(BAR_PADDING_DP), 0)
-
-            val bottomNavId = Utils.getID("bottom_nav", "id")
-            if (bottomNavId > 0) {
-                hookBarTouch(bar.javaClass, bottomNavId)
+            val wrapperParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                barHeight
+            ).apply {
+                gravity = Gravity.BOTTOM
             }
 
-            applyTransparentShadowStyle(bar)
-            positionFabsAboveBar(bar)
+            val barParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                barHeight
+            ).apply {
+                gravity = Gravity.BOTTOM
+            }
+            wrapper.addView(bar, barParams)
+            rootView.addView(wrapper, wrapperParams)
 
-            logDebug("FloatingBottomBar: styled bar in place")
+            updateOverlayLayout(rootView, wrapper, bar)
+            applyTransparentShadowStyle(rootView, wrapper, bar)
+            positionFabsAboveBar(rootView, wrapper)
+            setupVisibilitySync(rootView, wrapper, bar, state)
+
+            bar.post {
+                val rv = findRootView(bar)
+                val st = barStates[bar]
+                if (rv != null && st?.wrapper != null) {
+                    applyTransparentShadowStyle(rv, st.wrapper!!, bar)
+                }
+            }
+
+            logDebug("FloatingBottomBar: wrapped bar in floating overlay")
             return true
         } catch (e: Throwable) {
             log(e)
@@ -824,7 +702,112 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         }
     }
 
-    private fun applyTransparentShadowStyle(bar: ViewGroup) {
+    private fun setupVisibilitySync(
+        rootView: FrameLayout,
+        wrapper: FrameLayout,
+        bar: ViewGroup,
+        state: BarState
+    ) {
+        state.visibilityGlobalLayout?.let {
+            if (rootView.viewTreeObserver.isAlive) {
+                rootView.viewTreeObserver.removeOnGlobalLayoutListener(it)
+            }
+        }
+
+        fun updateVisibility() {
+            val origParent = state.originalParent
+            val isOrigParentVisible = origParent == null || (origParent.isShown && origParent.visibility == View.VISIBLE)
+            val isBarVisible = bar.visibility == View.VISIBLE
+            val insets = ViewCompat.getRootWindowInsets(rootView)
+            val imeVisible = insets?.isVisible(WindowInsetsCompat.Type.ime()) == true ||
+                    (insets?.getInsets(WindowInsetsCompat.Type.ime())?.bottom ?: 0) > 100
+            val focusedView = rootView.findFocus()
+            val isEditing = focusedView is EditText
+
+            val shouldShow = isOrigParentVisible && isBarVisible && !imeVisible && !isEditing
+            val targetVisibility = if (shouldShow) View.VISIBLE else View.GONE
+
+            if (wrapper.visibility != targetVisibility) {
+                wrapper.visibility = targetVisibility
+            }
+        }
+
+        val listener = ViewTreeObserver.OnGlobalLayoutListener {
+            updateVisibility()
+        }
+
+        state.visibilityGlobalLayout = listener
+        rootView.viewTreeObserver.addOnGlobalLayoutListener(listener)
+        updateVisibility()
+    }
+
+    private fun updateOverlayLayout(rootView: FrameLayout, container: ViewGroup, bar: ViewGroup) {
+        val params = container.layoutParams as? FrameLayout.LayoutParams ?: return
+        val sideMargin = Utils.dipToPixels(SIDE_MARGIN_DP)
+        val barHeight = Utils.dipToPixels(BAR_HEIGHT_DP)
+        params.gravity = Gravity.BOTTOM
+        params.leftMargin = sideMargin
+        params.rightMargin = sideMargin
+        params.bottomMargin = navigationBarInset(rootView) + Utils.dipToPixels(BOTTOM_MARGIN_DP)
+        params.height = barHeight
+        container.layoutParams = params
+
+        val barParams = bar.layoutParams ?: return
+        barParams.width = ViewGroup.LayoutParams.MATCH_PARENT
+        barParams.height = barHeight
+        (barParams as? ViewGroup.MarginLayoutParams)?.setMargins(0, 0, 0, 0)
+        bar.layoutParams = barParams
+        bar.setPadding(Utils.dipToPixels(BAR_PADDING_DP), 0, Utils.dipToPixels(BAR_PADDING_DP), 0)
+    }
+
+    private fun navigationBarInset(view: View): Int {
+        return ViewCompat.getRootWindowInsets(view)
+            ?.getInsets(WindowInsetsCompat.Type.systemBars())
+            ?.bottom ?: 0
+    }
+
+    private fun findRootView(startView: View): FrameLayout? {
+        var candidate: FrameLayout? = null
+        var p: android.view.ViewParent? = startView.parent
+        while (p != null) {
+            if (p.javaClass == FrameLayout::class.java) {
+                candidate = p as FrameLayout
+            }
+            p = p.parent
+        }
+        if (candidate != null) return candidate
+        val content = startView.rootView.findViewById<ViewGroup>(android.R.id.content)
+        return (content as? FrameLayout) ?: (startView.rootView as? FrameLayout)
+    }
+
+    private fun findBlurRoot(rootView: ViewGroup, wrapper: View): ViewGroup? {
+        var best: ViewGroup? = null
+        var bestArea = 0L
+        for (i in 0 until rootView.childCount) {
+            val child = rootView.getChildAt(i)
+            if (child === wrapper || child !is ViewGroup) continue
+            val area = child.width.toLong() * child.height.toLong()
+            if (area > bestArea) {
+                bestArea = area
+                best = child
+            }
+        }
+        return if (bestArea > 0L) best else null
+    }
+
+    private fun applyTransparentShadowStyle(
+        rootView: FrameLayout,
+        container: ViewGroup,
+        bar: ViewGroup
+    ) {
+        container.setBackgroundColor(Color.TRANSPARENT)
+
+        val parent = container.parent as? ViewGroup
+        parent?.clipChildren = false
+        parent?.clipToPadding = false
+        container.clipChildren = false
+        container.clipToPadding = false
+
         val dividerId = Utils.getID("bottom_nav_divider", "id")
         if (dividerId > 0) {
             for (i in 0 until bar.childCount) {
@@ -838,102 +821,94 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
 
         val barColor = resolveBarColor(bar)
         val isLight = isLightColor(barColor)
+        val blurEnabled = prefs.getBoolean("floating_bottom_bar_blur", true)
 
         val radiusDp = prefs.getInt("floating_bottom_bar_radius", CORNER_RADIUS_DP.toInt()).toFloat()
         val radius = Utils.dipToPixels(radiusDp).toFloat()
-        val corners = floatArrayOf(radius, radius, radius, radius, radius, radius, radius, radius)
 
-        val pillAlpha = if (isLight) 65 else 55
+        // Pure Crystal Liquid Glass Bar (Barely tinted, 98% transparent, clear refraction)
+        val pillAlpha = if (blurEnabled) 6 else 140
         val pillColor = if (isLight) {
             Color.argb(pillAlpha, 255, 255, 255)
         } else {
-            Color.argb(pillAlpha, 28, 28, 30)
+            Color.argb(pillAlpha, 255, 255, 255)
         }
+
+        val corners = floatArrayOf(radius, radius, radius, radius, radius, radius, radius, radius)
+        
+        // 1. Crystal clear transparent glass body
         val basePill = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadii = corners
             setColor(pillColor)
         }
-        val outerRim = GradientDrawable().apply {
+        
+        // 2. Pure crisp crystalline glass rim stroke
+        val outerCrystallineRim = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadii = corners
             setColor(Color.TRANSPARENT)
-            val strokeAlpha = if (isLight) 70 else 90
-            setStroke(Utils.dipToPixels(1.5f), Color.argb(strokeAlpha, 255, 255, 255))
-        }
-        val pill = LayerDrawable(arrayOf(basePill, outerRim))
-
-        // Find or create backdrop — NEVER remove+recreate (causes layout loop)
-        var backdrop: View? = null
-        for (i in 0 until bar.childCount) {
-            if (bar.getChildAt(i).getTag(TAG_BACKDROP) == true) {
-                backdrop = bar.getChildAt(i)
-                break
-            }
-        }
-        val isNewBackdrop = backdrop == null
-        if (isNewBackdrop) {
-            backdrop = View(bar.context).apply {
-                setTag(TAG_BACKDROP, true)
-                clipToOutline = true
-                elevation = 0f
-            }
-            bar.addView(backdrop, 0, FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            ))
+            val strokeAlpha = if (isLight) 40 else 65
+            setStroke(Utils.dipToPixels(1.2f), Color.argb(strokeAlpha, 255, 255, 255))
         }
 
-        // Always update drawable (theme/radius may have changed)
-        backdrop!!.background = pill
+        val pill = LayerDrawable(arrayOf(basePill, outerCrystallineRim))
+
+        val state = barStates.getOrPut(bar) { BarState() }
+
+        val backdrop = obtainBackdrop(rootView, container, bar, blurEnabled, state)
+        val elevPx = Utils.dipToPixels(ELEVATION_DP).toFloat()
+        backdrop.background = pill
+        backdrop.clipToOutline = true
         backdrop.outlineProvider = object : ViewOutlineProvider() {
             override fun getOutline(view: View, outline: android.graphics.Outline) {
                 val r = radius.coerceAtMost(view.height.toFloat() / 2f)
                 outline.setRoundRect(0, 0, view.width, view.height, r)
             }
         }
+        backdrop.elevation = elevPx
 
-        // Only apply AGSL once (expensive, and re-applying causes shader recompile)
-        if (isNewBackdrop && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            backdrop.post {
-                val w = backdrop.width.toFloat()
-                val h = backdrop.height.toFloat()
-                if (w > 0 && h > 0) {
-                    try {
-                        val r = radius.coerceAtMost(h / 2f)
-                        val shader = android.graphics.RuntimeShader(LiquidGlassShader.SHADER_SRC)
-                        shader.setFloatUniform("resolution", w, h)
-                        shader.setFloatUniform("cornerRadius", r)
-                        shader.setFloatUniform("refractionStrength", 4.5f)
-                        shader.setFloatUniform("chromaticAberration", 1.6f)
-                        shader.setFloatUniform("brightnessBoost", 1.2f)
-                        shader.setFloatUniform("rimIntensity", 0.5f)
-                        backdrop.setRenderEffect(
-                            android.graphics.RenderEffect.createRuntimeShaderEffect(shader, "image")
-                        )
-                    } catch (t: Throwable) {
-                        logDebug("AGSL shader failed: ${t.message}")
+        if (backdrop is BlurView && blurEnabled) {
+            val blurRoot2 = findBlurRoot(rootView, container)
+            if (blurRoot2 != null) {
+                try {
+                    backdrop.setupWith(blurRoot2)
+                        .setFrameClearDrawable(null)
+                        .setBlurRadius(BLUR_RADIUS)
+                        .setOverlayColor(Color.TRANSPARENT)
+                        .setBlurAutoUpdate(true)
+                } catch (_: Throwable) { }
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                backdrop.post {
+                    if (backdrop.width > 0 && backdrop.height > 0) {
+                        try {
+                            val w = backdrop.width.toFloat()
+                            val h = backdrop.height.toFloat()
+                            val r = radius.coerceAtMost(h / 2f)
+                            val shader = RuntimeShader(LiquidGlassShader.SHADER_SRC)
+                            shader.setFloatUniform("resolution", w, h)
+                            shader.setFloatUniform("cornerRadius", r)
+                            shader.setFloatUniform("refractionStrength", 5.0f)
+                            shader.setFloatUniform("chromaticAberration", 1.8f)
+                            shader.setFloatUniform("brightnessBoost", 1.15f)
+                            shader.setFloatUniform("rimIntensity", 0.45f)
+
+                            val glassEffect = RenderEffect.createRuntimeShaderEffect(shader, "image")
+                            backdrop.setRenderEffect(glassEffect)
+                        } catch (t: Throwable) {
+                            logDebug("Failed to apply strong AGSL shader: ${t.message}")
+                        }
                     }
                 }
             }
         }
 
-        val state = barStates.getOrPut(bar) { BarState() }
-        val elevPx = Utils.dipToPixels(ELEVATION_DP).toFloat()
-
-        val indicatorColor = if (isLight) Color.argb(38, 0, 0, 0) else Color.argb(55, 255, 255, 255)
-        val shadowColor = if (isLight) Color.argb(30, 0, 0, 0) else Color.argb(45, 0, 0, 0)
-        val indicatorStroke = if (isLight) Color.argb(30, 255, 255, 255) else Color.argb(70, 255, 255, 255)
-        val indicator = LiquidIndicatorDrawable(indicatorColor, shadowColor, indicatorStroke)
-        state.indicator = indicator
-        state.selectedIndex = -1
-
-        // Bar background = only the indicator (transparent base), backdrop shows through
-        bar.background = indicator
         bar.clipToOutline = true
         bar.clipChildren = false
         bar.clipToPadding = false
-        bar.elevation = elevPx
+        bar.elevation = elevPx + 2f
         bar.outlineProvider = object : ViewOutlineProvider() {
             override fun getOutline(view: View, outline: android.graphics.Outline) {
                 val r = radius.coerceAtMost(view.height.toFloat() / 2f)
@@ -943,24 +918,144 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             bar.setRenderEffect(null)
         }
+        bar.bringToFront()
+
+        // Clean spotlight indicator
+        val indicatorColor = if (isLight) {
+            Color.argb(38, 0, 0, 0)
+        } else {
+            Color.argb(55, 255, 255, 255)
+        }
+        val shadowColor = if (isLight) {
+            Color.argb(30, 0, 0, 0)
+        } else {
+            Color.argb(45, 0, 0, 0)
+        }
+        val indicatorStroke = if (isLight) {
+            Color.argb(30, 255, 255, 255)
+        } else {
+            Color.argb(70, 255, 255, 255)
+        }
+        val indicator = LiquidIndicatorDrawable(indicatorColor, shadowColor, indicatorStroke)
+        state.indicator = indicator
+        state.selectedIndex = -1
+        bar.background = indicator
 
         try {
-            bar.javaClass.getMethod("setItemActiveIndicatorEnabled", Boolean::class.javaPrimitiveType)
-                .invoke(bar, false)
+            val setIndicatorEnabled = bar.javaClass
+                .getMethod("setItemActiveIndicatorEnabled", Boolean::class.javaPrimitiveType)
+            setIndicatorEnabled.invoke(bar, false)
         } catch (e: Exception) {
             logDebug("Failed to disable native active indicator: ${e.message}")
         }
 
         try {
-            bar.javaClass.getMethod("setLabelVisibilityMode", Int::class.javaPrimitiveType)
-                .invoke(bar, 1)
+            val setLabelMode = bar.javaClass
+                .getMethod("setLabelVisibilityMode", Int::class.javaPrimitiveType)
+            setLabelMode.invoke(bar, 1)
         } catch (e: Exception) { }
 
         attachSelectionWatcher(bar, state)
     }
 
-    private fun attachSelectionWatcher(bar: ViewGroup, state: BarState) {
+    private fun obtainBackdrop(
+        rootView: FrameLayout,
+        container: ViewGroup,
+        bar: ViewGroup,
+        blurEnabled: Boolean,
+        state: BarState
+    ): View {
+        state.backdrop?.let { existing ->
+            if (existing.parent === container) {
+                syncBackdropHeight(bar, existing, state)
+                return existing
+            }
+            (existing.parent as? ViewGroup)?.removeView(existing)
+        }
+        for (i in 0 until container.childCount) {
+            val child = container.getChildAt(i)
+            if (child.getTag(TAG_BACKDROP) == true) {
+                state.backdrop = child
+                syncBackdropHeight(bar, child, state)
+                return child
+            }
+        }
 
+        val backdrop = createBackdropView(rootView, container, blurEnabled)
+        backdrop.setTag(TAG_BACKDROP, true)
+
+        val initialHeight = if (bar.height > 0) bar.height else Utils.dipToPixels(BAR_HEIGHT_DP)
+        container.addView(
+            backdrop,
+            0,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                initialHeight
+            ).also { lp -> lp.topMargin = 0 }
+        )
+        state.backdrop = backdrop
+        syncBackdropHeight(bar, backdrop, state)
+        return backdrop
+    }
+
+    private fun syncBackdropHeight(bar: ViewGroup, backdrop: View, state: BarState) {
+        state.layoutSync?.let { bar.removeOnLayoutChangeListener(it) }
+        val listener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            val h = bar.height
+            if (h > 0) {
+                val lp = backdrop.layoutParams as? FrameLayout.LayoutParams
+                    ?: return@OnLayoutChangeListener
+                if (lp.height != h || lp.topMargin != 0) {
+                    lp.height = h
+                    lp.topMargin = 0
+                    backdrop.layoutParams = lp
+                }
+            }
+        }
+        state.layoutSync = listener
+        bar.addOnLayoutChangeListener(listener)
+        if (bar.height > 0) {
+            val lp = backdrop.layoutParams as? FrameLayout.LayoutParams ?: return
+            if (lp.height != bar.height || lp.topMargin != 0) {
+                lp.height = bar.height
+                lp.topMargin = 0
+                backdrop.layoutParams = lp
+            }
+        }
+    }
+
+    private fun createBackdropView(
+        rootView: FrameLayout,
+        container: ViewGroup,
+        blurEnabled: Boolean
+    ): View {
+        if (!blurEnabled) return View(container.context)
+
+        val blurRoot = findBlurRoot(rootView, container)
+        if (blurRoot == null) {
+            logDebug("FloatingBottomBar: no blur root found, using plain backdrop")
+            return View(container.context)
+        }
+
+        return createBlurViewFallback(container, blurRoot)
+    }
+
+    private fun createBlurViewFallback(container: ViewGroup, blurRoot: ViewGroup): View {
+        return try {
+            BlurView(ModuleContextWrapper(container.context)).apply {
+                setupWith(blurRoot)
+                    .setFrameClearDrawable(null)
+                    .setBlurRadius(BLUR_RADIUS)
+                    .setOverlayColor(Color.argb(8, 255, 255, 255))
+                    .setBlurAutoUpdate(true)
+            }
+        } catch (e: Throwable) {
+            logDebug("FloatingBottomBar: blur unavailable (${e.message}), using plain backdrop")
+            View(container.context)
+        }
+    }
+
+    private fun attachSelectionWatcher(bar: ViewGroup, state: BarState) {
         state.preDraw?.let {
             if (bar.viewTreeObserver.isAlive) bar.viewTreeObserver.removeOnPreDrawListener(it)
         }
@@ -1185,45 +1280,25 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         val activeColorState = state.activeColorState ?: android.content.res.ColorStateList.valueOf(activeColor).also { state.activeColorState = it }
         val inactiveColorState = state.inactiveColorState ?: android.content.res.ColorStateList.valueOf(inactiveColor).also { state.inactiveColorState = it }
         
-        val iconContainerId = Utils.getID("navigation_bar_item_icon_container", "id")
-        val labelsGroupId = Utils.getID("navigation_bar_item_labels_group", "id")
-
         for (i in items.indices) {
             val view = items[i]
             val isActive = (i == selected)
             val targetColorState = if (isActive) activeColorState else inactiveColorState
             val targetColor = if (isActive) activeColor else inactiveColor
             
-            // Tint and separate icon and text vertically to prevent overlapping
+            // Tint ImageView and TextView manually
             val group = view as? ViewGroup
             if (group != null) {
                 for (j in 0 until group.childCount) {
                     val child = group.getChildAt(j)
-                    if (child.id == iconContainerId || child.javaClass.name.contains("icon", ignoreCase = true)) {
-                        child.translationY = -Utils.dipToPixels(3f).toFloat()
-                        if (child is ViewGroup) {
-                            for (k in 0 until child.childCount) {
-                                val gc = child.getChildAt(k)
-                                if (gc is ImageView && gc.imageTintList !== targetColorState) {
-                                    gc.imageTintList = targetColorState
-                                }
-                            }
+                    if (child is ImageView) {
+                        if (child.imageTintList !== targetColorState) {
+                            child.imageTintList = targetColorState
                         }
-                    } else if (child.id == labelsGroupId || child.javaClass.name.contains("label", ignoreCase = true) || child.javaClass.name.contains("BaselineLayout", ignoreCase = true)) {
-                        child.translationY = Utils.dipToPixels(1f).toFloat()
-                        if (child is ViewGroup) {
-                            for (k in 0 until child.childCount) {
-                                val gc = child.getChildAt(k)
-                                if (gc is TextView && gc.currentTextColor != targetColor) {
-                                    gc.setTextColor(targetColor)
-                                }
-                            }
+                    } else if (child is TextView) {
+                        if (child.currentTextColor != targetColor) {
+                            child.setTextColor(targetColor)
                         }
-                    }
-                    if (child is ImageView && child.imageTintList !== targetColorState) {
-                        child.imageTintList = targetColorState
-                    } else if (child is TextView && child.currentTextColor != targetColor) {
-                        child.setTextColor(targetColor)
                     }
                 }
             }
@@ -1238,7 +1313,10 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             state.selectedIndex = selected
             animateToItem(bar, state, items, selected)
         }
-        positionFabsAboveBar(bar)
+        state.wrapper?.let { wrap ->
+            val rv = findRootView(bar) ?: (bar.rootView as? ViewGroup)
+            rv?.let { positionFabsAboveBar(it, wrap) }
+        }
     }
 
     /** Disables native Material 3 / WhatsApp active indicator on item. */
@@ -1594,10 +1672,23 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         return Utils.dipToPixels(BAR_HEIGHT_DP + BOTTOM_MARGIN_DP)
     }
 
-    private fun positionFabsAboveBar(bar: ViewGroup) {
-        val root = (bar.rootView as? ViewGroup) ?: return
+    private fun positionFabsAboveBar(rootView: ViewGroup, container: ViewGroup) {
         val additionalMargin = getFabAdditionalMargin()
-        findAndPositionAllFabs(root, additionalMargin)
+        findAndPositionAllFabs(rootView, additionalMargin)
+
+        // One-shot: nunggu container beneran punya ukuran (bukan nebak lewat delay 150ms),
+        // lalu posisikan ulang & lepas listener-nya sendiri.
+        container.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
+            override fun onLayoutChange(
+                v: View, left: Int, top: Int, right: Int, bottom: Int,
+                oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int
+            ) {
+                if (bottom - top > 0) {
+                    findAndPositionAllFabs(rootView, additionalMargin)
+                    v.removeOnLayoutChangeListener(this)
+                }
+            }
+        })
     }
 
     private fun positionFabAboveCurrentBar(fab: View, bottomNavId: Int) {
@@ -1615,89 +1706,31 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         }
     }
 
-    private fun isSecondaryFab(view: View): Boolean {
-        val idName = try { view.context.resources.getResourceEntryName(view.id) } catch (_: Throwable) { "" }
-        return idName.contains("extended_mini_fab", ignoreCase = true) ||
-                idName.contains("fab_second", ignoreCase = true) ||
-                idName.contains("text_status", ignoreCase = true) ||
-                idName.contains("auxiliary", ignoreCase = true) ||
-                idName.contains("addon", ignoreCase = true) ||
-                view.javaClass.simpleName.contains("ExtendedMiniFab", ignoreCase = true)
-    }
-
-    private fun findPrimaryFab(parent: ViewGroup): View? {
-        val fabId = Utils.getID("fab", "id")
-        val cameraFabId = Utils.getID("camera_fab", "id")
-        val statusBtnId = Utils.getID("status_btn", "id")
-        val newChatBtnId = Utils.getID("new_chat_btn", "id")
-
-        for (i in 0 until parent.childCount) {
-            val child = parent.getChildAt(i)
-            if (isSecondaryFab(child)) continue
-            if (child.id == fabId || child.id == cameraFabId || child.id == statusBtnId || child.id == newChatBtnId) {
-                return child
-            }
-            if (child.javaClass.simpleName.contains("WDSFab", ignoreCase = true) ||
-                (child.javaClass.simpleName.contains("FloatingActionButton", ignoreCase = true) &&
-                 !child.javaClass.simpleName.contains("ExtendedMiniFab", ignoreCase = true))) {
-                return child
-            }
-        }
-        return null
-    }
-
     private fun applyFabMargin(fab: View, additionalMargin: Int) {
+        fab.translationY = 0f
         val lp = fab.layoutParams as? ViewGroup.MarginLayoutParams ?: return
 
-        // Skip adding margin if this FAB is anchored to another view in CoordinatorLayout.
+        // Skip adding margin if this FAB is anchored to another view (like a primary FAB).
+        // If it's anchored, the CoordinatorLayout will automatically move it when the anchor moves!
         try {
             if (lp.javaClass.name.contains("CoordinatorLayout\$LayoutParams")) {
                 val getAnchorId = lp.javaClass.getMethod("getAnchorId")
                 val anchorId = getAnchorId.invoke(lp) as Int
                 if (anchorId != View.NO_ID) {
-                    return
-                }
-                val getAnchorView = runCatching { lp.javaClass.getMethod("getAnchorView") }.getOrNull()
-                val anchorView = getAnchorView?.invoke(lp) as? View
-                if (anchorView != null) {
-                    return
+                    val anchorName = fab.context.resources.getResourceEntryName(anchorId) ?: ""
+                    // If it's anchored to a FAB, skip it to prevent double-lifting
+                    if (anchorName.contains("fab", ignoreCase = true) || anchorName.contains("btn", ignoreCase = true)) {
+                        return
+                    }
                 }
             }
         } catch (_: Throwable) {}
 
-        val parent = fab.parent as? ViewGroup
-        val isSecondary = isSecondaryFab(fab)
-        val primaryFab = if (isSecondary && parent != null) findPrimaryFab(parent) else null
-        val isPrimaryVisible = primaryFab != null && primaryFab.visibility == View.VISIBLE && primaryFab.alpha > 0.5f
-
-        val targetMargin: Int
-        if (isSecondary) {
-            if (isPrimaryVisible) {
-                val primLp = primaryFab!!.layoutParams as? ViewGroup.MarginLayoutParams
-                val primMargin = primLp?.bottomMargin ?: additionalMargin
-                val primHeight = if (primaryFab.height > 0) primaryFab.height else Utils.dipToPixels(56f)
-                targetMargin = primMargin + primHeight + Utils.dipToPixels(FAB_GAP_DP)
-            } else {
-                targetMargin = additionalMargin
-            }
-
-            // Sync with primary FAB visibility/alpha changes
-            if (primaryFab != null && primaryFab.getTag(TAG_ITEM_INITIALIZED) != true) {
-                primaryFab.setTag(TAG_ITEM_INITIALIZED, true)
-                primaryFab.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-                    applyFabMargin(fab, additionalMargin)
-                }
-            }
-        } else {
-            val baseMargin = fab.getTag(TAG_BASE_MARGIN) as? Int ?: lp.bottomMargin.also {
-                fab.setTag(TAG_BASE_MARGIN, it)
-            }
-            val standardBase = baseMargin.coerceAtMost(Utils.dipToPixels(24f))
-            targetMargin = standardBase + additionalMargin
-        }
-
-        if (lp.bottomMargin != targetMargin) {
-            lp.bottomMargin = targetMargin
+        val currentAdded = fab.getTag(TAG_FAB_OFFSET) as? Int ?: 0
+        if (currentAdded != additionalMargin) {
+            val delta = additionalMargin - currentAdded
+            lp.bottomMargin += delta
+            fab.setTag(TAG_FAB_OFFSET, additionalMargin)
             fab.layoutParams = lp
             fab.requestLayout()
         }
