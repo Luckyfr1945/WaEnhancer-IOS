@@ -1,17 +1,19 @@
 [ADDED]
-* Status Replay Tracker: Track and display how many times contacts replay/re-watch your status updates (badge "🔄 Dilihat Nx" with relative timestamps in viewer list)
-* Status Replay History Dialog: Tap on status replay badge to view exact timestamps of every view/replay for each contact
-* Automatic DB Management: Persistent SQLite storage (StatusReplayStore) with automatic 24-hour cleanup for expired status replays
-* Floating Bottom Bar: Fluid iOS-style floating navigation bar with real-time blur and theme customization
+* Status Replay Tracker: Mengetahui berapa kali kontak memutar ulang status Anda (badge "🔄 Dilihat Nx" + waktu relatif di daftar penonton status)
+* Status Replay History Dialog: Klik badge untuk melihat detail jam tayang setiap kali status diputar ulang oleh kontak
+* Floating Bottom Bar: Navigasi bar melayang bergaya iOS dengan efek blur kaca real-time (AGSL Shader)
+* Auto DB Persistence: Penyimpanan SQLite lokal (StatusReplayStore) dengan pembersihan otomatis status kadaluwarsa (>24 jam)
+* Dukungan penuh untuk versi WhatsApp 2.26.32.xx
 
 [IMPROVED]
-* Seen Tick Architecture Refactor: Deterministic constructor resolution with strict parameter signature matching (replacing fragile firstOrNull)
-* Job Dispatch Reliability: Explicit parameter slot mapping for SendReadReceiptJob and SendPlayedReceiptJob with valid timestamp/boolean defaults to prevent JobQueue stalls
-* Multi-thread Visibility: Added @Volatile across all shared companion state for thread-safe access from coroutine dispatchers
-* Memory Management: Automatic garbage cleanup for WeakReference view caches in SeenTick
-* Dynamic Field Caching: Thread-safe per-class cache for status playback reflection fields
+* iOS Text Entry & Tombol (+): Perbaikan swap tombol emoji/attachment menjadi tombol (+) dan sticker ala iOS, layout pill responsif, dan touch handling mulus
+* Seen Tick Architecture Refactor: Resolusi constructor deterministik, mapping parameter eksplisit, dan default timestamp/boolean valid (mencegah JobQueue stall)
+* Multi-Thread & Memory Safety: Penambahan @Volatile pada state thread-pool dan pembersihan otomatis cache WeakReference
+* Dynamic Field Caching: Per-class thread-safe caching untuk refleksi tampilan status
+* iOS Header Action Buttons: Sinkronisasi tombol DND, Ghost Mode, Freeze Last Seen, dan Restart di samping kamera
 
 [FIXED]
-* Fixed outgoing message transmission (clock 🕒 icon bug) caused by NoSuchMethodError in FMessageWpp.Key constructor reflection
-* Fixed cascading component initialization failures in FMessageWpp with isolated try-catch blocks and safe fallbacks
-* Fixed status viewer row binding across WhatsApp 2.26.32+ obfuscated adapter models
+* Memperbaiki pengiriman pesan yang sempat tertahan di ikon jam (🕒) akibat NoSuchMethodError pada refleksi konstruktor FMessageWpp.Key
+* Memperbaiki layout glitch dan padding pada Floating Bottom Bar
+* Mengatasi inisialisasi komponen FMessageWpp yang gagal beruntun dengan isolasi try-catch mandiri
+* Memperbaiki duplikasi tombol dan sinkronisasi tampilan di berbagai bahasa (Indonesia & English)
