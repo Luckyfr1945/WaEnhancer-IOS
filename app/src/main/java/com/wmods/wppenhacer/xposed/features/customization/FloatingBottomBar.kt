@@ -253,58 +253,70 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             uniform float rimIntensity;
 
             float sdRoundedBox(float2 p, float2 b, float r) {
-                float2 q = abs(p) - b + r;
-                return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
+                float2 q = abs(p) - b + float2(r);
+                return min(max(q.x, q.y), 0.0) + length(max(q, float2(0.0))) - r;
             }
 
             vec4 main(float2 fragCoord) {
                 float2 uv = fragCoord / resolution;
                 float2 halfRes = resolution * 0.5;
                 float2 p = fragCoord - halfRes;
-                float2 boxSize = halfRes - float2(1.0);
+                float2 boxSize = halfRes - float2(0.5);
                 
                 float dist = sdRoundedBox(p, boxSize, cornerRadius);
-                if (dist > 0.0) {
+                float alphaMask = clamp(0.5 - dist, 0.0, 1.0);
+                if (alphaMask <= 0.0) {
                     return vec4(0.0);
                 }
                 
-                // 1. Continuous distance from outer glass perimeter
+                // 1. Precise Bevel & Continuous Lens Profile
                 float distFromEdge = -dist;
-                float bevelWidth = cornerRadius * 0.65;
+                float bevelWidth = max(cornerRadius * 0.75, 12.0);
                 float edgeFactor = 1.0 - smoothstep(0.0, bevelWidth, distFromEdge);
+                float lensCurve = sin(edgeFactor * 1.5707963);
                 
-                // 2. Continuous C1 normal vector around the perimeter
-                float2 q = abs(p) - (halfRes - float2(cornerRadius));
-                float2 normal = sign(p) * normalize(max(q, float2(0.0001)));
+                // 2. Continuous 2D surface normal
+                float2 q = abs(p) - (boxSize - float2(cornerRadius));
+                float2 normal = sign(p) * normalize(max(q, float2(0.0)) + float2(0.0001));
                 
-                // 3. Strong optical refraction & rainbow prismatic dispersion offsets
-                float2 refractOffset = -normal * pow(edgeFactor, 1.25) * (refractionStrength * 0.035);
-                float2 dispCoord = normal * pow(edgeFactor, 1.10) * (chromaticAberration * 0.035);
+                // 3. Multi-layer Optical Refraction & Dispersion
+                float refrMag = refractionStrength * 0.028 * lensCurve;
+                float dispMag = chromaticAberration * 0.022 * pow(lensCurve, 1.2);
                 
-                float2 sampleUV = uv + refractOffset;
+                float2 refractOffset = -normal * refrMag;
+                float2 dispOffset = normal * dispMag;
+                float2 baseUV = clamp(uv + refractOffset, float2(0.001), float2(0.999));
                 
-                // 4. 7-Channel Rainbow Spectrum Splitting (Vivid Prismatic Color Separation)
-                vec4 red    = image.eval(clamp(sampleUV + dispCoord * 1.00, 0.0, 1.0) * resolution);
-                vec4 orange = image.eval(clamp(sampleUV + dispCoord * 0.66, 0.0, 1.0) * resolution);
-                vec4 yellow = image.eval(clamp(sampleUV + dispCoord * 0.33, 0.0, 1.0) * resolution);
-                vec4 green  = image.eval(clamp(sampleUV, 0.0, 1.0) * resolution);
-                vec4 cyan   = image.eval(clamp(sampleUV - dispCoord * 0.33, 0.0, 1.0) * resolution);
-                vec4 blue   = image.eval(clamp(sampleUV - dispCoord * 0.66, 0.0, 1.0) * resolution);
-                vec4 purple = image.eval(clamp(sampleUV - dispCoord * 1.00, 0.0, 1.0) * resolution);
+                // 4. 7-Channel Rainbow Spectral Splitting
+                vec4 red    = image.eval(clamp(baseUV + dispOffset * 1.00, float2(0.0), float2(1.0)) * resolution);
+                vec4 orange = image.eval(clamp(baseUV + dispOffset * 0.66, float2(0.0), float2(1.0)) * resolution);
+                vec4 yellow = image.eval(clamp(baseUV + dispOffset * 0.33, float2(0.0), float2(1.0)) * resolution);
+                vec4 green  = image.eval(clamp(baseUV, float2(0.0), float2(1.0)) * resolution);
+                vec4 cyan   = image.eval(clamp(baseUV - dispOffset * 0.33, float2(0.0), float2(1.0)) * resolution);
+                vec4 blue   = image.eval(clamp(baseUV - dispOffset * 0.66, float2(0.0), float2(1.0)) * resolution);
+                vec4 purple = image.eval(clamp(baseUV - dispOffset * 1.00, float2(0.0), float2(1.0)) * resolution);
                 
                 vec4 col;
-                col.r = (red.r * 2.5 + orange.r * 2.0 + yellow.r * 1.0) / 5.5;
-                col.g = (yellow.g * 1.0 + green.g * 2.5 + cyan.g * 1.5) / 5.0;
-                col.b = (cyan.b * 1.5 + blue.b * 2.5 + purple.b * 2.0) / 6.0;
+                col.r = (red.r * 2.8 + orange.r * 2.2 + yellow.r * 1.2) / 6.2;
+                col.g = (yellow.g * 1.2 + green.g * 2.8 + cyan.g * 1.8) / 5.8;
+                col.b = (cyan.b * 1.8 + blue.b * 2.8 + purple.b * 2.2) / 6.8;
                 col.a = (red.a + green.a + blue.a) / 3.0;
                 
-                // 5. High-Vibrancy & Saturation Amplification
+                // 5. Rich Vibrancy & Saturation Enhancement
                 float luma = dot(col.rgb, vec3(0.2126, 0.7152, 0.0722));
-                col.rgb = mix(vec3(luma), col.rgb, 1.70) * brightnessBoost;
+                col.rgb = mix(vec3(luma), col.rgb, 1.45) * brightnessBoost;
                 
-                // 6. Crisp Outer Crystalline Rim
-                float rim = smoothstep(-1.5, 0.0, dist) * rimIntensity;
-                col.rgb += vec3(rim);
+                // 6. Directional Specular Light Catch (Apple Glass Top-Left Key Light)
+                float2 lightDir = normalize(float2(-0.35, -0.93));
+                float lightCatch = max(dot(-normal, lightDir), 0.0) * edgeFactor;
+                float specular = pow(lightCatch, 3.5) * 0.35;
+                
+                // 7. Ambient Liquid Rim Glow & Edge Reflection
+                float rim = smoothstep(-1.8, 0.0, dist) * rimIntensity;
+                float innerGlow = pow(edgeFactor, 2.0) * 0.12;
+                
+                col.rgb += vec3(specular + rim + innerGlow);
+                col.a *= alphaMask;
                 
                 return col;
             }
