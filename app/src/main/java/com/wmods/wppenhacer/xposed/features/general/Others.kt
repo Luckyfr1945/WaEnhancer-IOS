@@ -106,7 +106,6 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
                 }
             })
         }
-        propsBoolean[14862] = newSettings !=0 // WHATS_HAPPENING_SENDING_ENABLED_CODE
         propsInteger[18564] = newSettings // ME_TAB_V2_VARIANTS_CODE
 
         propsBoolean[2889] = floatingMenu
@@ -189,6 +188,47 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
             propsBoolean[14886] = false
         }
 
+        // Global NPE crash protection for WhatsApp 2.26.32.83 AI Bot sync
+        try {
+            val a8iClass = classLoader.loadClass("X.A8i")
+            for (m in a8iClass.declaredMethods) {
+                if (m.name == "A06" || m.name == "A05") {
+                    XposedBridge.hookMethod(m, object : XC_MethodHook() {
+                        override fun afterHookedMethod(param: MethodHookParam) {
+                            if (param.hasThrowable()) {
+                                val t = param.throwable
+                                if (t is NullPointerException) {
+                                    if (m.returnType == Boolean::class.javaPrimitiveType) {
+                                        param.result = false
+                                    } else {
+                                        param.result = null
+                                    }
+                                }
+                            }
+                        }
+                    })
+                }
+            }
+        } catch (_: Throwable) {}
+
+        try {
+            val amkClass = classLoader.loadClass("X.Amk")
+            for (m in amkClass.declaredMethods) {
+                if (m.name == "run") {
+                    XposedBridge.hookMethod(m, object : XC_MethodHook() {
+                        override fun afterHookedMethod(param: MethodHookParam) {
+                            if (param.hasThrowable()) {
+                                val t = param.throwable
+                                if (t is NullPointerException) {
+                                    param.result = null
+                                }
+                            }
+                        }
+                    })
+                }
+            }
+        } catch (_: Throwable) {}
+
         if (audioTranscription) {
             propsBoolean[8632] = true
             propsBoolean[2890] = true
@@ -216,7 +256,7 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
         // new popup menu in chat
         propsBoolean[21541] = floatingMenu
 
-        hookProps()
+        // hookProps()
         hookSearchbar(filterChats)
 
         if (disableSensorProximity) {

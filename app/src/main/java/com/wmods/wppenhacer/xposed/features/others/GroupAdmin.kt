@@ -37,7 +37,7 @@ class GroupAdmin(classLoader: ClassLoader, preferences: SharedPreferences) : Fea
                 if (cachedField == null) {
                     try {
                         cachedField = ReflectionUtils.findFieldUsingFilter(view.javaClass) { f ->
-                            f.type.isAssignableFrom(grpcheckAdminClass)
+                            grpcheckAdminClass.isAssignableFrom(f.type)
                         }?.apply { isAccessible = true }
                     } catch (_: Exception) {}
                 }
@@ -89,8 +89,8 @@ class GroupAdmin(classLoader: ClassLoader, preferences: SharedPreferences) : Fea
                     return
                 }
 
-                val result = grpcheckAdmin.invoke(grpParticipants, jidGrp, participantJid)
-                iconAdmin.visibility = if (result != null && result as Boolean) View.VISIBLE else View.GONE
+                val result = runCatching { grpcheckAdmin.invoke(grpParticipants, jidGrp, participantJid) as? Boolean }.getOrNull()
+                iconAdmin.visibility = if (result == true) View.VISIBLE else View.GONE
             }
         })
         } catch (e: Throwable) {

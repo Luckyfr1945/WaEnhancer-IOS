@@ -220,8 +220,6 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
                 })
         }
 
-        Others.propsBoolean[19148] = false // Change route IQ
-
         XposedBridge.hookMethod(receiptMethod, object : XC_MethodHook() {
             override fun afterHookedMethod(param: MethodHookParam) {
                 val protocolTreeNodeWpp = ProtocolTreeNodeWpp(param.result)
@@ -229,7 +227,7 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
                 val isReadReceipt = (typeVal == "read")
 
                 val fmessageKey = generateFMessageKey(protocolTreeNodeWpp) ?: return
-                if (fmessageKey.remoteJid.isStatus) return
+                if (fmessageKey.isFromMe || fmessageKey.remoteJid.isNull || fmessageKey.remoteJid.isStatus) return
 
                 val hideSeen = shouldHideReadReceipt(fmessageKey.remoteJid)
                 val hideReceipt = shouldHideReceipt(fmessageKey.remoteJid)

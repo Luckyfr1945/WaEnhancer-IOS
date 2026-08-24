@@ -859,20 +859,23 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
             }
             setOnClickListener {
                 val ghostmode = WppCore.getPrivBoolean("ghostmode", false)
-                AlertDialogWpp(activity).setTitle(
-                    activity.getString(
-                        R.string.ghost_mode_s,
-                        (if (ghostmode) "ON" else "OFF")
-                    )
-                ).setMessage(activity.getString(R.string.ghost_mode_message))
-                    .setPositiveButton(activity.getString(R.string.disable)) { _, _ ->
-                        WppCore.setPrivBoolean("ghostmode", false)
-                        Utils.doRestart(activity)
-                    }
-                    .setNegativeButton(activity.getString(R.string.enable)) { _, _ ->
-                        WppCore.setPrivBoolean("ghostmode", true)
-                        Utils.doRestart(activity)
-                    }.show()
+                if (!ghostmode) {
+                    AlertDialogWpp(activity).setTitle(
+                        activity.getString(
+                            R.string.ghost_mode_s,
+                            "OFF"
+                        )
+                    ).setMessage(activity.getString(R.string.ghost_mode_message))
+                        .setPositiveButton(activity.getString(R.string.activate)) { _, _ ->
+                            WppCore.setPrivBoolean("ghostmode", true)
+                            Utils.doRestart(activity)
+                        }
+                        .setNegativeButton(activity.getString(R.string.cancel)) { dialog, _ -> dialog?.dismiss() }
+                        .show()
+                } else {
+                    WppCore.setPrivBoolean("ghostmode", false)
+                    Utils.doRestart(activity)
+                }
             }
         }
         container.addView(ghostBtn)

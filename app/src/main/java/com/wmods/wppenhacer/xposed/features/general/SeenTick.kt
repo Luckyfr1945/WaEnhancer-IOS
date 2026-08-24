@@ -534,59 +534,8 @@ class SeenTick(
         )
     }
 
-    @SuppressLint("ClickableViewAccessibility")
     private fun hookOnSendMessages() {
-        if (!Utils.isBlueOnReplyEnabled(prefs)) return
-
-        WppCore.addListenerActivity { activity, type ->
-            if (type == WppCore.ActivityChangeState.ChangeType.RESUMED && activity.javaClass.simpleName == "Conversation") {
-                val rootView = activity.window?.decorView?.rootView ?: return@addListenerActivity
-                val tagKey = 0x7E110099
-                if (rootView.getTag(tagKey) == true) return@addListenerActivity
-                rootView.setTag(tagKey, true)
-
-                val sendId = Utils.getID("send", "id")
-                val voiceId = Utils.getID("voice_note_btn", "id")
-
-                val listenerTag = 0x7E11009A
-
-                val attachSendListeners = {
-                    val sendBtn = rootView.findViewById<View>(sendId)
-                    if (sendBtn != null && sendBtn.getTag(listenerTag) != true) {
-                        sendBtn.setTag(listenerTag, true)
-                        sendBtn.setOnTouchListener { _, event ->
-                            if (event.action == android.view.MotionEvent.ACTION_UP) {
-                                WppCore.getCurrentUserJid()?.let { jid ->
-                                    if (!jid.isNull && !jid.isStatus) {
-                                        sendBlueTick(jid)
-                                    }
-                                }
-                            }
-                            false
-                        }
-                    }
-
-                    val voiceBtn = rootView.findViewById<View>(voiceId)
-                    if (voiceBtn != null && voiceBtn.getTag(listenerTag) != true) {
-                        voiceBtn.setTag(listenerTag, true)
-                        voiceBtn.setOnTouchListener { _, event ->
-                            if (event.action == android.view.MotionEvent.ACTION_UP) {
-                                WppCore.getCurrentUserJid()?.let { jid ->
-                                    if (!jid.isNull && !jid.isStatus) {
-                                        sendBlueTick(jid)
-                                    }
-                                }
-                            }
-                            false
-                        }
-                    }
-                }
-
-                rootView.viewTreeObserver.addOnGlobalLayoutListener {
-                    attachSendListeners()
-                }
-            }
-        }
+        // Blue on reply is triggered safely via HideSeenView when the outgoing message is bound.
     }
 
     fun sendBlueTick(userJid: FMessageWpp.UserJid) {

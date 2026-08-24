@@ -260,9 +260,61 @@ class FMessageWpp(fMessage: Any?) {
     class Key {
         companion object {
             /**
-             * The class type of the key object.
-             */
+              * The class type of the key object.
+              */
             lateinit var TYPE: Class<*>
+
+            @Volatile
+            private var jidField: java.lang.reflect.Field? = null
+            @Volatile
+            private var idField: java.lang.reflect.Field? = null
+            @Volatile
+            private var fromMeField: java.lang.reflect.Field? = null
+
+            private fun resolveKeyFields(cls: Class<*>) {
+                if (jidField != null && idField != null && fromMeField != null) return
+                for (f in cls.declaredFields) {
+                    f.isAccessible = true
+                    val t = f.type
+                    if (t == String::class.java && idField == null) {
+                        idField = f
+                    } else if ((t == java.lang.Boolean.TYPE || t == java.lang.Boolean::class.java) && fromMeField == null) {
+                        fromMeField = f
+                    } else if (!t.isPrimitive && jidField == null) {
+                        jidField = f
+                    }
+                }
+            }
+
+            fun extractRemoteJid(key: Any?): Any? {
+                if (key == null) return null
+                return try {
+                    XposedHelpers.getObjectField(key, "A00")
+                } catch (_: Throwable) {
+                    resolveKeyFields(key.javaClass)
+                    jidField?.get(key)
+                }
+            }
+
+            fun extractMessageId(key: Any?): String {
+                if (key == null) return ""
+                return (try {
+                    XposedHelpers.getObjectField(key, "A01") as? String
+                } catch (_: Throwable) {
+                    resolveKeyFields(key.javaClass)
+                    idField?.get(key) as? String
+                }) ?: ""
+            }
+
+            fun extractIsFromMe(key: Any?): Boolean {
+                if (key == null) return false
+                return try {
+                    XposedHelpers.getBooleanField(key, "A02")
+                } catch (_: Throwable) {
+                    resolveKeyFields(key.javaClass)
+                    fromMeField?.getBoolean(key) ?: false
+                }
+            }
         }
 
         /**
@@ -302,9 +354,9 @@ class FMessageWpp(fMessage: Any?) {
          */
         constructor(key: Any?) {
             this.thisObject = key
-            this.remoteJid = UserJid(try { XposedHelpers.getObjectField(key, "A00") } catch (_: Throwable) { null })
-            this.messageID = (try { XposedHelpers.getObjectField(key, "A01") as? String } catch (_: Throwable) { null }) ?: ""
-            this.isFromMe = try { XposedHelpers.getBooleanField(key, "A02") } catch (_: Throwable) { false }
+            this.remoteJid = UserJid(extractRemoteJid(key))
+            this.messageID = extractMessageId(key)
+            this.isFromMe = extractIsFromMe(key)
             val fmessageObj = WppCore.getFMessageFromKey(key)
             if (fmessageObj != null) {
                 this.fMessage = FMessageWpp(fmessageObj)
@@ -313,9 +365,9 @@ class FMessageWpp(fMessage: Any?) {
 
         constructor(key: Any?, fmessage: FMessageWpp) {
             this.thisObject = key
-            this.remoteJid = UserJid(try { XposedHelpers.getObjectField(key, "A00") } catch (_: Throwable) { null })
-            this.messageID = (try { XposedHelpers.getObjectField(key, "A01") as? String } catch (_: Throwable) { null }) ?: ""
-            this.isFromMe = try { XposedHelpers.getBooleanField(key, "A02") } catch (_: Throwable) { false }
+            this.remoteJid = UserJid(extractRemoteJid(key))
+            this.messageID = extractMessageId(key)
+            this.isFromMe = extractIsFromMe(key)
             this.fMessage = fmessage
         }
 
