@@ -841,60 +841,51 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
 
         val radiusDp = prefs.getInt("floating_bottom_bar_radius", CORNER_RADIUS_DP.toInt()).toFloat()
         val radius = Utils.dipToPixels(radiusDp).toFloat()
+        val corners = floatArrayOf(radius, radius, radius, radius, radius, radius, radius, radius)
 
-        val pillAlpha = if (isLight) 65 else 50
+        val pillAlpha = if (isLight) 65 else 55
         val pillColor = if (isLight) {
             Color.argb(pillAlpha, 255, 255, 255)
         } else {
             Color.argb(pillAlpha, 28, 28, 30)
         }
-
-        val corners = floatArrayOf(radius, radius, radius, radius, radius, radius, radius, radius)
-        
         val basePill = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadii = corners
             setColor(pillColor)
         }
-        
-        val outerCrystallineRim = GradientDrawable().apply {
+        val outerRim = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadii = corners
             setColor(Color.TRANSPARENT)
             val strokeAlpha = if (isLight) 70 else 90
             setStroke(Utils.dipToPixels(1.5f), Color.argb(strokeAlpha, 255, 255, 255))
         }
+        val pill = LayerDrawable(arrayOf(basePill, outerRim))
 
-        val pill = LayerDrawable(arrayOf(basePill, outerCrystallineRim))
-
-        val state = barStates.getOrPut(bar) { BarState() }
-        val elevPx = Utils.dipToPixels(ELEVATION_DP).toFloat()
-
+        // Find or create backdrop — NEVER remove+recreate (causes layout loop)
         var backdrop: View? = null
         for (i in 0 until bar.childCount) {
-            val child = bar.getChildAt(i)
-            if (child.getTag(TAG_BACKDROP) == true) {
-                backdrop = child
+            if (bar.getChildAt(i).getTag(TAG_BACKDROP) == true) {
+                backdrop = bar.getChildAt(i)
                 break
             }
         }
-        if (backdrop == null) {
+        val isNewBackdrop = backdrop == null
+        if (isNewBackdrop) {
             backdrop = View(bar.context).apply {
                 setTag(TAG_BACKDROP, true)
+                clipToOutline = true
+                elevation = 0f
             }
-            bar.addView(
-                backdrop,
-                0,
-                FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                )
-            )
+            bar.addView(backdrop, 0, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            ))
         }
 
-        backdrop.background = pill
-        backdrop.clipToOutline = true
-        backdrop.elevation = 0f
+        // Always update drawable (theme/radius may have changed)
+        backdrop!!.background = pill
         backdrop.outlineProvider = object : ViewOutlineProvider() {
             override fun getOutline(view: View, outline: android.graphics.Outline) {
                 val r = radius.coerceAtMost(view.height.toFloat() / 2f)
@@ -902,51 +893,42 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             }
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        // Only apply AGSL once (expensive, and re-applying causes shader recompile)
+        if (isNewBackdrop && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             backdrop.post {
-                if (backdrop.width > 0 && backdrop.height > 0) {
+                val w = backdrop.width.toFloat()
+                val h = backdrop.height.toFloat()
+                if (w > 0 && h > 0) {
                     try {
-                        val w = backdrop.width.toFloat()
-                        val h = backdrop.height.toFloat()
                         val r = radius.coerceAtMost(h / 2f)
                         val shader = android.graphics.RuntimeShader(LiquidGlassShader.SHADER_SRC)
                         shader.setFloatUniform("resolution", w, h)
                         shader.setFloatUniform("cornerRadius", r)
-                        shader.setFloatUniform("refractionStrength", 5.0f)
-                        shader.setFloatUniform("chromaticAberration", 1.8f)
-                        shader.setFloatUniform("brightnessBoost", 1.15f)
-                        shader.setFloatUniform("rimIntensity", 0.45f)
-
-                        val glassEffect = android.graphics.RenderEffect.createRuntimeShaderEffect(shader, "image")
-                        backdrop.setRenderEffect(glassEffect)
+                        shader.setFloatUniform("refractionStrength", 4.5f)
+                        shader.setFloatUniform("chromaticAberration", 1.6f)
+                        shader.setFloatUniform("brightnessBoost", 1.2f)
+                        shader.setFloatUniform("rimIntensity", 0.5f)
+                        backdrop.setRenderEffect(
+                            android.graphics.RenderEffect.createRuntimeShaderEffect(shader, "image")
+                        )
                     } catch (t: Throwable) {
-                        logDebug("Failed to apply AGSL shader: ${t.message}")
+                        logDebug("AGSL shader failed: ${t.message}")
                     }
                 }
             }
         }
 
-        // Clean spotlight indicator
-        val indicatorColor = if (isLight) {
-            Color.argb(38, 0, 0, 0)
-        } else {
-            Color.argb(55, 255, 255, 255)
-        }
-        val shadowColor = if (isLight) {
-            Color.argb(30, 0, 0, 0)
-        } else {
-            Color.argb(45, 0, 0, 0)
-        }
-        val indicatorStroke = if (isLight) {
-            Color.argb(30, 255, 255, 255)
-        } else {
-            Color.argb(70, 255, 255, 255)
-        }
+        val state = barStates.getOrPut(bar) { BarState() }
+        val elevPx = Utils.dipToPixels(ELEVATION_DP).toFloat()
+
+        val indicatorColor = if (isLight) Color.argb(38, 0, 0, 0) else Color.argb(55, 255, 255, 255)
+        val shadowColor = if (isLight) Color.argb(30, 0, 0, 0) else Color.argb(45, 0, 0, 0)
+        val indicatorStroke = if (isLight) Color.argb(30, 255, 255, 255) else Color.argb(70, 255, 255, 255)
         val indicator = LiquidIndicatorDrawable(indicatorColor, shadowColor, indicatorStroke)
         state.indicator = indicator
         state.selectedIndex = -1
 
-        // Keep bar and its child menu views on top, sharp and unblurred
+        // Bar background = only the indicator (transparent base), backdrop shows through
         bar.background = indicator
         bar.clipToOutline = true
         bar.clipChildren = false
@@ -963,23 +945,22 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         }
 
         try {
-            val setIndicatorEnabled = bar.javaClass
-                .getMethod("setItemActiveIndicatorEnabled", Boolean::class.javaPrimitiveType)
-            setIndicatorEnabled.invoke(bar, false)
+            bar.javaClass.getMethod("setItemActiveIndicatorEnabled", Boolean::class.javaPrimitiveType)
+                .invoke(bar, false)
         } catch (e: Exception) {
             logDebug("Failed to disable native active indicator: ${e.message}")
         }
 
         try {
-            val setLabelMode = bar.javaClass
-                .getMethod("setLabelVisibilityMode", Int::class.javaPrimitiveType)
-            setLabelMode.invoke(bar, 1)
+            bar.javaClass.getMethod("setLabelVisibilityMode", Int::class.javaPrimitiveType)
+                .invoke(bar, 1)
         } catch (e: Exception) { }
 
         attachSelectionWatcher(bar, state)
     }
 
     private fun attachSelectionWatcher(bar: ViewGroup, state: BarState) {
+
         state.preDraw?.let {
             if (bar.viewTreeObserver.isAlive) bar.viewTreeObserver.removeOnPreDrawListener(it)
         }
