@@ -1,21 +1,10 @@
 [ADDED]
-* Status Replay Tracker: Track and display how many times contacts replay/re-watch your status updates (badge "🔄 Viewed Nx" with relative timestamps in viewer list)
-* Status Replay History Dialog: Tap on status replay badge to view exact timestamps of every view/replay for each contact
-* Floating Bottom Bar: Fluid iOS-style floating navigation bar with real-time blur effect (AGSL Shader)
-* Auto DB Persistence: Persistent SQLite storage (StatusReplayStore) with automatic 24-hour cleanup for expired status replays
-* Full compatibility and support for WhatsApp version 2.26.32.xx
+-
 
 [IMPROVED]
-* iOS Text Entry & (+) Button: Refactored emoji/attachment button swap into iOS-style (+) and sticker button, responsive pill layout, and seamless touch handling
-* Seen Tick Architecture Refactor: Deterministic constructor resolution with strict signature matching, explicit parameter slot mapping, and valid default timestamps/booleans to prevent JobQueue stalls
-* Multi-Thread & Memory Safety: Added @Volatile across shared companion states and automated garbage cleanup for WeakReference view caches
-* Dynamic Field Caching: Thread-safe per-class reflection caching for status playback components
-* iOS Header Action Buttons: Improved synchronization of DND, Ghost Mode, Freeze Last Seen, and Restart action buttons alongside the camera button
+-
 
 [FIXED]
 * Fixed Blue Tick on Reply (Centang Biru Setelah Membalas) by ensuring exact UserJid parameter construction and resolving JID device index truncation
 * Fixed Hide Delivery Receipt (Centang 2 Abu-abu) stripping and delivery receipt routing
 * Fixed outgoing message transmission issue (clock 🕒 icon bug) and JobQueue socket disconnect loops
-* Fixed layout glitches and padding issues on the Floating Bottom Bar
-* Fixed cascading component initialization failures in FMessageWpp with isolated try-catch blocks and safe fallbacks
-* Fixed duplicate button creation and improved UI synchronization across multiple locales
