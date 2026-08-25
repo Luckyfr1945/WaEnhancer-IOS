@@ -17,14 +17,18 @@ import java.util.stream.Collectors;
  */
 public class FeatureCatalog {
 
-    private static List<SearchableFeature> features;
+    private static volatile List<SearchableFeature> features;
 
     /**
      * Initialize and return the complete feature catalog.
      */
     public static List<SearchableFeature> getAllFeatures(Context context) {
         if (features == null) {
-            features = buildFeatureCatalog(context);
+            synchronized (FeatureCatalog.class) {
+                if (features == null) {
+                    features = buildFeatureCatalog(context.getApplicationContext());
+                }
+            }
         }
         return features;
     }

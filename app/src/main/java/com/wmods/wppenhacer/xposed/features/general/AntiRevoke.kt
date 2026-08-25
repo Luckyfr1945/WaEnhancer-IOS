@@ -142,28 +142,62 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
                 val returnType = method?.returnType
 
                 fun setBlockedResult() {
+                    if (returnType == null || returnType == java.lang.Void.TYPE || returnType == java.lang.Void::class.java) {
+                        param.result = null
+                        return
+                    }
                     if (returnType == java.lang.Boolean.TYPE || returnType == java.lang.Boolean::class.java) {
                         param.result = true
-                    } else if (returnType != null && returnType.name.endsWith(".6ta")) {
-                        try {
-                            val constr = returnType.constructors.firstOrNull()
-                            if (constr != null) {
-                                val params = constr.parameterTypes
-                                val defaultArgs = arrayOfNulls<Any?>(params.size)
-                                for (i in params.indices) {
-                                    if (params[i] == java.lang.Boolean.TYPE) defaultArgs[i] = true
-                                    else defaultArgs[i] = null
-                                }
-                                param.result = constr.newInstance(*defaultArgs)
-                            } else {
-                                param.result = null
-                            }
-                        } catch (_: Throwable) {
-                            param.result = null
-                        }
-                    } else {
-                        param.result = null
+                        return
                     }
+                    if (returnType == java.lang.Integer.TYPE || returnType == java.lang.Integer::class.java) {
+                        param.result = 0
+                        return
+                    }
+                    if (returnType == java.lang.Long.TYPE || returnType == java.lang.Long::class.java) {
+                        param.result = 0L
+                        return
+                    }
+
+                    // For any object return type (e.g. X.9jD, X.6ta, etc.):
+                    // 1. Try constructor first
+                    try {
+                        val constr = returnType.constructors.firstOrNull() ?: returnType.declaredConstructors.firstOrNull()
+                        if (constr != null) {
+                            constr.isAccessible = true
+                            val paramTypes = constr.parameterTypes
+                            val defaultArgs = arrayOfNulls<Any?>(paramTypes.size)
+                            for (i in paramTypes.indices) {
+                                val p = paramTypes[i]
+                                defaultArgs[i] = when {
+                                    p == java.lang.Boolean.TYPE || p == java.lang.Boolean::class.java -> false
+                                    p == java.lang.Integer.TYPE || p == java.lang.Integer::class.java -> 0
+                                    p == java.lang.Long.TYPE || p == java.lang.Long::class.java -> 0L
+                                    p == java.lang.Float.TYPE || p == java.lang.Float::class.java -> 0f
+                                    p == java.lang.Double.TYPE || p == java.lang.Double::class.java -> 0.0
+                                    p == java.lang.Byte.TYPE || p == java.lang.Byte::class.java -> 0.toByte()
+                                    p == java.lang.Short.TYPE || p == java.lang.Short::class.java -> 0.toShort()
+                                    p == java.lang.Character.TYPE || p == java.lang.Character::class.java -> ' '
+                                    else -> null
+                                }
+                            }
+                            param.result = constr.newInstance(*defaultArgs)
+                            return
+                        }
+                    } catch (_: Throwable) {}
+
+                    // 2. Fallback to Unsafe.allocateInstance for 100% reliable instantiation of any object
+                    try {
+                        val unsafeClass = Class.forName("sun.misc.Unsafe")
+                        val theUnsafeField = unsafeClass.getDeclaredField("theUnsafe")
+                        theUnsafeField.isAccessible = true
+                        val unsafe = theUnsafeField.get(null)
+                        val allocateMethod = unsafeClass.getMethod("allocateInstance", Class::class.java)
+                        param.result = allocateMethod.invoke(unsafe, returnType)
+                        return
+                    } catch (_: Throwable) {}
+
+                    param.result = null
                 }
 
                 if (messageKey.remoteJid.isGroup) {

@@ -377,23 +377,32 @@ class FMessageWpp(fMessage: Any?) {
             this.remoteJid = remoteJid
             val jidArg = remoteJid.userJid ?: remoteJid.phoneJid
             if (jidArg != null) {
-                val constructor = TYPE.declaredConstructors.firstOrNull { c ->
-                    c.parameterCount == 3 &&
-                    !c.parameterTypes[0].isPrimitive &&
-                    c.parameterTypes[1] == String::class.java &&
-                    (c.parameterTypes[2] == java.lang.Boolean.TYPE || c.parameterTypes[2] == java.lang.Boolean::class.java)
-                }
-                if (constructor != null) {
-                    try {
-                        constructor.isAccessible = true
-                        val keyObj = constructor.newInstance(jidArg, messageID, isFromMe)
-                        this.thisObject = keyObj
-                        val fmessageObj = WppCore.getFMessageFromKey(keyObj)
-                        if (fmessageObj != null) {
-                            this.fMessage = FMessageWpp(fmessageObj)
+                val keyClass = runCatching { Key.TYPE }.getOrNull()
+                if (keyClass != null) {
+                    val constructor = keyClass.declaredConstructors.firstOrNull { c ->
+                        c.parameterCount == 3 &&
+                        !c.parameterTypes[0].isPrimitive &&
+                        c.parameterTypes[0].isAssignableFrom(jidArg.javaClass) &&
+                        c.parameterTypes[1] == String::class.java &&
+                        (c.parameterTypes[2] == java.lang.Boolean.TYPE || c.parameterTypes[2] == java.lang.Boolean::class.java)
+                    } ?: keyClass.declaredConstructors.firstOrNull { c ->
+                        c.parameterCount == 3 &&
+                        !c.parameterTypes[0].isPrimitive &&
+                        c.parameterTypes[1] == String::class.java &&
+                        (c.parameterTypes[2] == java.lang.Boolean.TYPE || c.parameterTypes[2] == java.lang.Boolean::class.java)
+                    }
+                    if (constructor != null) {
+                        try {
+                            constructor.isAccessible = true
+                            val keyObj = constructor.newInstance(jidArg, messageID, isFromMe)
+                            this.thisObject = keyObj
+                            val fmessageObj = WppCore.getFMessageFromKey(keyObj)
+                            if (fmessageObj != null) {
+                                this.fMessage = FMessageWpp(fmessageObj)
+                            }
+                        } catch (e: Throwable) {
+                            // ignore reflection error silently
                         }
-                    } catch (e: Throwable) {
-                        XposedBridge.log(e)
                     }
                 }
             }
