@@ -13,7 +13,9 @@
 * iOS Header Action Buttons: Improved synchronization of DND, Ghost Mode, Freeze Last Seen, and Restart action buttons alongside the camera button
 
 [FIXED]
-* Fixed outgoing message transmission issue (clock 🕒 icon bug) caused by reflection NoSuchMethodError in FMessageWpp.Key constructor
+* Fixed Blue Tick on Reply (Centang Biru Setelah Membalas) by ensuring exact UserJid parameter construction and resolving JID device index truncation
+* Fixed Hide Delivery Receipt (Centang 2 Abu-abu) stripping and delivery receipt routing
+* Fixed outgoing message transmission issue (clock 🕒 icon bug) and JobQueue socket disconnect loops
 * Fixed layout glitches and padding issues on the Floating Bottom Bar
 * Fixed cascading component initialization failures in FMessageWpp with isolated try-catch blocks and safe fallbacks
 * Fixed duplicate button creation and improved UI synchronization across multiple locales
