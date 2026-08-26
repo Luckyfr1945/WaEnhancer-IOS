@@ -1,29 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Outer glass layer with translucent tint and specular stroke -->
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="#2B121D15" />
-            <stroke
-                android:width="1dp"
-                android:color="#33FFFFFF" />
-            <corners
-                android:bottomLeftRadius="16dp"
-                android:bottomRightRadius="16dp" />
+            <solid android:color="?attr/colorPrimary" />
         </shape>
     </item>
-    <!-- Liquid glass highlight overlay -->
     <item>
         <shape android:shape="rectangle">
             <gradient
-                android:angle="270"
-                android:startColor="#25FFFFFF"
-                android:centerColor="#08FFFFFF"
+                android:angle="135"
                 android:endColor="#00000000"
+                android:startColor="#33000000"
                 android:type="linear" />
-            <corners
-                android:bottomLeftRadius="16dp"
-                android:bottomRightRadius="16dp" />
+        </shape>
+    </item>
+</layer-list>
+                android:color="#1AFFFFFF" />
         </shape>
     </item>
 </layer-list>
