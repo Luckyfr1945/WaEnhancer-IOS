@@ -1,10 +1,14 @@
 [ADDED]
--
+* Added iOS-Style Status Long-Press Preview with background blur and quick actions (Facebook 1 row layout)
 
 [IMPROVED]
--
+* Improved iOS Floating Bottom Bar layout and vertical spacing between icons and text labels
+* Improved unvalidated status caption editing and direct status sharing flow
 
 [FIXED]
-* Fixed Blue Tick on Reply (Centang Biru Setelah Membalas) by ensuring exact UserJid parameter construction and resolving JID device index truncation
-* Fixed Hide Delivery Receipt (Centang 2 Abu-abu) stripping and delivery receipt routing
-* Fixed outgoing message transmission issue (clock 🕒 icon bug) and JobQueue socket disconnect loops
+* Fixed Status Download feature and asynchronous media saving for modern WhatsApp versions
+* Fixed native Status Forward / Resend (Teruskan Status) button disappearing or failing to trigger
+* Fixed header overlap and top clipping on Calls tab (Telepon, Jadwal, Keypad, Favorit shortcut buttons)
+* Fixed top content clipping on Communities and Updates tabs under iOS Large Title header
+* Fixed pending/clock (🕒) icon bug when Hide Second Tick (SeenTick) is enabled
+* Fixed hook and UI dialog collision between View Edited Message and iOS Status Preview
