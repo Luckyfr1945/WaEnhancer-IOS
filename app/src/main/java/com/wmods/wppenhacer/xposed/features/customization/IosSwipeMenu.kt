@@ -457,28 +457,40 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
 
         bgExecutor.execute {
             try {
+                val isArchived = isInArchivedView(row)
                 val (isPinned, isMuted, isUnread) = getChatState(row)
                 val isIndonesian = java.util.Locale.getDefault().language == "in" || java.util.Locale.getDefault().language == "id"
 
                 val labelInfo = if (isIndonesian) "Info Kontak" else "Contact Info"
-                val labelPin = if (isPinned) (if (isIndonesian) "Lepas Sematan" else "Unpin Chat") else (if (isIndonesian) "Sematkan Chat" else "Pin Chat")
                 val labelMute = if (isMuted) (if (isIndonesian) "Bunyikan Notifikasi" else "Unmute") else (if (isIndonesian) "Bisukan Notifikasi" else "Mute")
                 val labelRead = if (isUnread) (if (isIndonesian) "Tandai Sudah Dibaca" else "Mark as Read") else (if (isIndonesian) "Tandai Belum Dibaca" else "Mark as Unread")
-                val labelShortcut = if (isIndonesian) "Tambah Pintasan" else "Add Shortcut"
-                val labelLock = if (isIndonesian) "Kunci Chat" else "Lock Chat"
-                val labelSelect = if (isIndonesian) "Pilih Chat" else "Select Chat"
                 val labelDelete = if (isIndonesian) "Hapus Chat" else "Delete Chat"
 
-                val menuItems = listOf(
-                    labelInfo to { executeDirectAction(row, "info") },
-                    labelPin to { executeDirectAction(row, if (isPinned) "unpin" else "pin") },
-                    labelMute to { executeDirectAction(row, if (isMuted) "unmute" else "mute") },
-                    labelRead to { executeDirectAction(row, if (isUnread) "read" else "unread") },
-                    labelShortcut to { executeDirectAction(row, "shortcut") },
-                    labelLock to { executeDirectAction(row, "lock") },
-                    labelSelect to { triggerProgrammaticLongClick(row) },
-                    labelDelete to { executeDirectAction(row, "delete") }
-                )
+                val menuItems = if (isArchived) {
+                    // Menu ringkas dan relevan khusus di dalam layar Arsip
+                    listOf(
+                        labelInfo to { executeDirectAction(row, "info") },
+                        labelMute to { executeDirectAction(row, if (isMuted) "unmute" else "mute") },
+                        labelRead to { executeDirectAction(row, if (isUnread) "read" else "unread") },
+                        labelDelete to { executeDirectAction(row, "delete") }
+                    )
+                } else {
+                    val labelPin = if (isPinned) (if (isIndonesian) "Lepas Sematan" else "Unpin Chat") else (if (isIndonesian) "Sematkan Chat" else "Pin Chat")
+                    val labelShortcut = if (isIndonesian) "Tambah Pintasan" else "Add Shortcut"
+                    val labelLock = if (isIndonesian) "Kunci Chat" else "Lock Chat"
+                    val labelSelect = if (isIndonesian) "Pilih Chat" else "Select Chat"
+
+                    listOf(
+                        labelInfo to { executeDirectAction(row, "info") },
+                        labelPin to { executeDirectAction(row, if (isPinned) "unpin" else "pin") },
+                        labelMute to { executeDirectAction(row, if (isMuted) "unmute" else "mute") },
+                        labelRead to { executeDirectAction(row, if (isUnread) "read" else "unread") },
+                        labelShortcut to { executeDirectAction(row, "shortcut") },
+                        labelLock to { executeDirectAction(row, "lock") },
+                        labelSelect to { triggerProgrammaticLongClick(row) },
+                        labelDelete to { executeDirectAction(row, "delete") }
+                    )
+                }
 
                 activity.runOnUiThread {
                     if (activity.isFinishing || activity.isDestroyed || !row.isAttachedToWindow) {
