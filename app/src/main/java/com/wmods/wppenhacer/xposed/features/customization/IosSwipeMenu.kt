@@ -459,12 +459,11 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
             try {
                 val isArchived = isInArchivedView(row)
                 val (isPinned, isMuted, isUnread) = getChatState(row)
-                val isIndonesian = java.util.Locale.getDefault().language == "in" || java.util.Locale.getDefault().language == "id"
 
-                val labelInfo = if (isIndonesian) "Info Kontak" else "Contact Info"
-                val labelMute = if (isMuted) (if (isIndonesian) "Bunyikan Notifikasi" else "Unmute") else (if (isIndonesian) "Bisukan Notifikasi" else "Mute")
-                val labelRead = if (isUnread) (if (isIndonesian) "Tandai Sudah Dibaca" else "Mark as Read") else (if (isIndonesian) "Tandai Belum Dibaca" else "Mark as Unread")
-                val labelDelete = if (isIndonesian) "Hapus Chat" else "Delete Chat"
+                val labelInfo = getLocalizedMenuLabel("info")
+                val labelMute = getLocalizedMenuLabel("mute", isMuted)
+                val labelRead = getLocalizedMenuLabel("read", isUnread)
+                val labelDelete = getLocalizedMenuLabel("delete")
 
                 val menuItems = if (isArchived) {
                     // Menu ringkas dan relevan khusus di dalam layar Arsip
@@ -475,10 +474,10 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
                         labelDelete to { executeDirectAction(row, "delete") }
                     )
                 } else {
-                    val labelPin = if (isPinned) (if (isIndonesian) "Lepas Sematan" else "Unpin Chat") else (if (isIndonesian) "Sematkan Chat" else "Pin Chat")
-                    val labelShortcut = if (isIndonesian) "Tambah Pintasan" else "Add Shortcut"
-                    val labelLock = if (isIndonesian) "Kunci Chat" else "Lock Chat"
-                    val labelSelect = if (isIndonesian) "Pilih Chat" else "Select Chat"
+                    val labelPin = getLocalizedMenuLabel("pin", isPinned)
+                    val labelShortcut = getLocalizedMenuLabel("shortcut")
+                    val labelLock = getLocalizedMenuLabel("lock")
+                    val labelSelect = getLocalizedMenuLabel("select")
 
                     listOf(
                         labelInfo to { executeDirectAction(row, "info") },
@@ -505,7 +504,7 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
                         animateBackgroundBack(row)
                         openRow = null
                     }
-                    dialog.show(menuItems, isIndonesian)
+                    dialog.show(menuItems)
                 }
             } catch (e: Exception) {
                 logDebug("IosSwipeMenu: Failed to show iOS menu: ${e.message}")
@@ -586,7 +585,7 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
             }
         }
 
-        fun show(menuItems: List<Pair<String, () -> Unit>>, isIndonesian: Boolean = false) {
+        fun show(menuItems: List<Pair<String, () -> Unit>>) {
             menuContainer.removeAllViews()
 
             val isDarkMode = (context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
@@ -604,8 +603,9 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
                 background = createRoundedBackground(blockBgColor, Utils.dipToPixels(18f).toFloat())
             }
 
+            val deleteLabel = getLocalizedMenuLabel("delete")
             menuItems.forEachIndexed { index, (label, action) ->
-                val isDelete = label.equals("Delete Chat", ignoreCase = true) || label.equals("Hapus Chat", ignoreCase = true)
+                val isDelete = label.equals("Delete Chat", ignoreCase = true) || label.equals(deleteLabel, ignoreCase = true)
 
                 val itemView = createMenuItem(label, isDelete, isDarkMode) {
                     action()
@@ -644,7 +644,7 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
                 background = createRoundedBackground(blockBgColor, Utils.dipToPixels(18f).toFloat())
             }
 
-            val labelCancel = if (isIndonesian) "Batal" else "Cancel"
+            val labelCancel = getLocalizedMenuLabel("cancel")
             val cancelBtn = createMenuItem(labelCancel, false, isDarkMode) { dismiss() }
             cancelBlock.addView(cancelBtn)
             menuContainer.addView(cancelBlock)
@@ -671,7 +671,7 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
                         setTextColor(Color.parseColor("#FF3B30"))
                         typeface = android.graphics.Typeface.DEFAULT
                     }
-                    label.equals("Cancel", ignoreCase = true) || label.equals("Batal", ignoreCase = true) -> {
+                    label.equals("Cancel", ignoreCase = true) || label.equals(getLocalizedMenuLabel("cancel"), ignoreCase = true) -> {
                         setTextColor(if (isDarkMode) Color.WHITE else Color.parseColor("#007AFF"))
                         typeface = android.graphics.Typeface.create(
                             android.graphics.Typeface.DEFAULT,
@@ -713,6 +713,190 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
                     null
                 )
             ).apply { paint.color = color }
+        }
+    }
+
+    private fun getLocalizedMenuLabel(key: String, state: Boolean = false): String {
+        val lang = java.util.Locale.getDefault().language
+        return when (key) {
+            "info" -> when (lang) {
+                "in", "id" -> "Info Kontak"
+                "es" -> "Info. del contacto"
+                "pt" -> "Dados do contato"
+                "ru" -> "Данные контакта"
+                "ar" -> "معلومات جهة الاتصال"
+                "de" -> "Kontaktinfo"
+                "fr" -> "Infos du contact"
+                "it" -> "Info contatto"
+                "tr" -> "Kişi bilgisi"
+                "zh" -> "联系人信息"
+                "iw", "he" -> "פרטי איש קשר"
+                else -> "Contact Info"
+            }
+            "mute" -> if (state) {
+                when (lang) {
+                    "in", "id" -> "Bunyikan Notifikasi"
+                    "es" -> "Reactivar notificaciones"
+                    "pt" -> "Reativar notificações"
+                    "ru" -> "Включить звук"
+                    "ar" -> "إلغاء كتم الإشعارات"
+                    "de" -> "Stummschaltung aufheben"
+                    "fr" -> "Rétablir le son"
+                    "it" -> "Riattiva notifiche"
+                    "tr" -> "Sesi aç"
+                    "zh" -> "取消静音"
+                    "iw", "he" -> "ביטול השתקה"
+                    else -> "Unmute"
+                }
+            } else {
+                when (lang) {
+                    "in", "id" -> "Bisukan Notifikasi"
+                    "es" -> "Silenciar"
+                    "pt" -> "Silenciar"
+                    "ru" -> "Без звука"
+                    "ar" -> "كتم الإشعارات"
+                    "de" -> "Stummschalten"
+                    "fr" -> "Silencieux"
+                    "it" -> "Silenzioso"
+                    "tr" -> "Sessize al"
+                    "zh" -> "静音通知"
+                    "iw", "he" -> "השתקת התראות"
+                    else -> "Mute"
+                }
+            }
+            "read" -> if (state) {
+                when (lang) {
+                    "in", "id" -> "Tandai Sudah Dibaca"
+                    "es" -> "Marcar como leído"
+                    "pt" -> "Marcar como lida"
+                    "ru" -> "Прочитано"
+                    "ar" -> "تمييز كمقروء"
+                    "de" -> "Als gelesen markieren"
+                    "fr" -> "Marquer comme lu"
+                    "it" -> "Segna come letto"
+                    "tr" -> "Okundu olarak işaretle"
+                    "zh" -> "标为已读"
+                    "iw", "he" -> "סמן כנקרא"
+                    else -> "Mark as Read"
+                }
+            } else {
+                when (lang) {
+                    "in", "id" -> "Tandai Belum Dibaca"
+                    "es" -> "Marcar como no leído"
+                    "pt" -> "Marcar como não lida"
+                    "ru" -> "Непрочитано"
+                    "ar" -> "تمييز كغير مقروء"
+                    "de" -> "Als ungelesen markieren"
+                    "fr" -> "Marquer comme non lu"
+                    "it" -> "Segna come da leggere"
+                    "tr" -> "Okunmadı olarak işaretle"
+                    "zh" -> "标为未读"
+                    "iw", "he" -> "סמן כלא נקרא"
+                    else -> "Mark as Unread"
+                }
+            }
+            "pin" -> if (state) {
+                when (lang) {
+                    "in", "id" -> "Lepas Sematan"
+                    "es" -> "Desfijar chat"
+                    "pt" -> "Desafixar conversa"
+                    "ru" -> "Открепить чат"
+                    "ar" -> "إلغاء تثبيت الدردشة"
+                    "de" -> "Fixierung lösen"
+                    "fr" -> "Désépingler la discussion"
+                    "it" -> "Rimuovi chat fissa"
+                    "tr" -> "Sabitlemeyi kaldır"
+                    "zh" -> "取消置顶"
+                    "iw", "he" -> "ביטול הצמדת צ\'אט"
+                    else -> "Unpin Chat"
+                }
+            } else {
+                when (lang) {
+                    "in", "id" -> "Sematkan Chat"
+                    "es" -> "Fijar chat"
+                    "pt" -> "Fixar conversa"
+                    "ru" -> "Закрепить чат"
+                    "ar" -> "تثبيت الدردشة"
+                    "de" -> "Chat fixieren"
+                    "fr" -> "Épingler la discussion"
+                    "it" -> "Fissa chat"
+                    "tr" -> "Sohbeti sabitle"
+                    "zh" -> "置顶对话"
+                    "iw", "he" -> "הצמדת צ\'אט"
+                    else -> "Pin Chat"
+                }
+            }
+            "shortcut" -> when (lang) {
+                "in", "id" -> "Tambah Pintasan"
+                "es" -> "Añadir acceso directo"
+                "pt" -> "Adicionar atalho"
+                "ru" -> "Добавить ярлык"
+                "ar" -> "إضافة اختصار"
+                "de" -> "Verknüpfung hinzufügen"
+                "fr" -> "Ajouter un raccourci"
+                "it" -> "Aggiungi collegamento"
+                "tr" -> "Kısayol ekle"
+                "zh" -> "添加快捷方式"
+                "iw", "he" -> "הוספת קיצור דרך"
+                else -> "Add Shortcut"
+            }
+            "lock" -> when (lang) {
+                "in", "id" -> "Kunci Chat"
+                "es" -> "Bloquear chat"
+                "pt" -> "Bloquear conversa"
+                "ru" -> "Заблокировать чат"
+                "ar" -> "قفل الدردشة"
+                "de" -> "Chat sperren"
+                "fr" -> "Verrouiller la discussion"
+                "it" -> "Blocca chat"
+                "tr" -> "Sohbeti kilitle"
+                "zh" -> "锁定对话"
+                "iw", "he" -> "נעילת צ\'אט"
+                else -> "Lock Chat"
+            }
+            "select" -> when (lang) {
+                "in", "id" -> "Pilih Chat"
+                "es" -> "Seleccionar chat"
+                "pt" -> "Selecionar conversa"
+                "ru" -> "Выбрать чат"
+                "ar" -> "تحديد الدردشة"
+                "de" -> "Chat auswählen"
+                "fr" -> "Sélectionner la discussion"
+                "it" -> "Seleziona chat"
+                "tr" -> "Sohbeti seç"
+                "zh" -> "选择对话"
+                "iw", "he" -> "בחירת צ\'אט"
+                else -> "Select Chat"
+            }
+            "delete" -> when (lang) {
+                "in", "id" -> "Hapus Chat"
+                "es" -> "Eliminar chat"
+                "pt" -> "Apagar conversa"
+                "ru" -> "Удалить чат"
+                "ar" -> "حذف الدردشة"
+                "de" -> "Chat löschen"
+                "fr" -> "Supprimer la discussion"
+                "it" -> "Elimina chat"
+                "tr" -> "Sohbeti sil"
+                "zh" -> "删除对话"
+                "iw", "he" -> "מחיקת צ\'אט"
+                else -> "Delete Chat"
+            }
+            "cancel" -> when (lang) {
+                "in", "id" -> "Batal"
+                "es" -> "Cancelar"
+                "pt" -> "Cancelar"
+                "ru" -> "Отмена"
+                "ar" -> "إلغاء"
+                "de" -> "Abbrechen"
+                "fr" -> "Annuler"
+                "it" -> "Annulla"
+                "tr" -> "İptal"
+                "zh" -> "取消"
+                "iw", "he" -> "ביטול"
+                else -> "Cancel"
+            }
+            else -> key
         }
     }
 

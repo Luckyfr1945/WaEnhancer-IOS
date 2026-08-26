@@ -509,4 +509,63 @@
     <string name="remove_sticker_white_outline_sum">Remova a borda branca ao criar figurinhas</string>
     <string name="remove_sticker_white_outline">Remover contorno das figurinhas</string>
     <string name="stickers">Figurinhas</string>
+
+    <!-- Auto-synchronized feature strings -->
+    <string name="app_name">Wa Enhancer</string>
+    <string name="hide_whatsapp_title">Ocultar título do WhatsApp</string>
+    <string name="hide_whatsapp_title_sum">Oculte o texto "WhatsApp" na barra de ferramentas da tela inicial</string>
+    <string name="lorem_ipsum_dolor">Lorem Ipsum Dolor</string>
+    <string name="lorem_ipsum_dolor_sum">Lorem ipsum dolor sit amet, consectetur adipiscing elit. Etiam eget ligula eu lectus lobortis condimentum.</string>
+    <string name="floating_bottom_bar">Barra de navegação flutuante</string>
+    <string name="floating_bottom_bar_sum">Ative a barra de navegação inferior flutuante estilo iOS</string>
+    <string name="floating_bottom_bar_radius">Raio do canto da barra inferior</string>
+    <string name="floating_bottom_bar_radius_sum">Ajuste o raio da borda da barra flutuante</string>
+    <string name="floating_bottom_bar_blur">Desfoque de vidro fosco</string>
+    <string name="floating_bottom_bar_blur_sum">Desfoca o conteúdo atrás da barra flutuante. Redesenha a tela a cada quadro — desative em dispositivos mais lentos se parecer pesado</string>
+    <string name="ios_text_entry">Estilo de entrada de conversa iOS</string>
+    <string name="ios_text_entry_sum">Reestrutura a entrada de texto do chat para se parecer com o iOS</string>
+    <string name="force_disable_emojis">Forçar desativação de emojis</string>
+    <string name="force_disable_emojis_sum">Bloqueia emojis do WhatsApp, tornando-os invisíveis (use os emojis do teclado).</string>
+    <string name="force_disable_emojis_alert_title">Forçar desativação de emojis</string>
+    <string name="force_disable_emojis_alert_msg">Este recurso ocultará emojis do seletor. Para enviar emojis, use o teclado do dispositivo.</string>
+    <string name="developer">Desenvolvedor: Dev4Mod</string>
+    <string name="checking_if_contact_added">Verificando se o contato adicionou você...</string>
+    <string name="show_contact_added_status">Mostrar status de contato adicionado na conversa</string>
+    <string name="show_contact_added_status_sum">Esta opção verifica se o contato adicionou você ou tem uma foto de perfil pública.</string>
+    <string name="contact_added">O contato adicionou você ou possui uma foto de perfil pública.</string>
+    <string name="alert_module_notfound">Módulo WaEnhancer não encontrado. O HMA provavelmente está ocultando o módulo.</string>
+    <string name="diag_title">Diagnóstico de Root</string>
+    <string name="diag_summary">Verifique problemas de sepolicy e bloqueios do Hide My App List para o WhatsApp.</string>
+    <string name="diag_button">Analisar Dispositivo</string>
+    <string name="diag_dialog_title">Log de Diagnóstico</string>
+    <string name="diag_root_granted">Acesso root concedido.</string>
+    <string name="diag_root_denied">Acesso root negado. O diagnóstico requer acesso root.</string>
+    <string name="diag_close">Fechar</string>
+    <string name="diag_sepolicy_checking">Verificando log de sepolicy...</string>
+    <string name="diag_sepolicy_not_found">Log verbose do LSPosed não encontrado ou vazio.</string>
+    <string name="diag_sepolicy_no_issues">Nenhum problema de sepolicy encontrado no log.</string>
+    <string name="diag_sepolicy_found">Problema de sepolicy encontrado:</string>
+    <string name="diag_sepolicy_broken">Sepolicy corrompido detectado. As versões do root e do patch do kernel devem coincidir.</string>
+    <string name="diag_hma_checking">Verificando status do Hide My App List...</string>
+    <string name="diag_hma_not_active">Hide My App List não está ativo.</string>
+    <string name="diag_hma_zygisk_active">Hide My App List (Zygisk) está ativo.</string>
+    <string name="diag_hma_lsposed_active">Hide My App List (LSPosed) está ativo.</string>
+    <string name="diag_hma_not_found">Configuração do Hide My App List não encontrada.</string>
+    <string name="diag_hma_invalid">Configuração do Hide My App List inválida.</string>
+    <string name="diag_hma_no_blocks">Nenhum bloqueio do Hide My App List detectado para o WhatsApp.</string>
+    <string name="diag_hma_blocked">O Hide My App List está ocultando o WaEnhancer de:</string>
+    <string name="diag_hma_disable">Desative o bloqueio para WhatsApp/Business no Hide My App List para o WaEnhancer funcionar corretamente.</string>
+    <string name="diag_copied">Linha copiada para a área de transferência</string>
+    <string name="status_replay_tracker">Rastreador de repetição de status</string>
+    <string name="status_replay_tracker_sum">Rastreie e veja quantas vezes seus contatos reassistem seus status do WhatsApp</string>
+    <string name="toast_status_replay">Notificação ao rever status</string>
+    <string name="toast_status_replay_sum">Mostra uma notificação quando alguém assiste seu status novamente</string>
+    <string name="replayed_your_status">%1$s viu seu status novamente (%2$dx)</string>
+    <string name="status_replay_count_suffix">%1$s • 🔄 Visto %2$dx</string>
+    <string name="status_replay_history_title">Histórico de repetição de status</string>
+    <string name="status_replay_history_message">Seu status foi revisto %1$d vezes por %2$s:
+
+</string>
+    <string name="remove_limit_edit_status">Remover limite de edição de legenda de status</string>
+    <string name="remove_limit_edit_status_sum">Permite editar legendas de status a qualquer momento até a expiração do status (24h)</string>
 </resources>

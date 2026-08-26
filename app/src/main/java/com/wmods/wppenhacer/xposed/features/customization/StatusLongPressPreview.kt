@@ -598,10 +598,10 @@ class StatusLongPressPreview(loader: ClassLoader, prefs: SharedPreferences) : Fe
             isClickable = true
             isFocusable = true
 
-            // Teks Label "Sembunyikan"
+            // Teks Label "Sembunyikan" / "Mute" (Multi-language)
             val labelTv = TextView(activity).apply {
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                text = "Sembunyikan"
+                text = getLocalizedMuteLabel()
                 setTextColor(Color.parseColor("#F2F2F7"))
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
@@ -669,6 +669,24 @@ class StatusLongPressPreview(loader: ClassLoader, prefs: SharedPreferences) : Fe
             duration = 200
             interpolator = OvershootInterpolator(1.1f)
             start()
+        }
+    }
+
+    private fun getLocalizedMuteLabel(): String {
+        val lang = java.util.Locale.getDefault().language
+        return when (lang) {
+            "in", "id" -> "Sembunyikan"
+            "es" -> "Silenciar"
+            "pt" -> "Silenciar"
+            "ru" -> "Без звука"
+            "ar" -> "كتم"
+            "de" -> "Stummschalten"
+            "fr" -> "Masquer"
+            "it" -> "Disattiva"
+            "tr" -> "Sessize al"
+            "zh" -> "静音"
+            "iw", "he" -> "השתק"
+            else -> "Mute"
         }
     }
 }
