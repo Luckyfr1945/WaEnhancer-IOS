@@ -1736,6 +1736,21 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
     }
 
     private fun positionFabAboveCurrentBar(fab: View, bottomNavId: Int) {
+        val auxFabIds = setOf(
+            Utils.getID("fab_second", "id"),
+            Utils.getID("fab_auxiliary", "id"),
+            Utils.getID("extended_mini_fab", "id"),
+            Utils.getID("text_status_fab", "id")
+        ).filter { it > 0 }.toSet()
+
+        if (fab.id in auxFabIds) {
+            fab.visibility = View.GONE
+            fab.scaleX = 0f
+            fab.scaleY = 0f
+            fab.alpha = 0f
+            return
+        }
+
         val additionalMargin = getFabAdditionalMargin()
         applyFabMargin(fab, additionalMargin)
     }
@@ -1751,6 +1766,21 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
     }
 
     private fun applyFabMargin(fab: View, additionalMargin: Int) {
+        val auxFabIds = setOf(
+            Utils.getID("fab_second", "id"),
+            Utils.getID("fab_auxiliary", "id"),
+            Utils.getID("extended_mini_fab", "id"),
+            Utils.getID("text_status_fab", "id")
+        ).filter { it > 0 }.toSet()
+
+        if (fab.id in auxFabIds) {
+            fab.visibility = View.GONE
+            fab.scaleX = 0f
+            fab.scaleY = 0f
+            fab.alpha = 0f
+            return
+        }
+
         fab.translationY = 0f
         val lp = fab.layoutParams as? ViewGroup.MarginLayoutParams ?: return
 
@@ -1783,11 +1813,28 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
     }
 
     private fun findAndPositionAllFabs(rootView: View, additionalMargin: Int) {
+        val auxFabIds = setOf(
+            Utils.getID("fab_second", "id"),
+            Utils.getID("fab_auxiliary", "id"),
+            Utils.getID("extended_mini_fab", "id"),
+            Utils.getID("text_status_fab", "id")
+        ).filter { it > 0 }.toSet()
+
         val fabIds = FAB_RESOURCE_NAMES.mapNotNull { name ->
             Utils.getID(name, "id").takeIf { it > 0 }
         }.toSet()
 
         fun scan(view: View) {
+            if (view.id in auxFabIds) {
+                if (view.visibility != View.GONE) {
+                    view.visibility = View.GONE
+                }
+                view.scaleX = 0f
+                view.scaleY = 0f
+                view.alpha = 0f
+                return
+            }
+
             val isFab = view.id in fabIds ||
                     view.javaClass.simpleName.contains("FloatingActionButton", ignoreCase = true) ||
                     view.javaClass.simpleName.contains("ExtendedFloatingActionButton", ignoreCase = true)
