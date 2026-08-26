@@ -416,13 +416,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                                     animateToItem(bar, state, items, closestIndex)
                                 }
 
-                                // Reset internal touch-target state milik bar sendiri agar gesture drag berikutnya tidak macet
-                                try {
-                                    val cancelEv = MotionEvent.obtain(ev).apply { action = MotionEvent.ACTION_CANCEL }
-                                    XposedBridge.invokeOriginalMethod(param.method, bar, arrayOf(cancelEv))
-                                    cancelEv.recycle()
-                                } catch (_: Throwable) {}
-
                                 param.result = true
                                 return
                             } else {
@@ -437,14 +430,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                                 if (state.selectedIndex in items.indices) {
                                     animateToItem(bar, state, items, state.selectedIndex)
                                 }
-
-                                // Reset internal touch-target state milik bar sendiri
-                                try {
-                                    val cancelEv = MotionEvent.obtain(ev).apply { action = MotionEvent.ACTION_CANCEL }
-                                    XposedBridge.invokeOriginalMethod(param.method, bar, arrayOf(cancelEv))
-                                    cancelEv.recycle()
-                                } catch (_: Throwable) {}
-
                                 param.result = true
                                 return
                             } else {
