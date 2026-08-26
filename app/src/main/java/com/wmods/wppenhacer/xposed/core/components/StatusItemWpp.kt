@@ -34,6 +34,9 @@ class StatusItemWpp private constructor(
         @JvmStatic
         fun from(obj: Any?): StatusItemWpp? {
             if (obj == null) return null
+            if (FMessageWpp.TYPE.isInstance(obj)) return StatusItemWpp(null, FMessageWpp(obj))
+            if (FStatusWpp.TYPE.isInstance(obj)) return StatusItemWpp(FStatusWpp(obj), null)
+
             val fMsgField = ReflectionUtils.findFieldUsingFilterIfExists(obj.javaClass) { f ->
                 FMessageWpp.TYPE.isAssignableFrom(f.type)
             }

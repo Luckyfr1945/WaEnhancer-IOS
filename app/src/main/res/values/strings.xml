@@ -553,7 +553,6 @@
     <string name="diag_hma_disable">Disable the block for WhatsApp/Business in Hide My App List so WaEnhancer can work correctly.</string>
     <string name="diag_copied">Line copied to clipboard</string>
 
-    <!-- Status Replay Tracker -->
     <string name="status_replay_tracker">Status Replay Tracker</string>
     <string name="status_replay_tracker_sum">Track and show how many times contacts replay or re-watch your WhatsApp status</string>
     <string name="toast_status_replay">Toast on Status Replay</string>
@@ -562,4 +561,6 @@
     <string name="status_replay_count_suffix">%1$s • 🔄 Viewed %2$dx</string>
     <string name="status_replay_history_title">Status Replay History</string>
     <string name="status_replay_history_message">Your status was replayed %1$d times by %2$s:\n\n</string>
+    <string name="remove_limit_edit_status">Remove Status Caption Edit Limit</string>
+    <string name="remove_limit_edit_status_sum">Allows editing status captions anytime until the story expires (24h)</string>
 </resources>

@@ -84,10 +84,10 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         private const val TAG_ITEM_INITIALIZED = 0x46_42_49_49 // 'FBII'
 
         // Visual & Physics Parameters
-        private const val BAR_HEIGHT_DP = 64f
+        private const val BAR_HEIGHT_DP = 66f
         private const val BAR_PADDING_DP = 4f
         private const val INDICATOR_INSET_DP = 4f
-        private const val INDICATOR_WIDTH_RATIO = 0.90f
+        private const val INDICATOR_WIDTH_RATIO = 0.78f
         private const val BLUR_RADIUS = 4f
         private const val PRESSED_SCALE = 1.08f
         private const val RUBBER_BAND_DP = 4f
@@ -484,8 +484,10 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
 
                             val inset = Utils.dipToPixels(INDICATOR_INSET_DP).toFloat()
                             val barH = (if (bar.height > 0) bar.height else item1.height).toFloat()
-                            indicator.top = inset
-                            indicator.bottom = (barH - inset).coerceAtLeast(inset + 1f)
+                            val pillH = Utils.dipToPixels(44f).toFloat()
+                            val centerY = barH / 2f
+                            indicator.top = (centerY - pillH / 2f).coerceAtLeast(inset)
+                            indicator.bottom = (centerY + pillH / 2f).coerceAtMost(barH - inset)
 
                             // Only set target – let Choreographer spring-animate to it smoothly
                             state.targetCenterX = targetCenter
@@ -1261,8 +1263,10 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                     clearBackgroundsRecursively(it)
                     disableNativeActiveIndicator(it)
                     morphAndaToSettings(it)
+                    formatTabItemViews(it)
                 } else {
                     if (it.background != null) it.background = null
+                    formatTabItemViews(it)
                 }
             }
         }
@@ -1404,6 +1408,33 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                 }
             }
         } catch (_: Throwable) {}
+    }
+
+    private fun formatTabItemViews(item: View) {
+        if (item !is ViewGroup) return
+        val density = item.resources.displayMetrics.density
+
+        val queue = ArrayDeque<View>()
+        queue.add(item)
+        while (queue.isNotEmpty()) {
+            val v = queue.removeFirst()
+            val resName = try { v.resources.getResourceEntryName(v.id) } catch (_: Throwable) { "" }
+
+            if (resName.contains("icon_container") || resName.contains("icon_view") || v is ImageView) {
+                v.translationY = -6f * density
+            } else if (resName.contains("labels_group") || resName.contains("label_view") || v is TextView) {
+                v.translationY = 6f * density
+                if (v is TextView) {
+                    v.textSize = 10f
+                    v.maxLines = 1
+                    v.ellipsize = android.text.TextUtils.TruncateAt.END
+                }
+            } else if (v is ViewGroup) {
+                for (i in 0 until v.childCount) {
+                    queue.add(v.getChildAt(i))
+                }
+            }
+        }
     }
     
     private fun resetAnimations(v: View) {
@@ -1618,8 +1649,10 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         state.selectedIndex = newIndex
 
         val barH = (if (bar.height > 0) bar.height else target.height).toFloat()
-        indicator.top = inset
-        indicator.bottom = (barH - inset).coerceAtLeast(inset + 1f)
+        val pillH = Utils.dipToPixels(44f).toFloat()
+        val centerY = barH / 2f
+        indicator.top = (centerY - pillH / 2f).coerceAtLeast(inset)
+        indicator.bottom = (centerY + pillH / 2f).coerceAtMost(barH - inset)
 
         if (firstRun) {
             state.currentCenterX = toCenter

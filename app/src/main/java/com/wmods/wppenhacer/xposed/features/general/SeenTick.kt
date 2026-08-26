@@ -118,9 +118,6 @@ class SeenTick(
 
     private fun registerMessageView(messageId: String?, view: ImageView?) {
         if (messageId == null || view == null) return
-        if (messageMap.size > 100) {
-            messageMap.entries.removeIf { it.value.get() == null }
-        }
         messageMap[messageId] = WeakReference(view)
     }
 

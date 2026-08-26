@@ -84,10 +84,45 @@ class FStatusWpp(val fstatus: Any?) {
 
     fun getMediaFile(): File? {
         if (!isMediaFile) return null
-        val item = classFMediaStatus.getField("A00").get(fstatus) ?: return null
-        return item.javaClass.declaredMethods.first {
-            it.returnType == File::class.java
-        }.apply { isAccessible = true }.invoke(item) as? File
+        try {
+            // 1. Coba field A00 (jika ada)
+            val directItem = try {
+                val f = classFMediaStatus.declaredFields.firstOrNull { it.name == "A00" } ?: classFMediaStatus.fields.firstOrNull { it.name == "A00" }
+                f?.apply { isAccessible = true }?.get(fstatus)
+            } catch (_: Throwable) {
+                null
+            }
+            if (directItem != null) {
+                val fileMethod = directItem.javaClass.declaredMethods.firstOrNull { it.returnType == File::class.java }
+                if (fileMethod != null) {
+                    fileMethod.isAccessible = true
+                    val f = fileMethod.invoke(directItem) as? File
+                    if (f != null && f.exists()) return f
+                }
+            }
+
+            // 2. Scan semua declared fields di classFMediaStatus
+            for (field in classFMediaStatus.declaredFields) {
+                if (field.type.isPrimitive) continue
+                field.isAccessible = true
+                val obj = field.get(fstatus) ?: continue
+                if (obj is File && obj.exists()) return obj
+
+                val m = obj.javaClass.declaredMethods.firstOrNull { it.parameterCount == 0 && it.returnType == File::class.java }
+                if (m != null) {
+                    m.isAccessible = true
+                    val f = m.invoke(obj) as? File
+                    if (f != null && f.exists()) return f
+                }
+            }
+
+            // 3. Cek fMessage mediaFile fallback
+            val msgFile = fMessage?.mediaFile
+            if (msgFile != null && msgFile.exists()) return msgFile
+        } catch (e: Throwable) {
+            XposedBridge.log("FStatusWpp.getMediaFile error: ${e.message}")
+        }
+        return null
     }
 
     override fun toString(): String {
@@ -110,7 +145,7 @@ class FStatusWpp(val fstatus: Any?) {
         }
 
         @JvmField
-        var senderJid: FMessageWpp.UserJid
+        var senderJid: FMessageWpp.UserJid = FMessageWpp.UserJid()
 
         /**
          * The underlying key object from WhatsApp's code.
@@ -122,7 +157,7 @@ class FStatusWpp(val fstatus: Any?) {
          * The unique identifier for the message.
          */
         @JvmField
-        var messageID: String
+        var messageID: String = ""
 
         /**
          * A boolean indicating if the message was sent by the current user.
@@ -134,7 +169,7 @@ class FStatusWpp(val fstatus: Any?) {
          * The JID of whatsapp
          */
         @JvmField
-        var remoteJid: FMessageWpp.UserJid
+        var remoteJid: FMessageWpp.UserJid = FMessageWpp.UserJid()
 
 
         @JvmField
@@ -155,12 +190,38 @@ class FStatusWpp(val fstatus: Any?) {
         }
 
         constructor(key: Any?) {
+            if (key == null) return
             this.thisObject = key
-            this.senderJid = FMessageWpp.UserJid(XposedHelpers.getObjectField(key, "A01"))
-            this.messageID = XposedHelpers.getObjectField(key, "A02") as String
-            this.isFromMe = XposedHelpers.getBooleanField(key, "A03")
-            this.remoteJid = FMessageWpp.UserJid(XposedHelpers.getObjectField(key, "A00"))
-            this.fStatus = getFStatusFromFKeyStatus(this)
+            try {
+                this.senderJid = FMessageWpp.UserJid(XposedHelpers.getObjectField(key, "A01"))
+            } catch (_: Throwable) {
+                val jidObj = ReflectionUtils.findFieldUsingFilterIfExists(key.javaClass) { f ->
+                    !f.type.isPrimitive && f.name != "A00"
+                }?.get(key)
+                this.senderJid = FMessageWpp.UserJid(jidObj)
+            }
+
+            try {
+                this.messageID = (XposedHelpers.getObjectField(key, "A02") as? String) ?: ""
+            } catch (_: Throwable) {
+                this.messageID = (ReflectionUtils.findFieldUsingFilterIfExists(key.javaClass) { f ->
+                    f.type == String::class.java
+                }?.get(key) as? String) ?: ""
+            }
+
+            try {
+                this.isFromMe = XposedHelpers.getBooleanField(key, "A03")
+            } catch (_: Throwable) {
+                this.isFromMe = ReflectionUtils.findFieldUsingFilterIfExists(key.javaClass) { f ->
+                    f.type == java.lang.Boolean.TYPE || f.type == java.lang.Boolean::class.java
+                }?.getBoolean(key) ?: false
+            }
+
+            try {
+                this.remoteJid = FMessageWpp.UserJid(XposedHelpers.getObjectField(key, "A00"))
+            } catch (_: Throwable) {
+                this.remoteJid = this.senderJid
+            }
         }
 
         override fun toString(): String {

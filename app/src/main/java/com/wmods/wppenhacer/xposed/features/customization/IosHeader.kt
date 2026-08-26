@@ -378,6 +378,10 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                                                     val tabChanged = lastIsChatsTab != isChatsTab
                                                     lastIsChatsTab = isChatsTab
                                                     
+                                                    if (hdr != null) {
+                                                        setContainerMargin(hdr, isChatsTab)
+                                                    }
+                                                    
                                                     try {
                                                         val fakePlus = toolbar.findViewWithTag<ImageView>("fake_plus_btn")
                                                         if (fakePlus != null) {
@@ -579,37 +583,63 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
         try {
             val parent = header.parent as? ViewGroup ?: return
             val density = header.resources.displayMetrics.density
-            val headerBottomInParent = header.top + header.height
-            val paddingDp = (-2 * density).toInt()
+            val largeTitle = getLargeTitleView(header)
+            val titleH = largeTitle?.height?.takeIf { it > 0 } ?: (48 * density).toInt()
+            val toolbarView = header.findViewById<View>(Utils.getID("toolbar", "id"))
+            val toolbarH = toolbarView?.height?.takeIf { it > 0 } ?: (56 * density).toInt()
+            val headerHeight = if (header.height > 0) header.height else (header.measuredHeight.takeIf { it > 0 } ?: (toolbarH + titleH))
+            val headerBottomInParent = header.top + headerHeight
 
-            // AGGRESSIVE: set conversation_container ke 0, rely pada header.elevation/bringToFront
+            // Gap final yang diinginkan antara batas bawah teks "Chats" dan search bar (bisa disesuaikan)
+            val desiredGapDp = 4f
+            val desiredGapPx = (desiredGapDp * density).toInt()
+
+            // 1. Shift pager_holder (parent tunggal untuk semua tab termasuk Chats, Calls, Updates, Communities)
+            val pagerHolderId = Utils.getID("pager_holder", "id")
+            if (pagerHolderId != 0) {
+                val ph = parent.findViewById<ViewGroup>(pagerHolderId)
+                if (ph != null) {
+                    val shiftY = titleH.toFloat()
+                    if (ph.translationY != shiftY) {
+                        ph.translationY = shiftY
+                    }
+                }
+            }
+            // Reset conversation_container agar TIDAK double-shift karena dia adalah anak di dalam pager_holder
             val ccId = Utils.getID("conversation_container", "id")
             if (ccId != 0) {
                 val cc = parent.findViewById<ViewGroup>(ccId)
-                if (cc != null && cc.layoutParams is ViewGroup.MarginLayoutParams) {
-                    val ccParams = cc.layoutParams as ViewGroup.MarginLayoutParams
-                    // Set ke 0 — header will overlap naturally, search_bar akan langsung di bawah toolbar
-                    val largeTitle = getLargeTitleView(header)
-                    val offset = largeTitle?.height ?: 0
-                    
-                    if (ccParams.topMargin != offset) {
-                        ccParams.topMargin = offset
-                        cc.layoutParams = ccParams
-                    }
-                    return
+                if (cc != null && cc.translationY != 0f) {
+                    cc.translationY = 0f
                 }
             }
 
-            // Fallback: old logic
+            // 2. SELALU jalankan juga logika posisi search bar & child lain, TIDAK di-return lebih awal
             val searchBarId = Utils.getID("my_search_bar", "id")
             for (i in 0 until parent.childCount) {
                 val child = parent.getChildAt(i)
                 if (child === header) continue
+                if (child.id == pagerHolderId || child.id == ccId) continue
+
                 val pParams = child.layoutParams
                 if (pParams is ViewGroup.MarginLayoutParams) {
                     val target = if (searchBarId != 0 && child.id == searchBarId) {
-                        // Search bar: set margin ke header bottom + padding
-                        headerBottomInParent + paddingDp
+                        // Ukur langsung posisi bawah largeTitle di koordinat layar,
+                        // lalu konversi ke koordinat parent, supaya presisi tanpa tebak-tebak
+                        val titleLoc = IntArray(2)
+                        val parentLoc = IntArray(2)
+                        var t: Int
+                        if (largeTitle != null && largeTitle.height > 0) {
+                            largeTitle.getLocationOnScreen(titleLoc)
+                            parent.getLocationOnScreen(parentLoc)
+                            val titleBottomInParent = (titleLoc[1] - parentLoc[1]) + largeTitle.height
+                            val searchBarInternalTopPad = child.paddingTop
+                            t = titleBottomInParent + desiredGapPx - searchBarInternalTopPad
+                            logDebug("IosHeader: PRECISE searchBar target=$t (titleBottomInParent=$titleBottomInParent, gap=$desiredGapPx, internalPad=$searchBarInternalTopPad)")
+                        } else {
+                            t = headerBottomInParent - (16 * density).toInt()
+                        }
+                        t
                     } else {
                         // Child lain: hitung overlap seperti sebelumnya
                         val originalMargin = (child.getTag(TAG_ORIGINAL_MARGIN) as? Int) ?: run {
@@ -619,7 +649,7 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
 
                         val childTopInParent = child.top - pParams.topMargin
                         if (headerBottomInParent > 0 && childTopInParent < headerBottomInParent) {
-                            val neededMargin = headerBottomInParent - childTopInParent + paddingDp
+                            val neededMargin = headerBottomInParent - childTopInParent - (16 * density).toInt()
                             originalMargin + neededMargin
                         } else if (headerBottomInParent <= 0) {
                             val fallback = (52 * density).toInt()

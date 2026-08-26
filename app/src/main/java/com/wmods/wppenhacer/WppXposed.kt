@@ -24,9 +24,9 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage
 
 class WppXposed : IXposedHookLoadPackage, IXposedHookInitPackageResources, IXposedHookZygoteInit {
 
-    private var MODULE_PATH: String? = null
-
     companion object {
+        @JvmField
+        var MODULE_PATH: String? = null
         private var pref: XSharedPreferences? = null
 
         @JvmStatic

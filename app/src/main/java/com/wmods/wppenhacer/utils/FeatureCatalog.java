@@ -481,6 +481,14 @@ public class FeatureCatalog {
                 null,
                 Arrays.asList("toast", "replay", "status", "notification")));
 
+        catalog.add(new SearchableFeature("remove_limit_edit_status",
+                context.getString(R.string.remove_limit_edit_status),
+                context.getString(R.string.remove_limit_edit_status_sum),
+                SearchableFeature.Category.GENERAL,
+                SearchableFeature.FragmentType.GENERAL,
+                null,
+                Arrays.asList("edit", "status", "caption", "limit", "deskripsi", "cerita")));
+
         // PRIVACY FRAGMENT
         catalog.add(new SearchableFeature("typearchive",
                 context.getString(R.string.hide_archived_chat),
