@@ -70,7 +70,8 @@ class StatusReplayStore private constructor(context: Context) {
             newRecord = ReplayRecord(statusId, viewerJid, 1, timestamp, timestamp, listOf(timestamp))
             insertRecord(newRecord)
         } else {
-            if (timestamp - existing.lastSeen < 15_000L) {
+            // Debounce 2 detik untuk menghindari duplikasi TCP retransmission
+            if (timestamp - existing.lastSeen < 2_000L) {
                 memoryCache[key] = existing
                 return existing
             }

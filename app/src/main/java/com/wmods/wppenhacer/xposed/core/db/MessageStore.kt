@@ -97,6 +97,23 @@ class MessageStore private constructor() {
         return ""
     }
 
+    fun isMessageFromMe(message_key: String): Boolean {
+        val db = getDatabase() ?: return false
+        val columns = arrayOf("from_me")
+        val selection = "key_id=?"
+        val selectionArgs = arrayOf(message_key)
+        try {
+            db.query("message", columns, selection, selectionArgs, null, null, null).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    return cursor.getInt(0) == 1
+                }
+            }
+        } catch (e: Exception) {
+            XposedBridge.log(e)
+        }
+        return false
+    }
+
     fun getIdfromKey(message_key: String): Long {
         val db = getDatabase() ?: return -1
         val columns = arrayOf("_id")

@@ -52,6 +52,7 @@ import com.wmods.wppenhacer.xposed.features.customization.IosSwipeMenu
 import com.wmods.wppenhacer.xposed.features.customization.IosTextEntry
 import com.wmods.wppenhacer.xposed.features.customization.SeparateGroup
 import com.wmods.wppenhacer.xposed.features.customization.ShowOnline
+import com.wmods.wppenhacer.xposed.features.customization.StatusLongPressPreview
 import com.wmods.wppenhacer.xposed.features.general.AboutContactPicker
 import com.wmods.wppenhacer.xposed.features.general.AntiRevoke
 import com.wmods.wppenhacer.xposed.features.general.CallType
@@ -577,7 +578,8 @@ class FeatureLoader {
                 DefaultEmoji::class.java,
                 IosTextEntry::class.java,
                 IosContextMenu::class.java,
-                StatusReplayTracker::class.java
+                StatusReplayTracker::class.java,
+                StatusLongPressPreview::class.java
             )
 
             XposedBridge.log("Loading Plugins")

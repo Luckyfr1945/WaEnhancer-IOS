@@ -21,11 +21,11 @@ class FMessageWpp(fMessage: Any?) {
     companion object {
         lateinit var TYPE: Class<*>
         private var userJidMethod: Method? = null
-        private var keyMessage: Field? = null
-        private var getFieldIdMessage: Field? = null
+        @JvmField var keyMessage: Field? = null
+        @JvmField var getFieldIdMessage: Field? = null
         private var deviceJidField: Field? = null
-        private var messageMethod: Method? = null
-        private var messageWithMediaMethod: Method? = null
+        @JvmField var messageMethod: Method? = null
+        @JvmField var messageWithMediaMethod: Method? = null
         private var mediaTypeField: Field? = null
         private var getOriginalMessageKey: Method? = null
         private var abstractMediaMessageClass: Class<*>? = null

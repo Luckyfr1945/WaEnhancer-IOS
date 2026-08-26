@@ -93,13 +93,18 @@
 
     <style name="BottomNavStyle" parent="Widget.Material3.BottomNavigationView">
         <item name="itemActiveIndicatorStyle">@style/NavActiveIndicator</item>
-        <item name="labelVisibilityMode">labeled</item>
-        <item name="android:minHeight">@dimen/nav_bar_height</item>
-        <item name="elevation">@dimen/card_elevation_high</item>
+        <item name="labelVisibilityMode">unlabeled</item>
+        <item name="itemIconTint">@color/nav_item_colors</item>
+        <item name="itemTextColor">@color/nav_item_colors</item>
+        <item name="itemIconSize">24dp</item>
+        <item name="android:minHeight">58dp</item>
+        <item name="elevation">20dp</item>
     </style>
 
     <style name="NavActiveIndicator" parent="Widget.Material3.BottomNavigationView.ActiveIndicator">
-        <item name="android:color">?colorPrimaryContainer</item>
+        <item name="android:color">#2600A884</item>
+        <item name="android:width">48dp</item>
+        <item name="android:height">36dp</item>
         <item name="shapeAppearance">@style/ShapeAppearance.Material3.Corner.Full</item>
     </style>
 

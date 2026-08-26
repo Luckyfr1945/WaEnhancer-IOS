@@ -118,10 +118,9 @@ public class MainActivity extends BaseActivity {
             android.graphics.drawable.Drawable windowBackground = decorView.getBackground();
             blurView.setupWith(decorView)
                     .setFrameClearDrawable(windowBackground)
-                    .setBlurRadius(8f)
+                    .setBlurRadius(10f)
                     .setOverlayColor(android.graphics.Color.TRANSPARENT)
                     .setBlurAutoUpdate(true);
-            com.wmods.wppenhacer.utils.AgslHelper.applyAgsl(blurView, 32f);
         }
     }
 

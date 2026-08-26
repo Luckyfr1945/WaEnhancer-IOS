@@ -530,4 +530,6 @@ Saat Anda mengaktifkan bekukan \"terakhir dilihat dan online\", Anda tidak dapat
     <string name="status_replay_count_suffix">%1$s • 🔄 Dilihat %2$dx</string>
     <string name="status_replay_history_title">Riwayat Putar Ulang Status</string>
     <string name="status_replay_history_message">Status Anda telah diputar ulang sebanyak %1$d kali oleh %2$s:\n\n</string>
+    <string name="remove_limit_edit_status">Hapus Batas Edit Deskripsi Status</string>
+    <string name="remove_limit_edit_status_sum">Bisa edit caption/deskripsi status kapan saja sampai story terhapus (24 jam)</string>
 </resources>
