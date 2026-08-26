@@ -184,6 +184,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         var backdrop: View? = null
         var preDraw: ViewTreeObserver.OnPreDrawListener? = null
         var visibilityGlobalLayout: ViewTreeObserver.OnGlobalLayoutListener? = null
+        var visibilitySyncRoot: java.lang.ref.WeakReference<FrameLayout>? = null
         var items: List<View> = emptyList()
         var selectedIndex = -1
         var originalParent: ViewGroup? = null
@@ -739,6 +740,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         }
 
         state.visibilityGlobalLayout = listener
+        state.visibilitySyncRoot = java.lang.ref.WeakReference(rootView)
         rootView.viewTreeObserver.addOnGlobalLayoutListener(listener)
         updateVisibility()
     }
@@ -1240,15 +1242,12 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
     }
 
     private fun syncSelection(bar: ViewGroup, state: BarState) {
-        var items = state.items
-        val needsInit = items.isEmpty() || items[0].parent == null
+        val oldItems = state.items
+        val needsInit = oldItems.isEmpty() || oldItems[0].parent == null
+        reorderMenuTabsSafely(bar, state)
+        val items = state.items
         if (needsInit || bar.childCount != state.lastParentChildCount) {
-            reorderMenuTabsSafely(bar, state)
-            items = state.items
             state.lastParentChildCount = bar.childCount
-        } else {
-            reorderMenuTabsSafely(bar, state)
-            items = state.items
         }
         
         // Disable Material 3 BottomNavigationView touch delegate so that clicks respect translationX
@@ -1696,11 +1695,15 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         state.preDraw?.let {
             if (bar.viewTreeObserver.isAlive) bar.viewTreeObserver.removeOnPreDrawListener(it)
         }
-        state.visibilityGlobalLayout?.let {
-            if (bar.rootView?.viewTreeObserver?.isAlive == true) {
-                bar.rootView.viewTreeObserver.removeOnGlobalLayoutListener(it)
+        state.visibilityGlobalLayout?.let { listener ->
+            val root = state.visibilitySyncRoot?.get()
+            if (root != null && root.viewTreeObserver.isAlive) {
+                root.viewTreeObserver.removeOnGlobalLayoutListener(listener)
+            } else if (bar.rootView?.viewTreeObserver?.isAlive == true) {
+                bar.rootView.viewTreeObserver.removeOnGlobalLayoutListener(listener)
             }
         }
+        state.visibilitySyncRoot = null
         state.layoutSync?.let { bar.removeOnLayoutChangeListener(it) }
         (state.backdrop as? BlurView)?.setBlurAutoUpdate(false)
         state.items.forEach {
