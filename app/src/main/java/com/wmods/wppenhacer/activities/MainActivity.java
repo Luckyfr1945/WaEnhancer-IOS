@@ -123,6 +123,18 @@ public class MainActivity extends BaseActivity {
                     .setBlurAutoUpdate(true);
             com.wmods.wppenhacer.utils.AgslHelper.applyAgsl(blurView, 32f);
         }
+
+        eightbitlab.com.blurview.BlurView topBlurView = findViewById(R.id.top_blur_view);
+        if (topBlurView != null) {
+            android.view.ViewGroup decorView = (android.view.ViewGroup) getWindow().getDecorView();
+            android.graphics.drawable.Drawable windowBackground = decorView.getBackground();
+            topBlurView.setupWith(decorView)
+                    .setFrameClearDrawable(windowBackground)
+                    .setBlurRadius(16f)
+                    .setOverlayColor(android.graphics.Color.parseColor("#33121D15"))
+                    .setBlurAutoUpdate(true);
+            com.wmods.wppenhacer.utils.AgslHelper.applyAgsl(topBlurView, 20f);
+        }
     }
 
     private void createMainDir() {
