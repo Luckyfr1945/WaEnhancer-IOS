@@ -2,6 +2,7 @@
 * Status Replay Tracker: Track and display how many times contacts replay/re-watch your status updates (badge "🔄 Viewed Nx" with relative timestamps in viewer list)
 * Status Replay History Dialog: Tap on status replay badge to view exact timestamps of every view/replay for each contact
 * Floating Bottom Bar: Fluid iOS-style floating navigation bar with real-time blur effect (AGSL Shader)
+* iOS Glassmorphism Header: Real-time blur backdrop with AGSL Liquid Glass refraction & chromatic aberration effect on iOS Header toolbar
 * Auto DB Persistence: Persistent SQLite storage (StatusReplayStore) with automatic 24-hour cleanup for expired status replays
 * Full compatibility and support for WhatsApp version 2.26.32.xx
 
@@ -13,6 +14,8 @@
 * iOS Header Action Buttons: Improved synchronization of DND, Ghost Mode, Freeze Last Seen, and Restart action buttons alongside the camera button
 
 [FIXED]
+* Fixed NullPointerException crash in X.A8i.A06 (WhatsApp 2.26.32) caused by null X.9jD object when reading boolean field A01 — added defensive Xposed hook that catches NPE and returns safe default (false) to prevent app crash
+* Fixed toolbar rendering black-screen/solid black background bug by adding safe null-checks & applying transparent AGSL glass backdrop
 * Fixed outgoing message transmission issue (clock 🕒 icon bug) caused by reflection NoSuchMethodError in FMessageWpp.Key constructor
 * Fixed layout glitches and padding issues on the Floating Bottom Bar
 * Fixed cascading component initialization failures in FMessageWpp with isolated try-catch blocks and safe fallbacks

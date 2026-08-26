@@ -10,6 +10,7 @@ import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.os.Bundle
+import android.os.Build
 import android.content.Intent
 import android.view.Gravity
 import android.view.View
@@ -190,14 +191,66 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                         toolbar.viewTreeObserver.addOnGlobalLayoutListener(globalLayoutListener)
 
                         val isNight = DesignUtils.isNightMode()
-                        val defaultBg = if (isNight) Color.parseColor("#0B141B") else Color.WHITE
-                        val surfaceColor = DesignUtils.getPrimarySurfaceColor()
-                        val headerBgColor = if (surfaceColor != -15132398 && surfaceColor != -2 && surfaceColor != 0) surfaceColor else defaultBg
+                        val blurEnabled = prefs.getBoolean("ios_header_blur", true)
 
-                        header.setBackgroundColor(headerBgColor)
+                        header.setBackgroundColor(Color.TRANSPARENT)
                         toolbar.setBackgroundColor(Color.TRANSPARENT)
                         header.elevation = 0f
                         header.bringToFront()
+
+                        // Tambahkan BlurView/Glassmorphism backdrop di header jika diizinkan
+                        if (blurEnabled && activity is android.view.ViewGroup) {
+                            try {
+                                val radiusDp = 24f
+                                val radius = Utils.dipToPixels(radiusDp).toFloat()
+                                val blurView = eightbitlab.com.blurview.BlurView(com.wmods.wppenhacer.xposed.utils.ModuleContextWrapper(activity)).apply {
+                                    val blurRoot = activity.findViewById<ViewGroup>(android.R.id.content) ?: activity.window.decorView as ViewGroup
+                                    setupWith(blurRoot)
+                                        .setFrameClearDrawable(null)
+                                        .setBlurRadius(4f)
+                                        .setOverlayColor(if (isNight) Color.argb(120, 18, 18, 18) else Color.argb(120, 255, 255, 255))
+                                        .setBlurAutoUpdate(true)
+                                }
+
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    blurView.post {
+                                        if (blurView.width > 0 && blurView.height > 0) {
+                                            try {
+                                                val w = blurView.width.toFloat()
+                                                val h = blurView.height.toFloat()
+                                                val r = radius.coerceAtMost(h / 2f)
+                                                val shader = android.graphics.RuntimeShader(com.wmods.wppenhacer.utils.AgslHelper.SHADER_SRC)
+                                                shader.setFloatUniform("resolution", w, h)
+                                                shader.setFloatUniform("cornerRadius", r)
+                                                shader.setFloatUniform("refractionStrength", 4.0f)
+                                                shader.setFloatUniform("chromaticAberration", 1.5f)
+                                                shader.setFloatUniform("brightnessBoost", 1.10f)
+                                                shader.setFloatUniform("rimIntensity", 0.35f)
+
+                                                val glassEffect = android.graphics.RenderEffect.createRuntimeShaderEffect(shader, "image")
+                                                blurView.setRenderEffect(glassEffect)
+                                            } catch (t: Throwable) {
+                                                logDebug("IosHeader AGSL shader error: ${t.message}")
+                                            }
+                                        }
+                                    }
+                                }
+
+                                val blurParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                                header.addView(blurView, 0, blurParams)
+                            } catch (e: Throwable) {
+                                logDebug("IosHeader BlurView inject error: ${e.message}")
+                                val defaultBg = if (isNight) Color.parseColor("#0B141B") else Color.WHITE
+                                val surfaceColor = DesignUtils.getPrimarySurfaceColor()
+                                val headerBgColor = if (surfaceColor != -15132398 && surfaceColor != -2 && surfaceColor != 0) surfaceColor else defaultBg
+                                header.setBackgroundColor(headerBgColor)
+                            }
+                        } else {
+                            val defaultBg = if (isNight) Color.parseColor("#0B141B") else Color.WHITE
+                            val surfaceColor = DesignUtils.getPrimarySurfaceColor()
+                            val headerBgColor = if (surfaceColor != -15132398 && surfaceColor != -2 && surfaceColor != 0) surfaceColor else defaultBg
+                            header.setBackgroundColor(headerBgColor)
+                        }
 
                         // Navigation icon: titik-tiga bulat khas iOS
                         try {

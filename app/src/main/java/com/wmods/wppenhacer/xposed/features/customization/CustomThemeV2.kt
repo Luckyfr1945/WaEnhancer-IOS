@@ -398,12 +398,19 @@ class CustomThemeV2(loader: ClassLoader, preferences:SharedPreferences) :
     }
 
     private fun injectWallpaper(view: View?) {
-        val content = view as ViewGroup
-        val rootView = content.getChildAt(0) as ViewGroup
+        val content = view as? ViewGroup ?: return
+        val rootView = content.getChildAt(0) as? ViewGroup ?: return
 
         val header = content.findViewById<ViewGroup>(Utils.getID("header", "id"))
-        header.background = null
-        header.backgroundTintList = null
+        if (header != null) {
+            header.background = null
+            header.backgroundTintList = null
+            val firstChild = header.getChildAt(0)
+            if (firstChild != null) {
+                firstChild.background = null
+                firstChild.backgroundTintList = null
+            }
+        }
         val toolbarContainer =
             content.findViewById<ViewGroup>(Utils.getID("toolbar_container", "id"))
         if (toolbarContainer != null) {
@@ -411,14 +418,11 @@ class CustomThemeV2(loader: ClassLoader, preferences:SharedPreferences) :
             toolbarContainer.backgroundTintList = null
         }
         val toolbar = content.findViewById<View>(Utils.getID("toolbar", "id"))
-        val firstChild = header.getChildAt(0)
-        if (firstChild != null && toolbar != firstChild) {
-            firstChild.background = null
-            firstChild.backgroundTintList = null
+        if (toolbar != null) {
+            toolbar.background = null
+            toolbar.backgroundTintList = null
+            replaceColors(toolbar, toolbarAlpha)
         }
-        toolbar.background = null
-        toolbar.backgroundTintList = null
-        replaceColors(toolbar, toolbarAlpha)
         XposedHelpers.findAndHookMethod(
             View::class.java, "setBackgroundColor", Int::class.javaPrimitiveType,
             object : XC_MethodHook() {
