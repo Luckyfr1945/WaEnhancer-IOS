@@ -1418,18 +1418,29 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         queue.add(item)
         while (queue.isNotEmpty()) {
             val v = queue.removeFirst()
-            val resName = try { v.resources.getResourceEntryName(v.id) } catch (_: Throwable) { "" }
+            val clsName = v.javaClass.simpleName
+            val isIcon = v is ImageView || clsName.contains("Icon", ignoreCase = true)
+            val isLabel = v is TextView || clsName.contains("Label", ignoreCase = true)
 
-            if (resName.contains("icon_container") || resName.contains("icon_view") || v is ImageView) {
-                v.translationY = -6f * density
-            } else if (resName.contains("labels_group") || resName.contains("label_view") || v is TextView) {
-                v.translationY = 6f * density
+            if (isIcon) {
+                val targetY = -6f * density
+                if (v.translationY != targetY) {
+                    v.translationY = targetY
+                }
+            } else if (isLabel) {
+                val targetY = 6f * density
+                if (v.translationY != targetY) {
+                    v.translationY = targetY
+                }
                 if (v is TextView) {
-                    v.textSize = 10f
+                    if (v.textSize != 10f * density && v.textSize != 10f) {
+                        v.textSize = 10f
+                    }
                     v.maxLines = 1
                     v.ellipsize = android.text.TextUtils.TruncateAt.END
                 }
-            } else if (v is ViewGroup) {
+            }
+            if (v is ViewGroup) {
                 for (i in 0 until v.childCount) {
                     queue.add(v.getChildAt(i))
                 }

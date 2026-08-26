@@ -378,7 +378,7 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                                                     val tabChanged = lastIsChatsTab != isChatsTab
                                                     lastIsChatsTab = isChatsTab
                                                     
-                                                    if (hdr != null) {
+                                                    if (tabChanged && hdr != null) {
                                                         setContainerMargin(hdr, isChatsTab)
                                                     }
                                                     
