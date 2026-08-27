@@ -2804,35 +2804,70 @@
 
         @Throws(Exception::class)
         @JvmStatic
-        fun loadNotificationMethod(classLoader: ClassLoader): Method {
+        fun loadNotificationMethod(classLoader: ClassLoader): Method? {
             return UnobfuscatorCache.getInstance().getMethod(classLoader) {
-                val invokedMethod = bridge.findMethod {
-                    matcher {
-                        addUsingString("LastMessageStore/getLastMessagesForNotificationAfterReply")
-                    }
-                }.singleOrNull() ?: throw RuntimeException("Notification invoked method not found")
-                invokedMethod.getMethodInstance(classLoader)
+                // Strategy 1: Exact string match
+                try {
+                    val invokedMethod = bridge.findMethod {
+                        matcher {
+                            addUsingString("LastMessageStore/getLastMessagesForNotificationAfterReply")
+                        }
+                    }.firstOrNull()
+                    if (invokedMethod != null) return@getMethod invokedMethod.getMethodInstance(classLoader)
+                } catch (_: Throwable) {}
+
+                // Strategy 2: Partial string match
+                try {
+                    val method = findFirstMethodUsingStrings(
+                        classLoader,
+                        StringMatchType.Contains,
+                        "getLastMessagesForNotificationAfterReply"
+                    )
+                    if (method != null) return@getMethod method
+                } catch (_: Throwable) {}
+
+                null
             }
         }
 
         @Throws(Exception::class)
         @JvmStatic
-        fun loadLockedChatsMethod(classLoader: ClassLoader): Method {
+        fun loadLockedChatsMethod(classLoader: ClassLoader): Method? {
             return UnobfuscatorCache.getInstance().getMethod(classLoader) {
-                val classData = bridge.findClass {
-                    matcher {
-                        addUsingString("conversationsmgr/replacecontact")
-                    }
-                }.singleOrNull() ?: throw RuntimeException("ConversationsManager class not found")
+                // Strategy 1: Find via conversationsmgr/replacecontact and notification method invokes
+                try {
+                    val classData = bridge.findClass {
+                        matcher {
+                            addUsingString("conversationsmgr/replacecontact")
+                        }
+                    }.firstOrNull()
 
-                val invokedMethod = bridge.getMethodData(loadNotificationMethod(classLoader))
-                for (invoke in invokedMethod!!.invokes) {
-                    if (!invoke.isMethod) continue
-                    if (invoke.className != classData.name) continue
-                    if (invoke.returnType?.name != ArrayList::class.java.name) continue
-                    return@getMethod invoke.getMethodInstance(classLoader)
-                }
-                throw RuntimeException("LockedChats method not found")
+                    val notificationMethod = loadNotificationMethod(classLoader)
+                    if (classData != null && notificationMethod != null) {
+                        val invokedMethodData = bridge.getMethodData(notificationMethod)
+                        if (invokedMethodData != null) {
+                            for (invoke in invokedMethodData.invokes) {
+                                if (!invoke.isMethod) continue
+                                if (invoke.className != classData.name) continue
+                                if (invoke.returnType?.name != ArrayList::class.java.name && invoke.returnType?.name != List::class.java.name) continue
+                                return@getMethod invoke.getMethodInstance(classLoader)
+                            }
+                        }
+                    }
+                } catch (_: Throwable) {}
+
+                // Strategy 2: Find via chatlockmanager / locked_chats string matchers
+                try {
+                    val method = findFirstMethodUsingStrings(
+                        classLoader,
+                        StringMatchType.Contains,
+                        "chatlockmanager",
+                        "locked_chats"
+                    )
+                    if (method != null) return@getMethod method
+                } catch (_: Throwable) {}
+
+                null
             }
         }
 
@@ -2851,9 +2886,19 @@
 
         @Throws(Exception::class)
         @JvmStatic
-        fun loadChatCacheClass(classLoader: ClassLoader): Class<*> {
+        fun loadChatCacheClass(classLoader: ClassLoader): Class<*>? {
             return UnobfuscatorCache.getInstance().getClass(classLoader) {
-                findFirstClassUsingStrings(classLoader, StringMatchType.StartsWith, "Chatscache/")!!
+                try {
+                    val cls = findFirstClassUsingStrings(classLoader, StringMatchType.Contains, "Chatscache/")
+                    if (cls != null) return@getClass cls
+                } catch (_: Throwable) {}
+
+                try {
+                    val cls = findFirstClassUsingStrings(classLoader, StringMatchType.Contains, "chatscache/")
+                    if (cls != null) return@getClass cls
+                } catch (_: Throwable) {}
+
+                null
             }
         }
 
@@ -2861,15 +2906,30 @@
         @JvmStatic
         fun loadLoadedContactsMethod(classLoader: ClassLoader): Method? {
             return UnobfuscatorCache.getInstance().getMethod(classLoader) {
-                val methods = bridge.findMethod {
-                    matcher {
-                        addUsingNumber(8726)
-                        paramCount(1)
-                        addParamType(Any::class.java)
+                // Strategy 1: Number matcher
+                try {
+                    val methods = bridge.findMethod {
+                        matcher {
+                            addUsingNumber(8726)
+                            paramCount(1)
+                            addParamType(Any::class.java)
+                        }
                     }
-                }
-                if (methods.isEmpty()) return@getMethod null
-                methods[0].getMethodInstance(classLoader)
+                    if (methods.isNotEmpty()) return@getMethod methods[0].getMethodInstance(classLoader)
+                } catch (_: Throwable) {}
+
+                // Strategy 2: Search in ChatCache class for single param method returning void or list
+                try {
+                    val cacheCls = loadChatCacheClass(classLoader)
+                    if (cacheCls != null) {
+                        val m = cacheCls.declaredMethods.firstOrNull { method ->
+                            method.parameterCount == 1 && !Modifier.isStatic(method.modifiers)
+                        }
+                        if (m != null) return@getMethod m
+                    }
+                } catch (_: Throwable) {}
+
+                null
             }
         }
 
