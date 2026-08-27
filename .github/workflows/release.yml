@@ -4,8 +4,9 @@ on:
   workflow_dispatch:
   push:
     tags:
-      - '1.5.*'
+      - '1.*'
       - 'v*'
+      - '*'
 
 jobs:
   release:

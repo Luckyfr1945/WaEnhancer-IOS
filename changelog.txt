@@ -7,11 +7,8 @@
 * Full compatibility and support for WhatsApp version 2.26.32.xx
 
 [IMPROVED]
-* iOS Text Entry & (+) Button: Refactored emoji/attachment button swap into iOS-style (+) and sticker button, responsive pill layout, and seamless touch handling
-* Seen Tick Architecture Refactor: Deterministic constructor resolution with strict signature matching, explicit parameter slot mapping, and valid default timestamps/booleans to prevent JobQueue stalls
-* Multi-Thread & Memory Safety: Added @Volatile across shared companion states and automated garbage cleanup for WeakReference view caches
-* Dynamic Field Caching: Thread-safe per-class reflection caching for status playback components
-* iOS Header Action Buttons: Improved synchronization of DND, Ghost Mode, Freeze Last Seen, and Restart action buttons alongside the camera button
+* Improved iOS Floating Bottom Bar layout and vertical spacing between icons and text labels
+* Improved unvalidated status caption editing and direct status sharing flow
 
 [FIXED]
 * Fixed NullPointerException crash in X.A8i.A06 (WhatsApp 2.26.32) caused by null X.9jD object when reading boolean field A01 — added defensive Xposed hook that catches NPE and returns safe default (false) to prevent app crash

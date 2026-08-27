@@ -60,9 +60,6 @@ class HideSeenView(loader: ClassLoader, preferences:SharedPreferences) : Feature
             override fun onItemBind(fMessage: FMessageWpp, view: ViewGroup, position: Int, convertView: View?) {
                 if (fMessage.key.isFromMe) {
                     clearBubbleView(view)
-                    if (System.currentTimeMillis() - fMessage.timeStamp < 3000) {
-                        com.wmods.wppenhacer.xposed.features.general.SeenTick.triggerBlueOnReply(fMessage.key.remoteJid)
-                    }
                     return
                 }
                 updateBubbleView(fMessage, view)
@@ -88,7 +85,7 @@ private fun updateBubbleView(fmessage: FMessageWpp, viewGroup: ViewGroup) {
     val userJid = fmessage.key.remoteJid
     val messageId = fmessage.key.messageID
     if (userJid.isNull) return
-    val jid = userJid.phoneRawString ?: return
+    val jid = userJid.phoneRawString ?: userJid.userRawString ?: return
 
     val view = viewGroup.findViewById<ImageView>(Utils.getID("view_once_control_icon", "id"))
     if (view != null) {
@@ -114,7 +111,8 @@ private fun updateBubbleView(fmessage: FMessageWpp, viewGroup: ViewGroup) {
         val viewedMessage = getCachedStatus(jid, messageId, MessageHistoryStore.ReceiptType.READ)
         if (viewedMessage == null) {
             ensureCacheLoaded(jid, MessageHistoryStore.ReceiptType.READ)
-            status.visibility = View.GONE
+            status.visibility = View.VISIBLE
+            status.text = "\uD83D\uDD34"
         } else {
             status.visibility = View.VISIBLE
             status.text = if (viewedMessage) "\uD83D\uDFE2" else "\uD83D\uDD34"
@@ -186,16 +184,17 @@ private fun ensureCacheLoaded(jid: String, type: MessageHistoryStore.ReceiptType
 private fun loadStatusMap(jid: String, type: MessageHistoryStore.ReceiptType): HashMap<String, Boolean> {
     val map = HashMap<String, Boolean>()
     val viewed = MessageHistoryStore.getInstance().getHideSeenMessages(jid, type, true)
-    if (viewed != null) {
-        for (item in viewed) {
-            map[item.message] = true
-        }
-    }
+    viewed?.forEach { map[it.message] = true }
     val notViewed = MessageHistoryStore.getInstance().getHideSeenMessages(jid, type, false)
-    if (notViewed != null) {
-        for (item in notViewed) {
-            map[item.message] = false
-        }
+    notViewed?.forEach { map[it.message] = false }
+
+    val rawNum = jid.substringBefore("@")
+    if (rawNum.isNotBlank() && rawNum.length > 5) {
+        val pattern = "%$rawNum%"
+        val patternViewed = MessageHistoryStore.getInstance().getHideSeenMessagesByPattern(jid, pattern, type, true)
+        patternViewed?.forEach { map[it.message] = true }
+        val patternNotViewed = MessageHistoryStore.getInstance().getHideSeenMessagesByPattern(jid, pattern, type, false)
+        patternNotViewed?.forEach { map[it.message] = false }
     }
     return map
 }

@@ -84,10 +84,10 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         private const val TAG_ITEM_INITIALIZED = 0x46_42_49_49 // 'FBII'
 
         // Visual & Physics Parameters
-        private const val BAR_HEIGHT_DP = 64f
+        private const val BAR_HEIGHT_DP = 66f
         private const val BAR_PADDING_DP = 4f
         private const val INDICATOR_INSET_DP = 4f
-        private const val INDICATOR_WIDTH_RATIO = 0.90f
+        private const val INDICATOR_WIDTH_RATIO = 0.78f
         private const val BLUR_RADIUS = 4f
         private const val PRESSED_SCALE = 1.08f
         private const val RUBBER_BAND_DP = 4f
@@ -184,6 +184,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         var backdrop: View? = null
         var preDraw: ViewTreeObserver.OnPreDrawListener? = null
         var visibilityGlobalLayout: ViewTreeObserver.OnGlobalLayoutListener? = null
+        var visibilitySyncRoot: java.lang.ref.WeakReference<FrameLayout>? = null
         var items: List<View> = emptyList()
         var selectedIndex = -1
         var originalParent: ViewGroup? = null
@@ -233,82 +234,21 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         var layoutSync: View.OnLayoutChangeListener? = null
 
         val createdAt: Long = android.os.SystemClock.elapsedRealtime()
+
+        // --- Dirty-check cache for predraw sync (avoids full resync every frame) ---
+        var lastSyncWidth: Int = -1
+        var lastSyncChildCount: Int = -1
+        var lastSyncCheckedRef: java.lang.ref.WeakReference<View>? = null
+        var syncSkipStreak: Int = 0
     }
 
     /**
-     * High-Vibrancy Optical AGSL Glass Refraction Shader (Android 13+):
-     * - 7-Channel Rainbow Spectral Splitting (Red, Orange, Yellow, Green, Cyan, Blue, Purple)
-     * - High-Vibrancy Saturation Amplification (1.70x color depth)
-     * - Seamless peripheral bevel glass refraction (0 lines, 0 seams)
-     * - Crisp glowing crystalline glass rim
+     * High-Vibrancy Optical AGSL Glass Refraction Shader (Android 13+)
+     * Single source of truth in AgslHelper.java.
      */
     private object LiquidGlassShader {
-        const val SHADER_SRC = """
-            uniform shader image;
-            uniform float2 resolution;
-            uniform float cornerRadius;
-            uniform float refractionStrength;
-            uniform float chromaticAberration;
-            uniform float brightnessBoost;
-            uniform float rimIntensity;
-
-            float sdRoundedBox(float2 p, float2 b, float r) {
-                float2 q = abs(p) - b + r;
-                return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
-            }
-
-            vec4 main(float2 fragCoord) {
-                float2 uv = fragCoord / resolution;
-                float2 halfRes = resolution * 0.5;
-                float2 p = fragCoord - halfRes;
-                float2 boxSize = halfRes - float2(1.0);
-                
-                float dist = sdRoundedBox(p, boxSize, cornerRadius);
-                if (dist > 0.0) {
-                    return vec4(0.0);
-                }
-                
-                // 1. Continuous distance from outer glass perimeter
-                float distFromEdge = -dist;
-                float bevelWidth = cornerRadius * 0.65;
-                float edgeFactor = 1.0 - smoothstep(0.0, bevelWidth, distFromEdge);
-                
-                // 2. Continuous C1 normal vector around the perimeter
-                float2 q = abs(p) - (halfRes - float2(cornerRadius));
-                float2 normal = sign(p) * normalize(max(q, float2(0.0001)));
-                
-                // 3. Strong optical refraction & rainbow prismatic dispersion offsets
-                float2 refractOffset = -normal * pow(edgeFactor, 1.25) * (refractionStrength * 0.035);
-                float2 dispCoord = normal * pow(edgeFactor, 1.10) * (chromaticAberration * 0.035);
-                
-                float2 sampleUV = uv + refractOffset;
-                
-                // 4. 7-Channel Rainbow Spectrum Splitting (Vivid Prismatic Color Separation)
-                vec4 red    = image.eval(clamp(sampleUV + dispCoord * 1.00, 0.0, 1.0) * resolution);
-                vec4 orange = image.eval(clamp(sampleUV + dispCoord * 0.66, 0.0, 1.0) * resolution);
-                vec4 yellow = image.eval(clamp(sampleUV + dispCoord * 0.33, 0.0, 1.0) * resolution);
-                vec4 green  = image.eval(clamp(sampleUV, 0.0, 1.0) * resolution);
-                vec4 cyan   = image.eval(clamp(sampleUV - dispCoord * 0.33, 0.0, 1.0) * resolution);
-                vec4 blue   = image.eval(clamp(sampleUV - dispCoord * 0.66, 0.0, 1.0) * resolution);
-                vec4 purple = image.eval(clamp(sampleUV - dispCoord * 1.00, 0.0, 1.0) * resolution);
-                
-                vec4 col = vec4(0.0);
-                col.r = (red.r * 2.5 + orange.r * 2.0 + yellow.r * 1.0) / 5.5;
-                col.g = (yellow.g * 1.0 + green.g * 2.5 + cyan.g * 1.5) / 5.0;
-                col.b = (cyan.b * 1.5 + blue.b * 2.5 + purple.b * 2.0) / 6.0;
-                col.a = 1.0;
-                
-                // 5. High-Vibrancy & Saturation Amplification
-                float luma = dot(col.rgb, vec3(0.2126, 0.7152, 0.0722));
-                col.rgb = mix(vec3(luma), col.rgb, 1.70) * brightnessBoost;
-                
-                // 6. Crisp Outer Crystalline Rim
-                float rim = smoothstep(-1.5, 0.0, dist) * rimIntensity;
-                col.rgb += vec3(rim);
-                
-                return col;
-            }
-        """
+        val SHADER_SRC: String
+            get() = com.wmods.wppenhacer.utils.AgslHelper.SHADER_SRC
     }
 
     override fun doHook() {
@@ -393,10 +333,10 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             }
 
                             if (state.isDragging) {
-                                val firstItem = items.first()
-                                val lastItem = items.last()
-                                val minX = offsetInBar(bar, firstItem).first + firstItem.width / 2f
-                                val maxX = offsetInBar(bar, lastItem).first + lastItem.width / 2f
+                                // Hitung posisi visual X terluar kiri & kanan aktual (karena tab di-reorder via translationX)
+                                val centers = items.map { offsetInBar(bar, it).first + it.width / 2f }
+                                val minX = centers.minOrNull() ?: 0f
+                                val maxX = centers.maxOrNull() ?: bar.width.toFloat()
 
                                 // Rubber band resistance
                                 val rawCenterX = state.pillStartCenterX + dx
@@ -475,6 +415,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                                     items[closestIndex].performClick()
                                     animateToItem(bar, state, items, closestIndex)
                                 }
+
                                 param.result = true
                                 return
                             } else {
@@ -489,6 +430,8 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                                 if (state.selectedIndex in items.indices) {
                                     animateToItem(bar, state, items, state.selectedIndex)
                                 }
+                                param.result = true
+                                return
                             } else {
                                 startPillPhysics(bar, state)
                             }
@@ -545,8 +488,10 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
 
                             val inset = Utils.dipToPixels(INDICATOR_INSET_DP).toFloat()
                             val barH = (if (bar.height > 0) bar.height else item1.height).toFloat()
-                            indicator.top = inset
-                            indicator.bottom = (barH - inset).coerceAtLeast(inset + 1f)
+                            val pillH = Utils.dipToPixels(44f).toFloat()
+                            val centerY = barH / 2f
+                            indicator.top = (centerY - pillH / 2f).coerceAtLeast(inset)
+                            indicator.bottom = (centerY + pillH / 2f).coerceAtMost(barH - inset)
 
                             // Only set target – let Choreographer spring-animate to it smoothly
                             state.targetCenterX = targetCenter
@@ -581,7 +526,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             if (!isBarOrChild(view)) return
                             // Always suppress native indicator, regardless of argument type
                             disableNativeActiveIndicator(view)
-                            resetAnimations(view)
+                            cancelNativeAnimatorsOnly(view)
                             val isNowSelected = param.args.getOrNull(0) as? Boolean ?: return
                             if (isNowSelected) {
                                 for ((bar, state) in barStates) {
@@ -604,7 +549,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             val view = param.thisObject as? View ?: return
                             if (!isBarOrChild(view)) return
                             disableNativeActiveIndicator(view)
-                            resetAnimations(view)
+                            cancelNativeAnimatorsOnly(view)
                         }
                     })
                     XposedBridge.hookAllMethods(itemClass, "getActiveIndicatorDrawable", object : XC_MethodHook() {
@@ -619,7 +564,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             val view = param.thisObject as? View ?: return
                             if (!isBarOrChild(view)) return
                             disableNativeActiveIndicator(view)
-                            resetAnimations(view)
+                            cancelNativeAnimatorsOnly(view)
                             param.result = null
                         }
                     })
@@ -798,6 +743,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         }
 
         state.visibilityGlobalLayout = listener
+        state.visibilitySyncRoot = java.lang.ref.WeakReference(rootView)
         rootView.viewTreeObserver.addOnGlobalLayoutListener(listener)
         updateVisibility()
     }
@@ -1122,7 +1068,9 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         }
         val listener = ViewTreeObserver.OnPreDrawListener {
             try {
-                syncSelection(bar, state)
+                if (shouldResync(bar, state)) {
+                    syncSelection(bar, state)
+                }
             } catch (e: Throwable) {
                 logDebug("FloatingBottomBar: selection sync failed: ${e.message}")
             }
@@ -1130,6 +1078,45 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         }
         state.preDraw = listener
         bar.viewTreeObserver.addOnPreDrawListener(listener)
+    }
+
+    /**
+     * Cheap pre-check before paying for reorderMenuTabsSafely() + tinting + BFS traversal.
+     * - Selalu resync selama drag/scrub/spring animasi jalan (state itu emang berubah tiap frame).
+     * - Kalau idle, cuma resync kalau width/childCount/checked-view berubah.
+     * - Safety net: paksa resync tiap ~45 frame (≈0.75s @60fps) buat jaga-jaga kalau WA
+     *   reset translationX/tint dari internal tanpa lewat jalur yang kita pantau.
+     */
+    private fun shouldResync(bar: ViewGroup, state: BarState): Boolean {
+        if (state.isDragging || state.isScrubbing || state.isChoreographerActive) {
+            state.syncSkipStreak = 0
+            return true
+        }
+
+        val width = bar.width
+        val childCount = bar.childCount
+        val checkedNow = state.checkedViewRef?.get()
+        val needsInit = state.items.isEmpty() || state.items.firstOrNull()?.parent == null
+
+        val changed = width != state.lastSyncWidth ||
+                childCount != state.lastSyncChildCount ||
+                checkedNow !== state.lastSyncCheckedRef?.get() ||
+                needsInit
+
+        if (changed) {
+            state.lastSyncWidth = width
+            state.lastSyncChildCount = childCount
+            state.lastSyncCheckedRef = checkedNow?.let { java.lang.ref.WeakReference(it) }
+            state.syncSkipStreak = 0
+            return true
+        }
+
+        state.syncSkipStreak++
+        if (state.syncSkipStreak >= 45) {
+            state.syncSkipStreak = 0
+            return true
+        }
+        return false
     }
 
     private fun getItemLabel(view: View): String {
@@ -1151,16 +1138,44 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         val desc = view.contentDescription?.toString()?.lowercase()?.trim() ?: ""
         val text = "$label $desc"
 
-        // 1. Pembaruan / Updates / Status
-        if (text.contains("pembaruan") || text.contains("update") || text.contains("status")) return 1
-        // 2. Panggilan / Calls / Telepon
-        if (text.contains("panggilan") || text.contains("call") || text.contains("llamada") || text.contains("telepon")) return 2
-        // 3. Komunitas / Communities
-        if (text.contains("komunitas") || text.contains("communit") || text.contains("comunidad")) return 3
-        // 4. Chat / Chats / Obrolan (Di kanan Komunitas)
-        if (text.contains("chat") || text.contains("obrolan") || text.contains("percakapan") || text.contains("conversa")) return 4
-        // 5. Anda / You / Pengaturan / Settings / Profile / Tools
-        if (text.contains("anda") || text.contains("you") || text.contains("tú") || text.contains("voce") || text.contains("você") || text.contains("setting") || text.contains("profil") || text.contains("pengaturan")) return 5
+        // 1. Pembaruan / Updates / Status / Novedades / Actualizaciones / Mises à jour
+        if (text.contains("pembaruan") || text.contains("update") || text.contains("status") ||
+            text.contains("novedad") || text.contains("actualiz") || text.contains("mise à jour") ||
+            text.contains("aggiorn") || text.contains("estat") || text.contains("статус") ||
+            text.contains("обновл") || text.contains("حالة") || text.contains("تحديث") ||
+            text.contains("aktuel") || text.contains("durum") || text.contains("动态") || text.contains("עדכונים")
+        ) return 1
+
+        // 2. Panggilan / Calls / Telepon / Llamadas / Appels / Chiamate
+        if (text.contains("panggilan") || text.contains("call") || text.contains("llamada") ||
+            text.contains("telepon") || text.contains("chamad") || text.contains("appel") ||
+            text.contains("chiamat") || text.contains("anruf") || text.contains("arama") ||
+            text.contains("звонк") || text.contains("вызов") || text.contains("مكالمات") ||
+            text.contains("通话") || text.contains("שיחות")
+        ) return 2
+
+        // 3. Komunitas / Communities / Comunidades / Communautés
+        if (text.contains("komunitas") || text.contains("communit") || text.contains("comunidad") ||
+            text.contains("communaut") || text.contains("comunit") || text.contains("gemeinschaft") ||
+            text.contains("topluluk") || text.contains("сообществ") || text.contains("مجتمع") ||
+            text.contains("社群") || text.contains("קהילות")
+        ) return 3
+
+        // 4. Chat / Chats / Obrolan / Conversas / Discussions / Conversaciones
+        if (text.contains("chat") || text.contains("obrolan") || text.contains("percakapan") ||
+            text.contains("conversa") || text.contains("discussion") || text.contains("sohbet") ||
+            text.contains("чаты") || text.contains("бесед") || text.contains("دردشات") ||
+            text.contains("对话") || text.contains("צ'אטים")
+        ) return 4
+
+        // 5. Anda / You / Pengaturan / Settings / Profile / Tools / Vos
+        if (text.contains("anda") || text.contains("you") || text.contains("tú") ||
+            text.contains("voce") || text.contains("você") || text.contains("setting") ||
+            text.contains("profil") || text.contains("pengaturan") || text.contains("paramètre") ||
+            text.contains("einstellung") || text.contains("impostazion") || text.contains("ayar") ||
+            text.contains("настройк") || text.contains("вы") || text.contains("إعدادات") ||
+            text.contains("أنت") || text.contains("设置") || text.contains("你") || text.contains("הגדרות")
+        ) return 5
 
         return 99
     }
@@ -1187,6 +1202,34 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         state.items = items
     }
 
+    private data class CheckedAccessor(
+        val field: java.lang.reflect.Field,
+        val method: java.lang.reflect.Method
+    )
+
+    // Class-level cache — struktur field/method itu sama untuk semua instance dari class yang sama,
+    // jadi cukup di-resolve sekali per class, bukan di-scan ulang tiap panggilan.
+    private val checkedAccessorCache =
+        java.util.concurrent.ConcurrentHashMap<Class<*>, List<CheckedAccessor>>()
+
+    private fun getCheckedAccessors(view: View): List<CheckedAccessor> {
+        return checkedAccessorCache.getOrPut(view.javaClass) {
+            val result = mutableListOf<CheckedAccessor>()
+            for (field in view.javaClass.declaredFields) {
+                field.isAccessible = true
+                val obj = try { field.get(view) } catch (_: Throwable) { null } ?: continue
+                if (obj is Int || obj is Boolean || obj is String || obj is Drawable) continue
+                try {
+                    val m = obj.javaClass.getMethod("isChecked")
+                    if (m.returnType == Boolean::class.java || m.returnType == Boolean::class.javaObjectType) {
+                        result.add(CheckedAccessor(field, m))
+                    }
+                } catch (_: Throwable) {}
+            }
+            result
+        }
+    }
+
     private fun isViewChecked(view: View): Boolean {
         // 1. Standard Android drawableState
         val states = view.drawableState
@@ -1204,21 +1247,13 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             }
         } catch (_: Throwable) {}
 
-        // 3. Deep reflection — last resort, skip Drawable/primitives to avoid false matches
-        try {
-            val fields = view.javaClass.declaredFields
-            for (field in fields) {
-                field.isAccessible = true
-                val obj = field.get(view) ?: continue
-                if (obj is Int || obj is Boolean || obj is String || obj is android.graphics.drawable.Drawable) continue
-                try {
-                    val m = obj.javaClass.getMethod("isChecked")
-                    if (m.returnType == Boolean::class.java || m.returnType == Boolean::class.javaObjectType) {
-                        if (m.invoke(obj) == true) return true
-                    }
-                } catch (_: Throwable) {}
-            }
-        } catch (_: Throwable) {}
+        // 3. Cached reflection accessors
+        for (accessor in getCheckedAccessors(view)) {
+            try {
+                val obj = accessor.field.get(view) ?: continue
+                if (accessor.method.invoke(obj) == true) return true
+            } catch (_: Throwable) {}
+        }
 
         return false
     }
@@ -1238,15 +1273,12 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
     }
 
     private fun syncSelection(bar: ViewGroup, state: BarState) {
-        var items = state.items
-        val needsInit = items.isEmpty() || items[0].parent == null
+        val oldItems = state.items
+        val needsInit = oldItems.isEmpty() || oldItems[0].parent == null
+        reorderMenuTabsSafely(bar, state)
+        val items = state.items
         if (needsInit || bar.childCount != state.lastParentChildCount) {
-            reorderMenuTabsSafely(bar, state)
-            items = state.items
             state.lastParentChildCount = bar.childCount
-        } else {
-            reorderMenuTabsSafely(bar, state)
-            items = state.items
         }
         
         // Disable Material 3 BottomNavigationView touch delegate so that clicks respect translationX
@@ -1261,8 +1293,10 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                     clearBackgroundsRecursively(it)
                     disableNativeActiveIndicator(it)
                     morphAndaToSettings(it)
+                    formatTabItemViews(it)
                 } else {
                     if (it.background != null) it.background = null
+                    formatTabItemViews(it)
                 }
             }
         }
@@ -1405,8 +1439,46 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             }
         } catch (_: Throwable) {}
     }
+
+    private fun formatTabItemViews(item: View) {
+        if (item !is ViewGroup) return
+        val density = item.resources.displayMetrics.density
+
+        val queue = ArrayDeque<View>()
+        queue.add(item)
+        while (queue.isNotEmpty()) {
+            val v = queue.removeFirst()
+            val clsName = v.javaClass.simpleName
+            val isIcon = v is ImageView || clsName.contains("Icon", ignoreCase = true)
+            val isLabel = v is TextView || clsName.contains("Label", ignoreCase = true)
+
+            if (isIcon) {
+                val targetY = -6f * density
+                if (v.translationY != targetY) {
+                    v.translationY = targetY
+                }
+            } else if (isLabel) {
+                val targetY = 6f * density
+                if (v.translationY != targetY) {
+                    v.translationY = targetY
+                }
+                if (v is TextView) {
+                    if (v.textSize != 10f * density && v.textSize != 10f) {
+                        v.textSize = 10f
+                    }
+                    v.maxLines = 1
+                    v.ellipsize = android.text.TextUtils.TruncateAt.END
+                }
+            }
+            if (v is ViewGroup) {
+                for (i in 0 until v.childCount) {
+                    queue.add(v.getChildAt(i))
+                }
+            }
+        }
+    }
     
-    private fun resetAnimations(v: View) {
+    private fun cancelNativeAnimatorsOnly(v: View) {
         try {
             v.animate()?.cancel()
             v.clearAnimation()
@@ -1415,6 +1487,25 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                 v.stateListAnimator = null
             }
 
+            try {
+                XposedHelpers.callMethod(v, "jumpDrawablesToCurrentState")
+            } catch (_: Throwable) {}
+
+            (XposedHelpers.getObjectField(v, "A00") as? android.animation.AnimatorSet)?.cancel()
+            (XposedHelpers.getObjectField(v, "A01") as? android.view.ViewPropertyAnimator)?.cancel()
+            (XposedHelpers.getObjectField(v, "A03") as? android.animation.ValueAnimator)?.cancel()
+        } catch (_: Throwable) {}
+
+        if (v is ViewGroup) {
+            for (i in 0 until v.childCount) {
+                cancelNativeAnimatorsOnly(v.getChildAt(i))
+            }
+        }
+    }
+    
+    private fun resetAnimations(v: View) {
+        cancelNativeAnimatorsOnly(v)
+        try {
             v.translationX = 0f
             v.translationY = 0f
             v.translationZ = 0f
@@ -1424,14 +1515,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             v.rotationX = 0f
             v.rotationY = 0f
             v.alpha = 1f
-
-            try {
-                XposedHelpers.callMethod(v, "jumpDrawablesToCurrentState")
-            } catch (_: Throwable) {}
-
-            (XposedHelpers.getObjectField(v, "A00") as? android.animation.AnimatorSet)?.cancel()
-            (XposedHelpers.getObjectField(v, "A01") as? android.view.ViewPropertyAnimator)?.cancel()
-            (XposedHelpers.getObjectField(v, "A03") as? android.animation.ValueAnimator)?.cancel()
         } catch (_: Throwable) {}
 
         if (v is ViewGroup) {
@@ -1618,8 +1701,10 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         state.selectedIndex = newIndex
 
         val barH = (if (bar.height > 0) bar.height else target.height).toFloat()
-        indicator.top = inset
-        indicator.bottom = (barH - inset).coerceAtLeast(inset + 1f)
+        val pillH = Utils.dipToPixels(44f).toFloat()
+        val centerY = barH / 2f
+        indicator.top = (centerY - pillH / 2f).coerceAtLeast(inset)
+        indicator.bottom = (centerY + pillH / 2f).coerceAtMost(barH - inset)
 
         if (firstRun) {
             state.currentCenterX = toCenter
@@ -1652,11 +1737,15 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         state.preDraw?.let {
             if (bar.viewTreeObserver.isAlive) bar.viewTreeObserver.removeOnPreDrawListener(it)
         }
-        state.visibilityGlobalLayout?.let {
-            if (bar.rootView?.viewTreeObserver?.isAlive == true) {
-                bar.rootView.viewTreeObserver.removeOnGlobalLayoutListener(it)
+        state.visibilityGlobalLayout?.let { listener ->
+            val root = state.visibilitySyncRoot?.get()
+            if (root != null && root.viewTreeObserver.isAlive) {
+                root.viewTreeObserver.removeOnGlobalLayoutListener(listener)
+            } else if (bar.rootView?.viewTreeObserver?.isAlive == true) {
+                bar.rootView.viewTreeObserver.removeOnGlobalLayoutListener(listener)
             }
         }
+        state.visibilitySyncRoot = null
         state.layoutSync?.let { bar.removeOnLayoutChangeListener(it) }
         (state.backdrop as? BlurView)?.setBlurAutoUpdate(false)
         state.items.forEach {
@@ -1675,10 +1764,38 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
     private fun positionFabsAboveBar(rootView: ViewGroup, container: ViewGroup) {
         val additionalMargin = getFabAdditionalMargin()
         findAndPositionAllFabs(rootView, additionalMargin)
-        container.postDelayed({ findAndPositionAllFabs(rootView, additionalMargin) }, 150L)
+
+        // One-shot: nunggu container beneran punya ukuran (bukan nebak lewat delay 150ms),
+        // lalu posisikan ulang & lepas listener-nya sendiri.
+        container.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
+            override fun onLayoutChange(
+                v: View, left: Int, top: Int, right: Int, bottom: Int,
+                oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int
+            ) {
+                if (bottom - top > 0) {
+                    findAndPositionAllFabs(rootView, additionalMargin)
+                    v.removeOnLayoutChangeListener(this)
+                }
+            }
+        })
     }
 
     private fun positionFabAboveCurrentBar(fab: View, bottomNavId: Int) {
+        val auxFabIds = setOf(
+            Utils.getID("fab_second", "id"),
+            Utils.getID("fab_auxiliary", "id"),
+            Utils.getID("extended_mini_fab", "id"),
+            Utils.getID("text_status_fab", "id")
+        ).filter { it > 0 }.toSet()
+
+        if (fab.id in auxFabIds) {
+            fab.visibility = View.GONE
+            fab.scaleX = 0f
+            fab.scaleY = 0f
+            fab.alpha = 0f
+            return
+        }
+
         val additionalMargin = getFabAdditionalMargin()
         applyFabMargin(fab, additionalMargin)
     }
@@ -1694,6 +1811,21 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
     }
 
     private fun applyFabMargin(fab: View, additionalMargin: Int) {
+        val auxFabIds = setOf(
+            Utils.getID("fab_second", "id"),
+            Utils.getID("fab_auxiliary", "id"),
+            Utils.getID("extended_mini_fab", "id"),
+            Utils.getID("text_status_fab", "id")
+        ).filter { it > 0 }.toSet()
+
+        if (fab.id in auxFabIds) {
+            fab.visibility = View.GONE
+            fab.scaleX = 0f
+            fab.scaleY = 0f
+            fab.alpha = 0f
+            return
+        }
+
         fab.translationY = 0f
         val lp = fab.layoutParams as? ViewGroup.MarginLayoutParams ?: return
 
@@ -1726,11 +1858,28 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
     }
 
     private fun findAndPositionAllFabs(rootView: View, additionalMargin: Int) {
+        val auxFabIds = setOf(
+            Utils.getID("fab_second", "id"),
+            Utils.getID("fab_auxiliary", "id"),
+            Utils.getID("extended_mini_fab", "id"),
+            Utils.getID("text_status_fab", "id")
+        ).filter { it > 0 }.toSet()
+
         val fabIds = FAB_RESOURCE_NAMES.mapNotNull { name ->
             Utils.getID(name, "id").takeIf { it > 0 }
         }.toSet()
 
         fun scan(view: View) {
+            if (view.id in auxFabIds) {
+                if (view.visibility != View.GONE) {
+                    view.visibility = View.GONE
+                }
+                view.scaleX = 0f
+                view.scaleY = 0f
+                view.alpha = 0f
+                return
+            }
+
             val isFab = view.id in fabIds ||
                     view.javaClass.simpleName.contains("FloatingActionButton", ignoreCase = true) ||
                     view.javaClass.simpleName.contains("ExtendedFloatingActionButton", ignoreCase = true)

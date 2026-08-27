@@ -52,6 +52,41 @@
         @Volatile
         private var nativeLoaded = false
 
+        private fun loadNativeDexKit() {
+            if (nativeLoaded) return
+            try {
+                System.loadLibrary("dexkit")
+                nativeLoaded = true
+            } catch (e: Throwable) {
+                try {
+                    val modulePath = com.wmods.wppenhacer.WppXposed.MODULE_PATH ?: apkPath
+                    if (modulePath != null) {
+                        val is64 = android.os.Process.is64Bit()
+                        val abi = if (is64) "arm64-v8a" else "armeabi-v7a"
+                        val zipFile = java.util.zip.ZipFile(modulePath)
+                        val entry = zipFile.getEntry("lib/$abi/libdexkit.so") ?: zipFile.getEntry("jni/$abi/libdexkit.so")
+                        if (entry != null) {
+                            val cacheDir = runCatching { Utils.application.cacheDir }.getOrNull()
+                                ?: File(System.getProperty("java.io.tmpdir", "/data/local/tmp"))
+                            val tempSo = File(cacheDir, "libdexkit_temp.so")
+                            zipFile.getInputStream(entry).use { input ->
+                                tempSo.outputStream().use { output ->
+                                    input.copyTo(output)
+                                }
+                            }
+                            System.load(tempSo.absolutePath)
+                            nativeLoaded = true
+                            XposedBridge.log("Unobfuscator: Loaded libdexkit.so from module fallback: ${tempSo.absolutePath}")
+                        }
+                        zipFile.close()
+                    }
+                } catch (t: Throwable) {
+                    XposedBridge.log("Unobfuscator: Failed fallback loading of libdexkit: ${t.message}")
+                    throw e
+                }
+            }
+        }
+
         /**
         * O bridge do DexKit indexa todo o dex do WhatsApp em memória nativa (~150-250MB).
         * Como o [UnobfuscatorCache] persiste todos os resultados, na maioria dos inícios
@@ -61,10 +96,7 @@
         private val bridge: DexKitBridge
             get() = synchronized(bridgeLock) {
                 bridgeInstance ?: run {
-                    if (!nativeLoaded) {
-                        System.loadLibrary("dexkit")
-                        nativeLoaded = true
-                    }
+                    loadNativeDexKit()
                     val path = apkPath ?: throw IllegalStateException("Unobfuscator not initialized")
                     DexKitBridge.create(path).also { bridgeInstance = it }
                 }
@@ -3434,6 +3466,45 @@
                         usingStrings("MultiSelectionLimitInfo")
                     }
                 }.single().getInstance(classLoader)
+            }
+        }
+
+        @Throws(Exception::class)
+        @JvmStatic
+        fun loadStatusCaptionEditClasses(classLoader: ClassLoader): Array<Class<*>> {
+            return UnobfuscatorCache.getInstance().getClasses(classLoader) {
+                val list = mutableListOf<Class<*>>()
+                val classes = bridge.findClass {
+                    matcher {
+                        usingStrings("isStatusEditingAllowed")
+                    }
+                }
+                for (cData in classes) {
+                    val cls = runCatching { cData.getInstance(classLoader) }.getOrNull() ?: continue
+                    list.add(cls)
+                }
+                if (list.isEmpty()) return@getClasses null
+                list.distinct().toTypedArray()
+            } ?: emptyArray()
+        }
+
+        @Throws(Exception::class)
+        @JvmStatic
+        fun inspectStatusCaptionEditActivity(classLoader: ClassLoader) {
+            val queries = listOf("StatusCaptionEditActivity.kt", "StatusCaptionEditViewModel.kt", "FStatusCaptionEditProcessor", "StatusCaptionSaveHelper")
+            for (q in queries) {
+                val classes = bridge.findClass {
+                    matcher {
+                        usingStrings(q)
+                    }
+                }
+                for (cData in classes) {
+                    val cls = runCatching { cData.getInstance(classLoader) }.getOrNull() ?: continue
+                    XposedBridge.log("[WaEnhancer] [$q] class: ${cls.name}")
+                    for (m in cls.declaredMethods) {
+                        XposedBridge.log("[WaEnhancer]   [$q] method: ${m.name}(${m.parameterTypes.map { it.name }.joinToString()}) -> ${m.returnType.name}")
+                    }
+                }
             }
         }
 

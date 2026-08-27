@@ -46,6 +46,12 @@
             app:summary="@string/toast_status_replay_sum"
             app:title="@string/toast_status_replay" />
 
+        <rikka.material.preference.MaterialSwitchPreference
+            app:defaultValue="true"
+            app:key="remove_limit_edit_status"
+            app:summary="@string/remove_limit_edit_status_sum"
+            app:title="@string/remove_limit_edit_status" />
+
     </PreferenceCategory>
 
 

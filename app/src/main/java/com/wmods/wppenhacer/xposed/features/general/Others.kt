@@ -1,6 +1,9 @@
 package com.wmods.wppenhacer.xposed.features.general
 
 import android.annotation.SuppressLint
+import android.app.Activity
+import android.content.Context
+import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.os.BaseBundle
@@ -21,6 +24,7 @@ import com.wmods.wppenhacer.xposed.core.FeatureLoader
 import com.wmods.wppenhacer.xposed.core.WppCore
 import com.wmods.wppenhacer.xposed.core.components.FMessageWpp
 import com.wmods.wppenhacer.xposed.core.components.WaContactWpp
+import com.wmods.wppenhacer.xposed.core.db.MessageStore
 import com.wmods.wppenhacer.xposed.core.devkit.Unobfuscator
 import com.wmods.wppenhacer.xposed.features.listeners.ConversationItemListener
 import com.wmods.wppenhacer.xposed.utils.AnimationUtil
@@ -53,11 +57,21 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
         val propsBoolean = HashMap<Int, Boolean>()
         @JvmField
         val propsInteger = HashMap<Int, Int>()
+        @JvmField
+        val statusCaptionOverrides = java.util.concurrent.ConcurrentHashMap<String, String>()
     }
 
     private lateinit var properties: Properties
 
     override fun doHook() {
+        // Load saved status caption overrides
+        prefs.all.forEach { (k, v) ->
+            if (k.startsWith("status_capt_override_") && v is String) {
+                val sId = k.removePrefix("status_capt_override_")
+                statusCaptionOverrides[sId] = v
+            }
+        }
+
         properties = Utils.getProperties(prefs, "custom_css", "custom_filters")
         val menuWIcons = prefs.getBoolean("menuwicon", false)
         val newSettings = getNewSettingsVariant()
@@ -106,7 +120,6 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
                 }
             })
         }
-        propsBoolean[14862] = newSettings !=0 // WHATS_HAPPENING_SENDING_ENABLED_CODE
         propsInteger[18564] = newSettings // ME_TAB_V2_VARIANTS_CODE
 
         propsBoolean[2889] = floatingMenu
@@ -213,10 +226,163 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
         propsBoolean[13956] = true
         propsBoolean[13957] = true
 
+        // Remove limit to edit status caption
+        val removeLimitEditStatus = prefs.getBoolean("remove_limit_edit_status", true)
+        if (removeLimitEditStatus) {
+            runCatching {
+                // Hook PopupWindow untuk meng-inject item Edit Caption di menu status
+                hookStatusPlaybackPopupMenu()
+
+                // Temukan companion / factory method asli StatusCaptionEditActivity
+                runCatching { Unobfuscator.inspectStatusCaptionEditActivity(classLoader) }
+
+                // Hook StatusCaptionEditActivity onCreate untuk inspect & inject status
+                val editActClass = runCatching { classLoader.loadClass("com.whatsapp.status.playback.caption.StatusCaptionEditActivity") }.getOrNull()
+                if (editActClass != null) {
+                    for (m in editActClass.declaredMethods) {
+                        logDebug("Others: StatusCaptionEditActivity method: ${m.name}(${m.parameterTypes.map { it.name }.joinToString()}) -> ${m.returnType.name}")
+                    }
+
+                    XposedHelpers.findAndHookMethod(editActClass, "onCreate", android.os.Bundle::class.java, object : XC_MethodHook() {
+                        override fun afterHookedMethod(param: MethodHookParam) {
+                            val activity = param.thisObject as? Activity ?: return
+                            val intent = activity.intent
+                            logDebug("Others: StatusCaptionEditActivity.onCreate extras: ${intent?.extras?.keySet()?.map { "$it=${intent.extras?.get(it)}" }}")
+
+                            activity.window.decorView.post {
+                                try {
+                                    val fMessageWpp = StatusReplayTracker.currentActiveFMessageWpp
+                                    val pkg = activity.packageName
+
+                                    val captionEditId = activity.resources.getIdentifier("caption_edit_text", "id", pkg)
+                                    val captionEditText = if (captionEditId != 0) activity.findViewById<android.widget.EditText>(captionEditId) else null
+
+                                    val confirmBtnId = activity.resources.getIdentifier("confirm_button", "id", pkg)
+                                    val confirmBtn = if (confirmBtnId != 0) activity.findViewById<android.widget.ImageView>(confirmBtnId) else null
+
+                                    confirmBtn?.alpha = 1.0f
+                                    confirmBtn?.isEnabled = true
+                                    confirmBtn?.isClickable = true
+
+                                    val mediaFile = fMessageWpp?.mediaFile
+                                    logDebug("Others: Active status mediaFile = $mediaFile (exists=${mediaFile?.exists()})")
+
+                                    if (mediaFile != null && mediaFile.exists()) {
+                                        val bmp = android.graphics.BitmapFactory.decodeFile(mediaFile.absolutePath)
+                                        if (bmp != null) {
+                                            fun setMediaPreview(v: View): Boolean {
+                                                val closeBtnId = activity.resources.getIdentifier("close_button", "id", pkg)
+                                                if (v is android.widget.ImageView && v != confirmBtn && v.id != closeBtnId) {
+                                                    v.setImageBitmap(bmp)
+                                                    v.visibility = View.VISIBLE
+                                                    logDebug("Others: Set media bitmap on ImageView: ${v.javaClass.simpleName}")
+                                                    return true
+                                                }
+                                                if (v is ViewGroup) {
+                                                    for (i in 0 until v.childCount) {
+                                                        if (setMediaPreview(v.getChildAt(i))) return true
+                                                    }
+                                                }
+                                                return false
+                                            }
+                                            setMediaPreview(activity.window.decorView)
+                                        }
+                                    }
+
+                                    confirmBtn?.setOnClickListener {
+                                        val newText = captionEditText?.text?.toString() ?: ""
+                                        logDebug("Others: Confirm button clicked! Saving new status caption: '$newText'")
+                                        if (fMessageWpp != null) {
+                                            val rawFMessage = fMessageWpp.getObject()
+                                            val rowId = intent?.getLongExtra("extra_message_row_id", -1L)?.takeIf { it > 0L }
+                                                ?: extractRowId(rawFMessage).takeIf { it > 0L }
+                                                ?: MessageStore.getInstance().getIdfromKey(fMessageWpp.key.messageID)
+                                            
+                                            logDebug("Others: rowId resolved to $rowId before SQL update")
+
+                                            // 1. Update in-memory FMessage object
+                                            try {
+                                                var currentCls: Class<*>? = rawFMessage.javaClass
+                                                while (currentCls != null && currentCls != Any::class.java) {
+                                                    for (m in currentCls.declaredMethods) {
+                                                        if (m.parameterCount == 1 && m.parameterTypes[0] == String::class.java && m.returnType == Void.TYPE) {
+                                                            m.isAccessible = true
+                                                            m.invoke(rawFMessage, newText)
+                                                            logDebug("Others: Invoked in-memory text setter ${m.name}(String)")
+                                                        }
+                                                    }
+                                                    for (f in currentCls.declaredFields) {
+                                                        if (f.type == String::class.java) {
+                                                            f.isAccessible = true
+                                                            val curVal = f.get(rawFMessage) as? String
+                                                            if (curVal != null && curVal.isNotEmpty() && !curVal.contains("@")) {
+                                                                f.set(rawFMessage, newText)
+                                                                logDebug("Others: Updated String field ${f.name} in FMessage to '$newText'")
+                                                            }
+                                                        }
+                                                    }
+                                                    currentCls = currentCls.superclass
+                                                }
+                                            } catch (e: Throwable) {
+                                                logDebug("Others: Failed to update in-memory FMessage: ${e.message}")
+                                            }
+
+                                            // 2. Update statusCaptionOverrides in-memory map & SharedPreferences
+                                            val statusId = fMessageWpp.key.messageID
+                                            if (!statusId.isNullOrEmpty()) {
+                                                statusCaptionOverrides[statusId] = newText
+                                                prefs.edit().putString("status_capt_override_$statusId", newText).apply()
+                                                logDebug("Others: Stored status caption override for statusId=$statusId: '$newText'")
+                                            }
+
+                                            // 3. Update SQLite msgstore.db
+                                            if (rowId > 0L) {
+                                                val esc = newText.replace("'", "''")
+                                                MessageStore.getInstance().executeSQL("UPDATE message SET text_data = '$esc' WHERE _id = $rowId")
+                                                MessageStore.getInstance().executeSQL("UPDATE message_media SET caption = '$esc' WHERE message_row_id = $rowId")
+                                                MessageStore.getInstance().executeSQL("UPDATE message_ftsv2_content SET c0content = '$esc' WHERE docid = $rowId")
+                                                logDebug("Others: Updated SQLite message text_data, message_media caption, and fts for rowId=$rowId")
+                                            } else {
+                                                logDebug("Others: Warning - rowId is $rowId <= 0, skipping direct SQLite update")
+                                            }
+
+                                            // 4. Trigger native A03
+                                            runCatching {
+                                                val a03 = editActClass.declaredMethods.firstOrNull { it.name == "A03" }
+                                                logDebug("Others: A03 found=${a03 != null}")
+                                                if (a03 != null) {
+                                                    a03.isAccessible = true
+                                                    if (Modifier.isStatic(a03.modifiers)) {
+                                                        a03.invoke(null, activity)
+                                                    } else {
+                                                        a03.invoke(activity)
+                                                    }
+                                                    logDebug("Others: A03 successfully invoked with activity")
+                                                }
+                                            }.onFailure {
+                                                logDebug("Others: A03 invoke failed: ${it.message}")
+                                            }
+
+                                            Utils.showToast("Caption status berhasil diperbarui", Toast.LENGTH_SHORT)
+                                        }
+                                        activity.finish()
+                                    }
+                                } catch (e: Throwable) {
+                                    logDebug("Others: Post decorView setup error: ${e.message}")
+                                }
+                            }
+                        }
+                    })
+                }
+            }.onFailure {
+                logDebug("Others: Status caption edit hook error: ${it.message}")
+            }
+        }
+
         // new popup menu in chat
         propsBoolean[21541] = floatingMenu
 
-        hookProps()
+        // hookProps()
         hookSearchbar(filterChats)
 
         if (disableSensorProximity) {
@@ -825,6 +991,188 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
                 item?.isVisible = filterChats == "1"
             }
         })
+    }
+
+    private fun hookStatusPlaybackPopupMenu() {
+        val popupWindowShowHook = object : XC_MethodHook() {
+            override fun afterHookedMethod(param: MethodHookParam) {
+                if (!prefs.getBoolean("remove_limit_edit_status", true)) return
+                val currentActivity = WppCore.getCurrentActivity() ?: return
+                val actName = currentActivity.javaClass.name
+                val isMyStatusesActivity = actName.contains("MyStatusesActivity")
+                if (!actName.contains("StatusPlaybackActivity") && !isMyStatusesActivity) return
+
+                // Cek cepat in-memory: Hanya status milik sendiri yang diproses
+                val activeFMessage = StatusReplayTracker.currentActiveFMessageWpp
+                val isFromMe = isMyStatusesActivity || (activeFMessage?.key?.isFromMe == true)
+
+                // Jika status orang lain, langsung return instant tanpa lag
+                if (!isFromMe) return
+
+                val statusId = StatusReplayTracker.currentActiveStatusKey
+                if (statusId.isEmpty()) return
+
+                val popup = param.thisObject as? android.widget.PopupWindow ?: return
+                val contentView = popup.contentView as? ViewGroup ?: return
+
+                injectEditCaptionMenuItem(currentActivity, popup, contentView, statusId)
+            }
+        }
+
+        XposedBridge.hookAllMethods(android.widget.PopupWindow::class.java, "showAsDropDown", popupWindowShowHook)
+        XposedBridge.hookAllMethods(android.widget.PopupWindow::class.java, "showAtLocation", popupWindowShowHook)
+    }
+
+    private fun injectEditCaptionMenuItem(
+        activity: Activity,
+        popup: android.widget.PopupWindow,
+        container: ViewGroup,
+        statusId: String
+    ) {
+        try {
+            val tagKey = R.id.status_replay_tag
+            if (container.getTag(tagKey) != null) return
+            container.setTag(tagKey, true)
+
+            val targetGroup = findMenuContainerViewGroup(container) ?: container
+            val sampleTextView = findFirstTextView(targetGroup)
+
+            val editItem = TextView(activity).apply {
+                text = "✏️  Edit Caption"
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+                if (sampleTextView != null) {
+                    setTextColor(sampleTextView.textColors)
+                    textSize = sampleTextView.textSize / activity.resources.displayMetrics.scaledDensity
+                    typeface = sampleTextView.typeface
+                    setPadding(
+                        sampleTextView.paddingLeft,
+                        sampleTextView.paddingTop,
+                        sampleTextView.paddingRight,
+                        sampleTextView.paddingBottom
+                    )
+                } else {
+                    setTextColor(android.graphics.Color.WHITE)
+                    textSize = 16f
+                    val padH = (16 * activity.resources.displayMetrics.density).toInt()
+                    val padV = (12 * activity.resources.displayMetrics.density).toInt()
+                    setPadding(padH, padV, padH, padV)
+                }
+                isClickable = true
+                isFocusable = true
+                setBackgroundResource(android.R.drawable.list_selector_background)
+
+                setOnClickListener {
+                    popup.dismiss()
+                    launchStatusCaptionEdit(activity, statusId)
+                }
+            }
+
+            if (targetGroup is android.widget.ListView) {
+                targetGroup.addHeaderView(editItem)
+            } else if (targetGroup !is android.widget.AdapterView<*>) {
+                targetGroup.addView(editItem, 0)
+            } else {
+                val parent = targetGroup.parent as? ViewGroup
+                if (parent != null && parent !is android.widget.AdapterView<*>) {
+                    parent.addView(editItem, 0)
+                }
+            }
+            logDebug("Others: Successfully injected '✏️ Edit Caption' item into status popup menu")
+        } catch (e: Throwable) {
+            logDebug("Others: injectEditCaptionMenuItem error: ${e.message}")
+        }
+    }
+
+    private fun extractRowId(rawFMessage: Any?): Long {
+        if (rawFMessage == null) return -1L
+        try {
+            var currentCls: Class<*>? = rawFMessage.javaClass
+            while (currentCls != null && currentCls != Any::class.java) {
+                for (field in currentCls.declaredFields) {
+                    if (field.type == Long::class.javaPrimitiveType || field.type == java.lang.Long::class.java) {
+                        field.isAccessible = true
+                        val value = field.getLong(rawFMessage)
+                        logDebug("Others: FMessage long field ${field.name} = $value")
+                        // rowId di SQLite adalah integer positif (1..10_000_000)
+                        // timestamp adalah epoch millis (> 1_000_000_000_000)
+                        if (value in 1..999_999_999_999L) {
+                            return value
+                        }
+                    }
+                }
+                currentCls = currentCls.superclass
+            }
+        } catch (e: Throwable) {
+            logDebug("Others: extractRowId error: ${e.message}")
+        }
+        return -1L
+    }
+
+    private fun launchStatusCaptionEdit(activity: Activity, statusId: String) {
+        try {
+            val fMessageWpp = StatusReplayTracker.currentActiveFMessageWpp
+            val rawFMessage = fMessageWpp?.getObject()
+            var rowId = extractRowId(rawFMessage)
+            var caption = fMessageWpp?.messageStr ?: ""
+
+            if (rowId <= 0L) {
+                rowId = MessageStore.getInstance().getIdfromKey(statusId)
+            }
+            if (caption.isEmpty()) {
+                caption = MessageStore.getInstance().getCurrentMessageByKey(statusId)
+            }
+
+            logDebug("Others: launchStatusCaptionEdit: statusId=$statusId, rowId=$rowId, caption=$caption")
+
+            val intent = Intent().apply {
+                setClassName(activity.packageName, "com.whatsapp.status.playback.caption.StatusCaptionEditActivity")
+                putExtra("extra_message_key_id", statusId)
+                putExtra("extra_msg_key_id", statusId)
+                if (rowId > 0L) {
+                    putExtra("extra_message_row_id", rowId)
+                    putExtra("message_row_id", rowId)
+                }
+                putExtra("extra_current_caption", caption)
+                putExtra("extra_jid", "status@broadcast")
+                putExtra("extra_msg_key_jid", "status@broadcast")
+                putExtra("extra_is_from_me", true)
+                putExtra("extra_msg_key_from_me", true)
+            }
+
+            activity.startActivity(intent)
+            logDebug("Others: Successfully launched StatusCaptionEditActivity for statusId=$statusId")
+        } catch (e: Throwable) {
+            logDebug("Others: Failed to launch StatusCaptionEditActivity: ${e.message}")
+            Utils.showToast("Gagal membuka editor status: ${e.message}", Toast.LENGTH_SHORT)
+        }
+    }
+
+    private fun findMenuContainerViewGroup(view: View): ViewGroup? {
+        if (view is android.widget.ListView || (view is ViewGroup && view.childCount > 1)) {
+            return view as ViewGroup
+        }
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                val child = view.getChildAt(i)
+                val found = findMenuContainerViewGroup(child)
+                if (found != null) return found
+            }
+        }
+        return null
+    }
+
+    private fun findFirstTextView(view: View): TextView? {
+        if (view is TextView) return view
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                val found = findFirstTextView(view.getChildAt(i))
+                if (found != null) return found
+            }
+        }
+        return null
     }
 
     override fun getPluginName(): String {

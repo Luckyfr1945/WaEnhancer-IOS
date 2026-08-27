@@ -17,14 +17,18 @@ import java.util.stream.Collectors;
  */
 public class FeatureCatalog {
 
-    private static List<SearchableFeature> features;
+    private static volatile List<SearchableFeature> features;
 
     /**
      * Initialize and return the complete feature catalog.
      */
     public static List<SearchableFeature> getAllFeatures(Context context) {
         if (features == null) {
-            features = buildFeatureCatalog(context);
+            synchronized (FeatureCatalog.class) {
+                if (features == null) {
+                    features = buildFeatureCatalog(context.getApplicationContext());
+                }
+            }
         }
         return features;
     }
@@ -476,6 +480,14 @@ public class FeatureCatalog {
                 SearchableFeature.FragmentType.GENERAL,
                 null,
                 Arrays.asList("toast", "replay", "status", "notification")));
+
+        catalog.add(new SearchableFeature("remove_limit_edit_status",
+                context.getString(R.string.remove_limit_edit_status),
+                context.getString(R.string.remove_limit_edit_status_sum),
+                SearchableFeature.Category.GENERAL,
+                SearchableFeature.FragmentType.GENERAL,
+                null,
+                Arrays.asList("edit", "status", "caption", "limit", "deskripsi", "cerita")));
 
         // PRIVACY FRAGMENT
         catalog.add(new SearchableFeature("typearchive",

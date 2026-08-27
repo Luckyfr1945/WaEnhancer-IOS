@@ -21,11 +21,11 @@ class FMessageWpp(fMessage: Any?) {
     companion object {
         lateinit var TYPE: Class<*>
         private var userJidMethod: Method? = null
-        private var keyMessage: Field? = null
-        private var getFieldIdMessage: Field? = null
+        @JvmField var keyMessage: Field? = null
+        @JvmField var getFieldIdMessage: Field? = null
         private var deviceJidField: Field? = null
-        private var messageMethod: Method? = null
-        private var messageWithMediaMethod: Method? = null
+        @JvmField var messageMethod: Method? = null
+        @JvmField var messageWithMediaMethod: Method? = null
         private var mediaTypeField: Field? = null
         private var getOriginalMessageKey: Method? = null
         private var abstractMediaMessageClass: Class<*>? = null
@@ -260,9 +260,61 @@ class FMessageWpp(fMessage: Any?) {
     class Key {
         companion object {
             /**
-             * The class type of the key object.
-             */
+              * The class type of the key object.
+              */
             lateinit var TYPE: Class<*>
+
+            @Volatile
+            private var jidField: java.lang.reflect.Field? = null
+            @Volatile
+            private var idField: java.lang.reflect.Field? = null
+            @Volatile
+            private var fromMeField: java.lang.reflect.Field? = null
+
+            private fun resolveKeyFields(cls: Class<*>) {
+                if (jidField != null && idField != null && fromMeField != null) return
+                for (f in cls.declaredFields) {
+                    f.isAccessible = true
+                    val t = f.type
+                    if (t == String::class.java && idField == null) {
+                        idField = f
+                    } else if ((t == java.lang.Boolean.TYPE || t == java.lang.Boolean::class.java) && fromMeField == null) {
+                        fromMeField = f
+                    } else if (!t.isPrimitive && jidField == null) {
+                        jidField = f
+                    }
+                }
+            }
+
+            fun extractRemoteJid(key: Any?): Any? {
+                if (key == null) return null
+                return try {
+                    XposedHelpers.getObjectField(key, "A00")
+                } catch (_: Throwable) {
+                    resolveKeyFields(key.javaClass)
+                    jidField?.get(key)
+                }
+            }
+
+            fun extractMessageId(key: Any?): String {
+                if (key == null) return ""
+                return (try {
+                    XposedHelpers.getObjectField(key, "A01") as? String
+                } catch (_: Throwable) {
+                    resolveKeyFields(key.javaClass)
+                    idField?.get(key) as? String
+                }) ?: ""
+            }
+
+            fun extractIsFromMe(key: Any?): Boolean {
+                if (key == null) return false
+                return try {
+                    XposedHelpers.getBooleanField(key, "A02")
+                } catch (_: Throwable) {
+                    resolveKeyFields(key.javaClass)
+                    fromMeField?.getBoolean(key) ?: false
+                }
+            }
         }
 
         /**
@@ -302,9 +354,9 @@ class FMessageWpp(fMessage: Any?) {
          */
         constructor(key: Any?) {
             this.thisObject = key
-            this.remoteJid = UserJid(try { XposedHelpers.getObjectField(key, "A00") } catch (_: Throwable) { null })
-            this.messageID = (try { XposedHelpers.getObjectField(key, "A01") as? String } catch (_: Throwable) { null }) ?: ""
-            this.isFromMe = try { XposedHelpers.getBooleanField(key, "A02") } catch (_: Throwable) { false }
+            this.remoteJid = UserJid(extractRemoteJid(key))
+            this.messageID = extractMessageId(key)
+            this.isFromMe = extractIsFromMe(key)
             val fmessageObj = WppCore.getFMessageFromKey(key)
             if (fmessageObj != null) {
                 this.fMessage = FMessageWpp(fmessageObj)
@@ -313,9 +365,9 @@ class FMessageWpp(fMessage: Any?) {
 
         constructor(key: Any?, fmessage: FMessageWpp) {
             this.thisObject = key
-            this.remoteJid = UserJid(try { XposedHelpers.getObjectField(key, "A00") } catch (_: Throwable) { null })
-            this.messageID = (try { XposedHelpers.getObjectField(key, "A01") as? String } catch (_: Throwable) { null }) ?: ""
-            this.isFromMe = try { XposedHelpers.getBooleanField(key, "A02") } catch (_: Throwable) { false }
+            this.remoteJid = UserJid(extractRemoteJid(key))
+            this.messageID = extractMessageId(key)
+            this.isFromMe = extractIsFromMe(key)
             this.fMessage = fmessage
         }
 
@@ -325,23 +377,32 @@ class FMessageWpp(fMessage: Any?) {
             this.remoteJid = remoteJid
             val jidArg = remoteJid.userJid ?: remoteJid.phoneJid
             if (jidArg != null) {
-                val constructor = TYPE.declaredConstructors.firstOrNull { c ->
-                    c.parameterCount == 3 &&
-                    !c.parameterTypes[0].isPrimitive &&
-                    c.parameterTypes[1] == String::class.java &&
-                    (c.parameterTypes[2] == java.lang.Boolean.TYPE || c.parameterTypes[2] == java.lang.Boolean::class.java)
-                }
-                if (constructor != null) {
-                    try {
-                        constructor.isAccessible = true
-                        val keyObj = constructor.newInstance(jidArg, messageID, isFromMe)
-                        this.thisObject = keyObj
-                        val fmessageObj = WppCore.getFMessageFromKey(keyObj)
-                        if (fmessageObj != null) {
-                            this.fMessage = FMessageWpp(fmessageObj)
+                val keyClass = runCatching { Key.TYPE }.getOrNull()
+                if (keyClass != null) {
+                    val constructor = keyClass.declaredConstructors.firstOrNull { c ->
+                        c.parameterCount == 3 &&
+                        !c.parameterTypes[0].isPrimitive &&
+                        c.parameterTypes[0].isAssignableFrom(jidArg.javaClass) &&
+                        c.parameterTypes[1] == String::class.java &&
+                        (c.parameterTypes[2] == java.lang.Boolean.TYPE || c.parameterTypes[2] == java.lang.Boolean::class.java)
+                    } ?: keyClass.declaredConstructors.firstOrNull { c ->
+                        c.parameterCount == 3 &&
+                        !c.parameterTypes[0].isPrimitive &&
+                        c.parameterTypes[1] == String::class.java &&
+                        (c.parameterTypes[2] == java.lang.Boolean.TYPE || c.parameterTypes[2] == java.lang.Boolean::class.java)
+                    }
+                    if (constructor != null) {
+                        try {
+                            constructor.isAccessible = true
+                            val keyObj = constructor.newInstance(jidArg, messageID, isFromMe)
+                            this.thisObject = keyObj
+                            val fmessageObj = WppCore.getFMessageFromKey(keyObj)
+                            if (fmessageObj != null) {
+                                this.fMessage = FMessageWpp(fmessageObj)
+                            }
+                        } catch (e: Throwable) {
+                            // ignore reflection error silently
                         }
-                    } catch (e: Throwable) {
-                        XposedBridge.log(e)
                     }
                 }
             }

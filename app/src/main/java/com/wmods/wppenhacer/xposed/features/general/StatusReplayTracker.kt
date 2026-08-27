@@ -45,6 +45,9 @@ class StatusReplayTracker(classLoader: ClassLoader, preferences: SharedPreferenc
                 }
             }
 
+        @Volatile
+        var currentActiveFMessageWpp: FMessageWpp? = null
+
         // Tracks whether we already dynamically hooked the live adapter's onBindViewHolder
         // so we don't re-hook every time the Fragment view is recreated.
         @Volatile
@@ -54,15 +57,24 @@ class StatusReplayTracker(classLoader: ClassLoader, preferences: SharedPreferenc
     private val timeFormat = SimpleDateFormat("dd/MM HH:mm:ss", Locale.getDefault())
 
     override fun doHook() {
-        if (!prefs.getBoolean("status_replay_tracker", false)) return
-        logDebug("StatusReplayTracker: Feature enabled")
+        val isReplayEnabled = prefs.getBoolean("status_replay_tracker", false)
+        val isEditCaptionEnabled = prefs.getBoolean("remove_limit_edit_status", true)
+        if (!isReplayEnabled && !isEditCaptionEnabled) return
 
         runCatching { hookActiveStatusTracking() }
             .onFailure { logDebug("StatusReplayTracker: activeStatusTracking error: ${it.message}") }
-        runCatching { hookSeenReceipt() }
-            .onFailure { logDebug("StatusReplayTracker: seenReceipt hook error: ${it.message}") }
-        runCatching { hookViewerRowBind() }
-            .onFailure { logDebug("StatusReplayTracker: viewerRowBind hook error: ${it.message}") }
+
+        if (isReplayEnabled) {
+            logDebug("StatusReplayTracker: Replay Tracker Feature enabled")
+            runCatching { hookSeenReceipt() }
+                .onFailure { logDebug("StatusReplayTracker: seenReceipt hook error: ${it.message}") }
+            runCatching { hookStatusReceiptDeduplication() }
+                .onFailure { logDebug("StatusReplayTracker: receiptDeduplication error: ${it.message}") }
+            runCatching { hookOnDispatchMessageForStatus() }
+                .onFailure { logDebug("StatusReplayTracker: onDispatchMessage error: ${it.message}") }
+            runCatching { hookViewerRowBind() }
+                .onFailure { logDebug("StatusReplayTracker: viewerRowBind hook error: ${it.message}") }
+        }
     }
 
     // 1. Lacak slide status yang sedang aktif ---------------------------------
@@ -79,11 +91,45 @@ class StatusReplayTracker(classLoader: ClassLoader, preferences: SharedPreferenc
                 val msgId = fMessage?.key?.messageID
                 if (!msgId.isNullOrEmpty()) {
                     currentActiveStatusKey = msgId
+                    currentActiveFMessageWpp = fMessage
                     StatusReplayStore.getInstance().preloadStatusReplaysAsync(msgId)
-                    logDebug("StatusReplayTracker: Active status slide = $msgId")
+                    logDebug("StatusReplayTracker: Active status slide = $msgId (rowId=${fMessage?.rowId}, text=${fMessage?.messageStr})")
+
+                    val overrideCaption = Others.statusCaptionOverrides[msgId]
+                    if (!overrideCaption.isNullOrEmpty()) {
+                        runCatching {
+                            val thisObj = param.thisObject
+                            if (thisObj is View) {
+                                findAndUpdateCaptionTextView(thisObj, overrideCaption)
+                            } else if (thisObj != null) {
+                                for (f in thisObj.javaClass.declaredFields) {
+                                    f.isAccessible = true
+                                    val v = f.get(thisObj)
+                                    if (v is View) {
+                                        findAndUpdateCaptionTextView(v, overrideCaption)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         })
+    }
+
+    private fun findAndUpdateCaptionTextView(view: View, newText: String) {
+        if (view is android.widget.TextView && view !is android.widget.Button) {
+            val resName = runCatching { view.resources.getResourceEntryName(view.id) }.getOrNull() ?: ""
+            if (resName.contains("caption") || resName.contains("text") || resName.contains("title")) {
+                view.text = newText
+                logDebug("StatusReplayTracker: Updated active caption TextView ($resName) to '$newText'")
+            }
+        }
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                findAndUpdateCaptionTextView(view.getChildAt(i), newText)
+            }
+        }
     }
 
     // 2. Catat seen receipt asli (receiptType 13)
@@ -136,6 +182,110 @@ class StatusReplayTracker(classLoader: ClassLoader, preferences: SharedPreferenc
                 }
             }
         })
+    }
+
+    // 2b. Intercept status receipt deduplication (untuk replay / re-watch)
+    private fun hookStatusReceiptDeduplication() {
+        val dupMethod = runCatching {
+            Unobfuscator.loadStatusMessageStateUpdateReceiptHandlerIsDuplicateMethod(classLoader)
+        }.getOrNull()
+
+        if (dupMethod != null) {
+            logDebug("StatusReplayTracker: Hooking isDuplicateReceipt: ${dupMethod.declaringClass.name}#${dupMethod.name}")
+            XposedBridge.hookMethod(dupMethod, object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    try {
+                        val args = param.args ?: return
+                        var statusId: String? = null
+                        var viewerJid: String? = null
+
+                        for (arg in args) {
+                            if (arg == null) continue
+                            if (arg is String && arg.length >= 10 && !arg.contains("@")) {
+                                statusId = arg
+                            } else if (arg is String && arg.contains("@")) {
+                                viewerJid = arg
+                            } else if (FMessageWpp.Key.TYPE.isInstance(arg)) {
+                                val key = FMessageWpp.Key(arg)
+                                statusId = key.messageID
+                            } else {
+                                val userJid = UserJid(arg)
+                                if (!userJid.isNull) {
+                                    viewerJid = userJid.rawJidString ?: userJid.phoneRawString
+                                }
+                            }
+                        }
+
+                        if (!statusId.isNullOrEmpty() && !viewerJid.isNullOrEmpty()) {
+                            val record = StatusReplayStore.getInstance().recordStatusView(statusId, viewerJid)
+                            logDebug("StatusReplayTracker: [Deduplication Hook] view recorded statusId=$statusId jid=$viewerJid count=${record.viewCount}")
+
+                            if (record.viewCount > 1 && prefs.getBoolean("toast_status_replay", false)) {
+                                val userJidObj = UserJid(viewerJid)
+                                val contact = getWaContactFromJid(userJidObj)
+                                val contactName = contact?.displayName?.takeIf { it.isNotEmpty() }
+                                    ?: getContactName(userJidObj)?.takeIf { it.isNotEmpty() }
+                                    ?: userJidObj.phoneNumber ?: viewerJid
+                                Utils.showToast(
+                                    Utils.application.getString(R.string.replayed_your_status, contactName, record.viewCount),
+                                    Toast.LENGTH_SHORT
+                                )
+                            }
+                        }
+                    } catch (e: Throwable) {
+                        logDebug("StatusReplayTracker: isDuplicateReceipt error: ${e.message}")
+                    }
+                }
+            })
+        }
+    }
+
+    // 2c. Intercept raw dispatch status receipt messages
+    private fun hookOnDispatchMessageForStatus() {
+        val receiptMessageInfoClass = runCatching { Unobfuscator.loadReceiptMessageInfoClass(classLoader) }.getOrNull() ?: return
+        val onDispatchMethods = runCatching { Unobfuscator.loadOndispatchMessage(classLoader) }.getOrNull() ?: return
+
+        onDispatchMethods.forEach { method ->
+            XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    try {
+                        val message = param.args.getOrNull(0) as? android.os.Message ?: return
+                        val obj = message.obj ?: return
+                        if (!receiptMessageInfoClass.isInstance(obj)) return
+
+                        val fmessageKeyField = com.wmods.wppenhacer.xposed.utils.ReflectionUtils.findFieldUsingFilter(obj.javaClass) {
+                            FMessageWpp.Key.TYPE.isAssignableFrom(it.type)
+                        } ?: return
+                        val keyObj = fmessageKeyField.get(obj) ?: return
+                        val fmessageKey = FMessageWpp.Key(keyObj)
+
+                        if (!fmessageKey.remoteJid.isStatus && fmessageKey.remoteJid.rawJidString?.contains("status") != true) return
+
+                        val statusId = fmessageKey.messageID ?: return
+                        val userJid = UserJid.extractFrom(obj) ?: UserJid(fmessageKey.remoteJid)
+                        val viewerJid = userJid.rawJidString ?: userJid.phoneRawString ?: return
+
+                        if (viewerJid.contains("status")) return
+
+                        val record = StatusReplayStore.getInstance().recordStatusView(statusId, viewerJid)
+                        logDebug("StatusReplayTracker: [Dispatch Hook] view recorded statusId=$statusId jid=$viewerJid count=${record.viewCount}")
+
+                        if (record.viewCount > 1 && prefs.getBoolean("toast_status_replay", false)) {
+                            val contact = getWaContactFromJid(userJid)
+                            val contactName = contact?.displayName?.takeIf { it.isNotEmpty() }
+                                ?: getContactName(userJid)?.takeIf { it.isNotEmpty() }
+                                ?: userJid.phoneNumber ?: viewerJid
+                            Utils.showToast(
+                                Utils.application.getString(R.string.replayed_your_status, contactName, record.viewCount),
+                                Toast.LENGTH_SHORT
+                            )
+                        }
+                    } catch (e: Throwable) {
+                        logDebug("StatusReplayTracker: onDispatchMessage error: ${e.message}")
+                    }
+                }
+            })
+        }
     }
 
     private fun extractStatusIdFromObject(statusObj: Any): String? {

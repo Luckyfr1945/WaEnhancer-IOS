@@ -173,27 +173,44 @@ object Utils {
 
 
     fun copyFile(inputStream: InputStream, destFolder: String, name: String): String? {
+        val destDir = File(destFolder)
+        if (!destDir.exists()) {
+            runCatching { destDir.mkdirs() }
+        }
         val destFile = File(destFolder, name)
+
+        // 1. Coba via Bridge AIDL terlebih dahulu
         try {
-            inputStream.use { `in` ->
-                getClientBridge()!!.openFile(destFile.absolutePath, true)
-                    .use { parcelFileDescriptor ->
-                        val out = FileOutputStream(parcelFileDescriptor.fileDescriptor)
-                        val bArr = ByteArray(1024)
-                        while (true) {
-                            val read = `in`.read(bArr)
-                            if (read <= 0) {
-                                `in`.close()
-                                out.close()
-                                scanFile(destFile)
-                                return ""
+            val bridge = runCatching { getClientBridge() }.getOrNull()
+            if (bridge != null) {
+                val pfd = bridge.openFile(destFile.absolutePath, true)
+                if (pfd != null) {
+                    inputStream.use { `in` ->
+                        pfd.use { parcelFileDescriptor ->
+                            FileOutputStream(parcelFileDescriptor.fileDescriptor).use { out ->
+                                `in`.copyTo(out)
                             }
-                            out.write(bArr, 0, read)
                         }
                     }
+                    scanFile(destFile)
+                    return ""
+                }
             }
-        } catch (e: Exception) {
-            XposedBridge.log(e)
+        } catch (e: Throwable) {
+            XposedBridge.log("Utils.copyFile bridge error, trying direct write: ${e.message}")
+        }
+
+        // 2. Fallback direct copy
+        try {
+            inputStream.use { `in` ->
+                FileOutputStream(destFile).use { out ->
+                    `in`.copyTo(out)
+                }
+            }
+            scanFile(destFile)
+            return ""
+        } catch (e: Throwable) {
+            XposedBridge.log("Utils.copyFile direct error: ${e.message}")
             return e.message
         }
     }
@@ -319,6 +336,52 @@ object Utils {
             .setAutoCancel(true)
             .setStyle(NotificationCompat.BigTextStyle().bigText(content))
         notificationManager.notify((System.currentTimeMillis() and 0x7FFFFFFF).toInt(), notification.build())
+    }
+
+    @SuppressLint("MissingPermission")
+    fun showProgressNotification(notifId: Int, title: String, content: String) {
+        val context: Application = application
+        val notificationManager = NotificationManagerCompat.from(context)
+        val notification = NotificationCompat.Builder(context, "wppenhacer")
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setContentTitle(title)
+            .setContentText(content)
+            .setProgress(0, 0, true)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+        notificationManager.notify(notifId, notification.build())
+    }
+
+    @SuppressLint("MissingPermission")
+    fun updateNotificationSuccess(notifId: Int, title: String, content: String) {
+        val context: Application = application
+        val notificationManager = NotificationManagerCompat.from(context)
+        val notification = NotificationCompat.Builder(context, "wppenhacer")
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setContentTitle(title)
+            .setContentText(content)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(content))
+            .setProgress(0, 0, false)
+            .setOngoing(false)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+        notificationManager.notify(notifId, notification.build())
+    }
+
+    @SuppressLint("MissingPermission")
+    fun updateNotificationError(notifId: Int, title: String, content: String) {
+        val context: Application = application
+        val notificationManager = NotificationManagerCompat.from(context)
+        val notification = NotificationCompat.Builder(context, "wppenhacer")
+            .setSmallIcon(android.R.drawable.stat_notify_error)
+            .setContentTitle(title)
+            .setContentText(content)
+            .setProgress(0, 0, false)
+            .setOngoing(false)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+        notificationManager.notify(notifId, notification.build())
     }
 
     @JvmStatic

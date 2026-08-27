@@ -63,7 +63,8 @@ class MenuStatusListener(classLoader: ClassLoader, preferences:SharedPreferences
                     ReflectionUtils.getObjectField(menuField, menuManager) as Menu
                 }
 
-                val listStatus = listStatusField?.get(fragmentInstance) as List<*>
+                val listStatus = (listStatusField?.get(fragmentInstance) as? List<*>) ?: emptyList<Any>()
+                logDebug("MenuStatusListener: afterHookedMethod, listStatus size=${listStatus.size}")
 
                 statusData = StatusData(listStatus, fragmentInstance)
 
@@ -85,22 +86,44 @@ class MenuStatusListener(classLoader: ClassLoader, preferences:SharedPreferences
 
     open class StatusData(private val listStatus: List<*>, private val fragmentInstance: Any) {
 
-        private var cachedItemList: List<StatusItemWpp>? = null
+        private val itemCache = HashMap<Int, StatusItemWpp>()
 
         val currentItem: StatusItemWpp
             get() {
-                val list = getCurrentItemList()
                 val index = try { currentIndex } catch (_: Throwable) { 0 }
-                return list.getOrNull(index) ?: list.firstOrNull() ?: StatusItemWpp.EMPTY
+                return itemCache.getOrPut(index) {
+                    val raw = listStatus.getOrNull(index) ?: listStatus.firstOrNull()
+                    StatusItemWpp.from(raw) ?: StatusItemWpp.EMPTY
+                }
             }
 
         val currentIndex: Int
-            get() = (XposedHelpers.getObjectField(fragmentInstance, "A00") as? Int) ?: 0
+            get() {
+                val direct = try {
+                    XposedHelpers.getObjectField(fragmentInstance, "A00") as? Int
+                } catch (_: Throwable) {
+                    null
+                }
+                if (direct != null && direct >= 0 && direct < listStatus.size) return direct
+
+                for (f in fragmentInstance.javaClass.declaredFields) {
+                    if (f.type == Integer.TYPE || f.type == Int::class.java) {
+                        f.isAccessible = true
+                        val v = try { f.getInt(fragmentInstance) } catch (_: Throwable) { -1 }
+                        if (v in 0 until listStatus.size) {
+                            return v
+                        }
+                    }
+                }
+                return 0
+            }
 
         fun getCurrentItemList(): List<StatusItemWpp> {
-            return cachedItemList ?: listStatus.mapNotNull { obj ->
-                StatusItemWpp.from(obj)
-            }.also { cachedItemList = it }
+            return listStatus.indices.map { i ->
+                itemCache.getOrPut(i) {
+                    StatusItemWpp.from(listStatus[i]) ?: StatusItemWpp.EMPTY
+                }
+            }
         }
     }
 

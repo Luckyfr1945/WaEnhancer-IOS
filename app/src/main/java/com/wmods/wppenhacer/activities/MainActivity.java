@@ -117,13 +117,13 @@ public class MainActivity extends BaseActivity {
 
         eightbitlab.com.blurview.BlurView blurView = findViewById(R.id.blur_view);
         if (blurView != null) {
-            android.view.ViewGroup rootView = (android.view.ViewGroup) binding.getRoot();
-            blurView.setupWith(rootView)
-                    .setFrameClearDrawable(null)
-                    .setBlurRadius(16f)
+            android.view.ViewGroup decorView = (android.view.ViewGroup) getWindow().getDecorView();
+            android.graphics.drawable.Drawable windowBackground = decorView.getBackground();
+            blurView.setupWith(decorView)
+                    .setFrameClearDrawable(windowBackground)
+                    .setBlurRadius(10f)
                     .setOverlayColor(android.graphics.Color.TRANSPARENT)
                     .setBlurAutoUpdate(true);
-            com.wmods.wppenhacer.utils.AgslHelper.applyAgsl(blurView, 32f);
         }
     }
 
