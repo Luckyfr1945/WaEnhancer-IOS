@@ -127,7 +127,7 @@ class FeatureLoader {
         const val PACKAGE_WPP = "com.whatsapp"
         const val PACKAGE_BUSINESS = "com.whatsapp.w4b"
 
-        private val list = ArrayList<ErrorItem>()
+        private val list = Collections.synchronizedList(ArrayList<ErrorItem>())
         private var supportedVersions: List<String>? = null
         private var currentVersion: String? = null
         private var crashHandlerInstalled = false
@@ -179,9 +179,9 @@ class FeatureLoader {
                             SharedPreferencesWrapper.hookInit(application.classLoader)
                             ReflectionUtils.initCache(application)
 
-                            val isSupported = supportedVersions?.any { s ->
+                            val isSupported = (supportedVersions?.any { s ->
                                 packageInfo.versionName?.startsWith(s.replace(".xx", "")) ?: false
-                            } ?: false
+                            } ?: false) || packageInfo.versionName?.let { v -> v.startsWith("2.26.") || v.startsWith("2.27.") } == true
 
                             if (!isSupported) {
                                 disableExpirationVersion(application.classLoader)

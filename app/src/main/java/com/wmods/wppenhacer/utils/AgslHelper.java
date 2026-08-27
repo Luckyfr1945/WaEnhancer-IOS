@@ -53,11 +53,11 @@ public class AgslHelper {
             "    vec4 blue   = image.eval(clamp(sampleUV - dispCoord * 0.66, 0.0, 1.0) * resolution);\n" +
             "    vec4 purple = image.eval(clamp(sampleUV - dispCoord * 1.00, 0.0, 1.0) * resolution);\n" +
             "    \n" +
-            "    vec4 col;\n" +
+            "    vec4 col = vec4(0.0);\n" +
             "    col.r = (red.r * 2.5 + orange.r * 2.0 + yellow.r * 1.0) / 5.5;\n" +
             "    col.g = (yellow.g * 1.0 + green.g * 2.5 + cyan.g * 1.5) / 5.0;\n" +
             "    col.b = (cyan.b * 1.5 + blue.b * 2.5 + purple.b * 2.0) / 6.0;\n" +
-            "    col.a = (red.a + green.a + blue.a) / 3.0;\n" +
+            "    col.a = 1.0;\n" +
             "    \n" +
             "    float luma = dot(col.rgb, vec3(0.2126, 0.7152, 0.0722));\n" +
             "    col.rgb = mix(vec3(luma), col.rgb, 1.70) * brightnessBoost;\n" +
