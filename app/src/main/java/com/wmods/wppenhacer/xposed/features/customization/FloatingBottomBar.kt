@@ -88,7 +88,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         private const val BAR_PADDING_DP = 4f
         private const val INDICATOR_INSET_DP = 4f
         private const val INDICATOR_WIDTH_RATIO = 0.78f
-        private const val BLUR_RADIUS = 4f
+        private const val BLUR_RADIUS = 2.5f
         private const val PRESSED_SCALE = 1.08f
         private const val RUBBER_BAND_DP = 4f
     }
@@ -833,12 +833,12 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         val radiusDp = prefs.getInt("floating_bottom_bar_radius", CORNER_RADIUS_DP.toInt()).toFloat()
         val radius = Utils.dipToPixels(radiusDp).toFloat()
 
-        // Pure Crystal Liquid Glass Bar (Barely tinted, 98% transparent, clear refraction)
-        val pillAlpha = if (blurEnabled) 6 else 140
+        // Pure Crystal Liquid Glass Bar
+        val pillAlpha = if (blurEnabled) 15 else 140
         val pillColor = if (isLight) {
             Color.argb(pillAlpha, 255, 255, 255)
         } else {
-            Color.argb(pillAlpha, 255, 255, 255)
+            Color.argb(pillAlpha, 25, 25, 30)
         }
 
         val corners = floatArrayOf(radius, radius, radius, radius, radius, radius, radius, radius)
@@ -888,27 +888,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                backdrop.post {
-                    if (backdrop.width > 0 && backdrop.height > 0) {
-                        try {
-                            val w = backdrop.width.toFloat()
-                            val h = backdrop.height.toFloat()
-                            val r = radius.coerceAtMost(h / 2f)
-                            val shader = RuntimeShader(LiquidGlassShader.SHADER_SRC)
-                            shader.setFloatUniform("resolution", w, h)
-                            shader.setFloatUniform("cornerRadius", r)
-                            shader.setFloatUniform("refractionStrength", 5.0f)
-                            shader.setFloatUniform("chromaticAberration", 1.8f)
-                            shader.setFloatUniform("brightnessBoost", 1.15f)
-                            shader.setFloatUniform("rimIntensity", 0.45f)
-
-                            val glassEffect = RenderEffect.createRuntimeShaderEffect(shader, "image")
-                            backdrop.setRenderEffect(glassEffect)
-                        } catch (t: Throwable) {
-                            logDebug("Failed to apply strong AGSL shader: ${t.message}")
-                        }
-                    }
-                }
+                com.wmods.wppenhacer.utils.AgslHelper.applyAgsl(backdrop, radiusDp, 2.0f, 0.6f, 1.05f, 0.30f)
             }
         }
 

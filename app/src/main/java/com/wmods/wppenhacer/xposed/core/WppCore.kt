@@ -570,7 +570,7 @@ object WppCore {
 
     @JvmStatic
     fun setPrivString(key: String, value: String?) {
-        privPrefs.edit(commit = true) { putString(key, value) }
+        privPrefs.edit { putString(key, value) }
     }
 
     @JvmStatic
@@ -590,21 +590,21 @@ object WppCore {
 
     @JvmStatic
     fun setPrivJSON(key: String, value: JSONObject) {
-        privPrefs.edit(commit = true) { putString(key, value.toString()) }
+        privPrefs.edit { putString(key, value.toString()) }
     }
 
     @SuppressLint("ApplySharedPref")
     @JvmStatic
     fun removePrivKey(s: String?) {
         if (s != null && privPrefs.contains(s)) {
-            privPrefs.edit(commit = true) { remove(s) }
+            privPrefs.edit { remove(s) }
         }
     }
 
     @SuppressLint("ApplySharedPref")
     @JvmStatic
     fun setPrivBoolean(key: String, value: Boolean) {
-        privPrefs.edit(commit = true) { putBoolean(key, value) }
+        privPrefs.edit { putBoolean(key, value) }
     }
 
     @JvmStatic

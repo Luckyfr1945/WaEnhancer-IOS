@@ -59,16 +59,13 @@ class UnobfuscatorCache private constructor(private val mApplication: Applicatio
                 || savedCacheSchemaVersion != CACHE_SCHEMA_VERSION
             ) {
                 Utils.showToast(mApplication.getString(R.string.starting_cache), Toast.LENGTH_LONG)
-                sPrefsCacheHooks.edit(commit = true) { clear() }
-                sPrefsCacheHooks.edit(commit = true) { putLong("version", currentVersion) }
-                sPrefsCacheHooks.edit(commit = true) { putLong("updateTime", lastUpdateTime) }
                 sPrefsCacheHooks.edit(commit = true) {
-                    putInt(
-                        "cache_schema_version",
-                        CACHE_SCHEMA_VERSION
-                    )
+                    clear()
+                    putLong("version", currentVersion)
+                    putLong("updateTime", lastUpdateTime)
+                    putInt("cache_schema_version", CACHE_SCHEMA_VERSION)
+                    putString("wae_version_name", versionName)
                 }
-                sPrefsCacheHooks.edit(commit = true) { putString("wae_version_name", versionName) }
                 sPrefsCacheStrings.edit(commit = true) { clear() }
             }
             initCacheStrings()

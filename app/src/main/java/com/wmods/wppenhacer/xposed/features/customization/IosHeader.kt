@@ -183,12 +183,26 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                         toolbar.post {
                             clearToolbarContent(toolbar)
                         }
-                        val globalLayoutListener = object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
-                            override fun onGlobalLayout() {
+                        toolbar.setOnHierarchyChangeListener(object : ViewGroup.OnHierarchyChangeListener {
+                            override fun onChildViewAdded(parent: View?, child: View?) {
                                 clearToolbarContent(toolbar)
                             }
+                            override fun onChildViewRemoved(parent: View?, child: View?) {}
+                        })
+
+                        toolbar.viewTreeObserver.addOnPreDrawListener {
+                            val logo = toolbar.findViewById<View>(Utils.getID("toolbar_logo", "id"))
+                            if (logo != null && logo.visibility != View.GONE) {
+                                logo.visibility = View.GONE
+                            }
+                            for (i in 0 until toolbar.childCount) {
+                                val c = toolbar.getChildAt(i)
+                                if (c is TextView && c.visibility != View.GONE) {
+                                    c.visibility = View.GONE
+                                }
+                            }
+                            true
                         }
-                        toolbar.viewTreeObserver.addOnGlobalLayoutListener(globalLayoutListener)
 
                         val isNight = DesignUtils.isNightMode()
                         val blurEnabled = prefs.getBoolean("ios_header_blur", true)
@@ -199,41 +213,20 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                         header.bringToFront()
 
                         // Tambahkan BlurView/Glassmorphism backdrop di header jika diizinkan
-                        if (blurEnabled && activity is android.view.ViewGroup) {
+                        if (blurEnabled) {
                             try {
                                 val radiusDp = 24f
-                                val radius = Utils.dipToPixels(radiusDp).toFloat()
                                 val blurView = eightbitlab.com.blurview.BlurView(com.wmods.wppenhacer.xposed.utils.ModuleContextWrapper(activity)).apply {
                                     val blurRoot = activity.findViewById<ViewGroup>(android.R.id.content) ?: activity.window.decorView as ViewGroup
                                     setupWith(blurRoot)
                                         .setFrameClearDrawable(null)
-                                        .setBlurRadius(4f)
-                                        .setOverlayColor(if (isNight) Color.argb(120, 18, 18, 18) else Color.argb(120, 255, 255, 255))
+                                        .setBlurRadius(2.5f)
+                                        .setOverlayColor(if (isNight) Color.argb(35, 18, 18, 18) else Color.argb(35, 255, 255, 255))
                                         .setBlurAutoUpdate(true)
                                 }
 
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                    blurView.post {
-                                        if (blurView.width > 0 && blurView.height > 0) {
-                                            try {
-                                                val w = blurView.width.toFloat()
-                                                val h = blurView.height.toFloat()
-                                                val r = radius.coerceAtMost(h / 2f)
-                                                val shader = android.graphics.RuntimeShader(com.wmods.wppenhacer.utils.AgslHelper.SHADER_SRC)
-                                                shader.setFloatUniform("resolution", w, h)
-                                                shader.setFloatUniform("cornerRadius", r)
-                                                shader.setFloatUniform("refractionStrength", 4.0f)
-                                                shader.setFloatUniform("chromaticAberration", 1.5f)
-                                                shader.setFloatUniform("brightnessBoost", 1.10f)
-                                                shader.setFloatUniform("rimIntensity", 0.35f)
-
-                                                val glassEffect = android.graphics.RenderEffect.createRuntimeShaderEffect(shader, "image")
-                                                blurView.setRenderEffect(glassEffect)
-                                            } catch (t: Throwable) {
-                                                logDebug("IosHeader AGSL shader error: ${t.message}")
-                                            }
-                                        }
-                                    }
+                                    com.wmods.wppenhacer.utils.AgslHelper.applyAgsl(blurView, radiusDp, 2.0f, 0.6f, 1.05f, 0.30f)
                                 }
 
                                 val blurParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
@@ -263,6 +256,15 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                                 setNavIcon.invoke(toolbar, menuDrawable)
                             } else {
                                 XposedHelpers.callMethod(toolbar, "setNavigationIcon", menuDrawable)
+                            }
+
+                            // Tandai navigation button secara eksplisit dengan tag agar tidak ter-hide oleh pembersih toolbar
+                            for (i in 0 until toolbar.childCount) {
+                                val c = toolbar.getChildAt(i)
+                                if (c is ImageButton && (c.drawable === menuDrawable || c.drawable is IosMenuDrawable)) {
+                                    c.tag = "ios_nav_icon"
+                                    c.visibility = View.VISIBLE
+                                }
                             }
 
                             val setNavOnClick = com.wmods.wppenhacer.xposed.utils.ReflectionUtils.findMethodUsingFilter(toolbar.javaClass) { m ->
@@ -342,28 +344,37 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                             }
 
                             // AGGRESSIVE: Sembunyikan sisa "WhatsApp" text/logo yang mungkin ada di header (di luar toolbar)
-                            try {
-                                for (i in 0 until header.childCount) {
-                                    val child = header.getChildAt(i)
-                                    // Lewati toolbar, largeTitle, dan tab layout
-                                    if (child == toolbar || child == largeTitle) continue
-                                    if (child.javaClass.name.contains("Tab", ignoreCase = true)) continue
-                                    if (child.javaClass.name.contains("Pager", ignoreCase = true)) continue
+                            val cleanHeaderAction = {
+                                try {
+                                    for (i in 0 until header.childCount) {
+                                        val child = header.getChildAt(i)
+                                        // Lewati toolbar, largeTitle, dan tab layout
+                                        if (child == toolbar || child == largeTitle) continue
+                                        if (child.javaClass.name.contains("Tab", ignoreCase = true)) continue
+                                        if (child.javaClass.name.contains("Pager", ignoreCase = true)) continue
 
-                                    // Jika itu TextView dan isinya WhatsApp, hide
-                                    if (child is TextView) {
-                                        if (child.text.toString().contains("WhatsApp", ignoreCase = true)) {
-                                            child.visibility = View.GONE
+                                        // Jika itu TextView dan isinya WhatsApp, hide
+                                        if (child is TextView) {
+                                            if (child.text.toString().contains("WhatsApp", ignoreCase = true)) {
+                                                child.visibility = View.GONE
+                                            }
+                                        } else if (child is ImageView) {
+                                            val desc = child.contentDescription?.toString()?.lowercase() ?: ""
+                                            if (desc.contains("whatsapp", ignoreCase = true) || child.id == Utils.getID("toolbar_logo", "id")) {
+                                                child.visibility = View.GONE
+                                            }
+                                        } else if (child is ViewGroup) {
+                                            hideWhatsAppTextInViewGroup(child)
                                         }
-                                    } else if (child is ImageView) {
-                                        // Hide gambar logo apapun yang tersisa di header
-                                        child.visibility = View.GONE
-                                    } else if (child is ViewGroup) {
-                                        // Coba sembunyikan TextView bertuliskan WhatsApp di dalam ViewGroup ini
-                                        hideWhatsAppTextInViewGroup(child)
                                     }
-                                }
-                            } catch (e: Exception) {}
+                                } catch (_: Exception) {}
+                            }
+
+                            cleanHeaderAction()
+                            header.viewTreeObserver.addOnPreDrawListener {
+                                cleanHeaderAction()
+                                true
+                            }
                         }
 
                     } catch (e: Throwable) {
@@ -744,9 +755,12 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                 }
                 
                 // 2. Biarkan tombol navigasi di kiri (ikon titik-tiga buatan kita) dan tombol +
-                if (child is android.widget.ImageButton) {
-                    val d = child.drawable
-                    if (d is IosMenuDrawable || d is IosPlusDrawable) continue
+                if (child is android.widget.ImageButton || child.tag == "ios_nav_icon") {
+                    val d = (child as? android.widget.ImageButton)?.drawable
+                    if (d is IosMenuDrawable || d is IosPlusDrawable || child.tag == "ios_nav_icon") {
+                        if (child.visibility != View.VISIBLE) child.visibility = View.VISIBLE
+                        continue
+                    }
                 }
                 
                 // 3. Skip SearchView dengan SEMUA varian
@@ -757,7 +771,7 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                     continue
                 }
                 
-                // 4. Jangan sembunyikan Search, Kamera, dan Phone/Call icon
+                // 4. Jangan sembunyikan Search, Kamera, Meta AI, dan Phone/Call icon
                 val desc = child.contentDescription?.toString()?.lowercase() ?: ""
                 val searchId = Utils.getID("menuitem_search", "id")
                 val cameraId = Utils.getID("menuitem_camera", "id")
@@ -765,14 +779,15 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                 if (desc.contains("cari") || desc.contains("search") || (searchId != 0 && child.id == searchId) ||
                     desc.contains("kamera") || desc.contains("camera") || (cameraId != 0 && child.id == cameraId) ||
                     desc.contains("panggilan") || desc.contains("call") ||
-                    desc.contains("telepon") || desc.contains("phone")) {
+                    desc.contains("telepon") || desc.contains("phone") ||
+                    className.contains("MetaAi", ignoreCase = true) || desc.contains("meta") || desc.contains("ai")) {
                     if (child.visibility != View.VISIBLE) child.visibility = View.VISIBLE
                     continue
                 }
 
-                // 5. Jangan sembunyikan ViewGroup (bisa berisi search/phone widget)
+                // 5. Jangan sembunyikan ViewGroup (bisa berisi search/phone/meta widget)
                 if (child is ViewGroup && child !is LinearLayout) {
-                    // Cek apakah di dalamnya ada SearchView
+                    // Cek apakah di dalamnya ada SearchView atau Meta AI
                     val hasSearch = hasSearchViewChild(child)
                     if (hasSearch) {
                         if (child.visibility != View.VISIBLE) child.visibility = View.VISIBLE
@@ -794,7 +809,9 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
         for (i in 0 until vg.childCount) {
             val c = vg.getChildAt(i)
             val cn = c.javaClass.name
-            if (cn.contains("SearchView") || cn.contains("SearchAutoComplete") || c is android.widget.EditText) {
+            val desc = c.contentDescription?.toString()?.lowercase() ?: ""
+            if (cn.contains("SearchView") || cn.contains("SearchAutoComplete") || c is android.widget.EditText ||
+                cn.contains("MetaAi", ignoreCase = true) || desc.contains("meta") || desc.contains("ai")) {
                 return true
             }
             if (c is ViewGroup && hasSearchViewChild(c)) return true
