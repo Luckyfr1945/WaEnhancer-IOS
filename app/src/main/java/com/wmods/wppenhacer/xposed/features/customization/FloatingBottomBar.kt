@@ -333,10 +333,10 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             }
 
                             if (state.isDragging) {
-                                val firstItem = items.first()
-                                val lastItem = items.last()
-                                val minX = offsetInBar(bar, firstItem).first + firstItem.width / 2f
-                                val maxX = offsetInBar(bar, lastItem).first + lastItem.width / 2f
+                                // Hitung posisi visual X terluar kiri & kanan aktual (karena tab di-reorder via translationX)
+                                val centers = items.map { offsetInBar(bar, it).first + it.width / 2f }
+                                val minX = centers.minOrNull() ?: 0f
+                                val maxX = centers.maxOrNull() ?: bar.width.toFloat()
 
                                 // Rubber band resistance
                                 val rawCenterX = state.pillStartCenterX + dx
@@ -526,7 +526,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             if (!isBarOrChild(view)) return
                             // Always suppress native indicator, regardless of argument type
                             disableNativeActiveIndicator(view)
-                            resetAnimations(view)
+                            cancelNativeAnimatorsOnly(view)
                             val isNowSelected = param.args.getOrNull(0) as? Boolean ?: return
                             if (isNowSelected) {
                                 for ((bar, state) in barStates) {
@@ -549,7 +549,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             val view = param.thisObject as? View ?: return
                             if (!isBarOrChild(view)) return
                             disableNativeActiveIndicator(view)
-                            resetAnimations(view)
+                            cancelNativeAnimatorsOnly(view)
                         }
                     })
                     XposedBridge.hookAllMethods(itemClass, "getActiveIndicatorDrawable", object : XC_MethodHook() {
@@ -564,7 +564,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             val view = param.thisObject as? View ?: return
                             if (!isBarOrChild(view)) return
                             disableNativeActiveIndicator(view)
-                            resetAnimations(view)
+                            cancelNativeAnimatorsOnly(view)
                             param.result = null
                         }
                     })
@@ -1138,16 +1138,44 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         val desc = view.contentDescription?.toString()?.lowercase()?.trim() ?: ""
         val text = "$label $desc"
 
-        // 1. Pembaruan / Updates / Status
-        if (text.contains("pembaruan") || text.contains("update") || text.contains("status")) return 1
-        // 2. Panggilan / Calls / Telepon
-        if (text.contains("panggilan") || text.contains("call") || text.contains("llamada") || text.contains("telepon")) return 2
-        // 3. Komunitas / Communities
-        if (text.contains("komunitas") || text.contains("communit") || text.contains("comunidad")) return 3
-        // 4. Chat / Chats / Obrolan (Di kanan Komunitas)
-        if (text.contains("chat") || text.contains("obrolan") || text.contains("percakapan") || text.contains("conversa")) return 4
-        // 5. Anda / You / Pengaturan / Settings / Profile / Tools
-        if (text.contains("anda") || text.contains("you") || text.contains("tú") || text.contains("voce") || text.contains("você") || text.contains("setting") || text.contains("profil") || text.contains("pengaturan")) return 5
+        // 1. Pembaruan / Updates / Status / Novedades / Actualizaciones / Mises à jour
+        if (text.contains("pembaruan") || text.contains("update") || text.contains("status") ||
+            text.contains("novedad") || text.contains("actualiz") || text.contains("mise à jour") ||
+            text.contains("aggiorn") || text.contains("estat") || text.contains("статус") ||
+            text.contains("обновл") || text.contains("حالة") || text.contains("تحديث") ||
+            text.contains("aktuel") || text.contains("durum") || text.contains("动态") || text.contains("עדכונים")
+        ) return 1
+
+        // 2. Panggilan / Calls / Telepon / Llamadas / Appels / Chiamate
+        if (text.contains("panggilan") || text.contains("call") || text.contains("llamada") ||
+            text.contains("telepon") || text.contains("chamad") || text.contains("appel") ||
+            text.contains("chiamat") || text.contains("anruf") || text.contains("arama") ||
+            text.contains("звонк") || text.contains("вызов") || text.contains("مكالمات") ||
+            text.contains("通话") || text.contains("שיחות")
+        ) return 2
+
+        // 3. Komunitas / Communities / Comunidades / Communautés
+        if (text.contains("komunitas") || text.contains("communit") || text.contains("comunidad") ||
+            text.contains("communaut") || text.contains("comunit") || text.contains("gemeinschaft") ||
+            text.contains("topluluk") || text.contains("сообществ") || text.contains("مجتمع") ||
+            text.contains("社群") || text.contains("קהילות")
+        ) return 3
+
+        // 4. Chat / Chats / Obrolan / Conversas / Discussions / Conversaciones
+        if (text.contains("chat") || text.contains("obrolan") || text.contains("percakapan") ||
+            text.contains("conversa") || text.contains("discussion") || text.contains("sohbet") ||
+            text.contains("чаты") || text.contains("бесед") || text.contains("دردشات") ||
+            text.contains("对话") || text.contains("צ'אטים")
+        ) return 4
+
+        // 5. Anda / You / Pengaturan / Settings / Profile / Tools / Vos
+        if (text.contains("anda") || text.contains("you") || text.contains("tú") ||
+            text.contains("voce") || text.contains("você") || text.contains("setting") ||
+            text.contains("profil") || text.contains("pengaturan") || text.contains("paramètre") ||
+            text.contains("einstellung") || text.contains("impostazion") || text.contains("ayar") ||
+            text.contains("настройк") || text.contains("вы") || text.contains("إعدادات") ||
+            text.contains("أنت") || text.contains("设置") || text.contains("你") || text.contains("הגדרות")
+        ) return 5
 
         return 99
     }
@@ -1450,7 +1478,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         }
     }
     
-    private fun resetAnimations(v: View) {
+    private fun cancelNativeAnimatorsOnly(v: View) {
         try {
             v.animate()?.cancel()
             v.clearAnimation()
@@ -1459,6 +1487,25 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                 v.stateListAnimator = null
             }
 
+            try {
+                XposedHelpers.callMethod(v, "jumpDrawablesToCurrentState")
+            } catch (_: Throwable) {}
+
+            (XposedHelpers.getObjectField(v, "A00") as? android.animation.AnimatorSet)?.cancel()
+            (XposedHelpers.getObjectField(v, "A01") as? android.view.ViewPropertyAnimator)?.cancel()
+            (XposedHelpers.getObjectField(v, "A03") as? android.animation.ValueAnimator)?.cancel()
+        } catch (_: Throwable) {}
+
+        if (v is ViewGroup) {
+            for (i in 0 until v.childCount) {
+                cancelNativeAnimatorsOnly(v.getChildAt(i))
+            }
+        }
+    }
+    
+    private fun resetAnimations(v: View) {
+        cancelNativeAnimatorsOnly(v)
+        try {
             v.translationX = 0f
             v.translationY = 0f
             v.translationZ = 0f
@@ -1468,14 +1515,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             v.rotationX = 0f
             v.rotationY = 0f
             v.alpha = 1f
-
-            try {
-                XposedHelpers.callMethod(v, "jumpDrawablesToCurrentState")
-            } catch (_: Throwable) {}
-
-            (XposedHelpers.getObjectField(v, "A00") as? android.animation.AnimatorSet)?.cancel()
-            (XposedHelpers.getObjectField(v, "A01") as? android.view.ViewPropertyAnimator)?.cancel()
-            (XposedHelpers.getObjectField(v, "A03") as? android.animation.ValueAnimator)?.cancel()
         } catch (_: Throwable) {}
 
         if (v is ViewGroup) {
