@@ -75,6 +75,7 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
         properties = Utils.getProperties(prefs, "custom_css", "custom_filters")
         val menuWIcons = prefs.getBoolean("menuwicon", false)
         val newSettings = getNewSettingsVariant()
+        logDebug("Others: newSettings value is $newSettings (configui_mode=${prefs.getString("configui_mode", null)})")
         val filterChats = prefs.getString("chatfilter", "2")
         val filterSeen = prefs.getBoolean("filterseen", false)
         var statusStyle = prefs.getString("status_style", "0")?.toInt() ?: 0
@@ -121,6 +122,32 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
             })
         }
         propsInteger[18564] = newSettings // ME_TAB_V2_VARIANTS_CODE
+
+        // WA 2.26+ Native Settings Tab injection:
+        // When configui_mode is 6 (You Tab), hook WDSBottomBar, TabList, TabName, TabIcon, and GetTabMethod
+        // to inject WhatsApp's native SettingsFragment into ViewPager.
+        if (newSettings == 6) {
+            try {
+                val wdsBottomBarClass = classLoader.loadClass(
+                    "com.whatsapp.ui.wds.components.bottombar.WDSBottomBar"
+                )
+                XposedBridge.hookAllConstructors(wdsBottomBarClass, object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        try {
+                            XposedHelpers.callMethod(param.thisObject, "setSettingsTabVariantEnabled", true)
+                            XposedHelpers.callMethod(param.thisObject, "setSettingsTabVariant", true)
+                            logDebug("WDSBottomBar: Settings tab variant enabled")
+                        } catch (e: Throwable) {
+                            logDebug("WDSBottomBar: Failed to enable settings tab: ${e.message}")
+                        }
+                    }
+                })
+            } catch (e: Throwable) {
+                logDebug("WDSBottomBar class not found: ${e.message}")
+            }
+
+            hookNativeSettingsTab()
+        }
 
         propsBoolean[2889] = floatingMenu
 
@@ -1173,6 +1200,114 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
             }
         }
         return null
+    }
+
+    private fun hookNativeSettingsTab() {
+        val SETTINGS_TAB = 700
+        var activeTabs = ArrayList<Int>()
+
+        try {
+            val bottomNavigationViewCls = Unobfuscator.findFirstClassUsingName(
+                classLoader,
+                StringMatchType.EndsWith,
+                ".BottomNavigationView"
+            )
+            XposedHelpers.findAndHookMethod(
+                bottomNavigationViewCls,
+                "getMaxItemCount",
+                XC_MethodReplacement.returnConstant(99)
+            )
+        } catch (e: Throwable) {
+            logDebug("Others: Error hooking getMaxItemCount for Settings Tab: ${e.message}")
+        }
+
+        // 1. Hook Tab List (ViewPager Adapter tab IDs)
+        try {
+            val onCreateTabList = Unobfuscator.loadTabListMethod(classLoader)
+            XposedBridge.hookMethod(onCreateTabList, object : XC_MethodHook() {
+                @Suppress("UNCHECKED_CAST")
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    val resultTabs = param.result as? ArrayList<Int> ?: return
+                    activeTabs = resultTabs
+                    if (!resultTabs.contains(SETTINGS_TAB)) {
+                        resultTabs.add(SETTINGS_TAB)
+                    }
+                }
+            })
+        } catch (e: Throwable) {
+            logDebug("Others: Error hooking TabList for Settings Tab: ${e.message}")
+        }
+
+        // 2. Hook Tab Name
+        try {
+            val tabNameMethod = Unobfuscator.loadTabNameMethod(classLoader)
+            XposedBridge.hookMethod(tabNameMethod, object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    val tab = param.args[0] as? Int ?: return
+                    if (tab == SETTINGS_TAB) {
+                        param.result = "Pengaturan"
+                    }
+                }
+            })
+        } catch (e: Throwable) {
+            logDebug("Others: Error hooking TabName for Settings Tab: ${e.message}")
+        }
+
+        // 3. Hook Tab Icon
+        try {
+            val iconTabMethod = Unobfuscator.loadIconTabMethod(classLoader)
+            val menuAddAndroidX = Unobfuscator.loadAddMenuAndroidX(classLoader)
+            XposedBridge.hookMethod(iconTabMethod, object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    val hooked = XposedBridge.hookMethod(menuAddAndroidX, object : XC_MethodHook() {
+                        override fun afterHookedMethod(innerParam: MethodHookParam) {
+                            if (innerParam.args.size > 2 && (innerParam.args[1] as? Int) == SETTINGS_TAB) {
+                                val menuItem = innerParam.result as? MenuItem ?: return
+                                var iconId = Utils.getID("ic_settings", "drawable")
+                                if (iconId == 0) {
+                                    iconId = Utils.getID("ic_settings_filled", "drawable")
+                                }
+                                if (iconId != 0) {
+                                    menuItem.setIcon(iconId)
+                                }
+                            }
+                        }
+                    })
+                    param.setObjectExtra("hooked_settings", hooked)
+                }
+
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    val hooked = param.getObjectExtra("hooked_settings") as? XC_MethodHook.Unhook
+                    hooked?.unhook()
+                }
+            })
+        } catch (e: Throwable) {
+            logDebug("Others: Error hooking TabIcon for Settings Tab: ${e.message}")
+        }
+
+        // 4. Hook Tab Instance (GetTabMethod returns SettingsFragment)
+        try {
+            val settingsFragClass = XposedHelpers.findClass(
+                "com.whatsapp.settings.ui.SettingsFragment",
+                classLoader
+            )
+            val getTabMethod = Unobfuscator.loadGetTabMethod(classLoader)
+            XposedBridge.hookMethod(getTabMethod, object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    val index = param.args[0] as? Int ?: return
+                    val tabId = if (index in activeTabs.indices) activeTabs[index] else index
+                    if (tabId == SETTINGS_TAB) {
+                        val fragment = settingsFragClass.declaredConstructors.first {
+                            it.parameterCount == 0
+                        }.newInstance()
+                        param.result = fragment
+                        logDebug("Others: Successfully instantiated SettingsFragment for tab $tabId")
+                    }
+                }
+            })
+        } catch (e: Throwable) {
+            logDebug("Others: Error hooking TabInstance for Settings Tab: ${e.message}")
+        }
     }
 
     override fun getPluginName(): String {
