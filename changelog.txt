@@ -8,7 +8,7 @@
 [FIXED]
 * Fixed Status Download feature and asynchronous media saving for modern WhatsApp versions
 * Fixed native Status Forward / Resend (Teruskan Status) button disappearing or failing to trigger
-* Fixed header overlap and top clipping on Calls tab (Telepon, Jadwal, Keypad, Favorit shortcut buttons)
-* Fixed top content clipping on Communities and Updates tabs under iOS Large Title header
-* Fixed pending/clock (🕒) icon bug when Hide Second Tick (SeenTick) is enabled
-* Fixed hook and UI dialog collision between View Edited Message and iOS Status Preview
+* Fixed header overlap and top clipping on Calls tab (Telepon, Jadwal, Keypad, Favorit shortcut buttons).
+* Fixed top content clipping on Communities and Updates tabs under iOS Large Title header.
+* Fixed pending/clock (🕒) icon bug when Hide Second Tick (SeenTick) is enabled.
+* Fixed hook and UI dialog collision between View Edited Message and iOS Status Preview.
