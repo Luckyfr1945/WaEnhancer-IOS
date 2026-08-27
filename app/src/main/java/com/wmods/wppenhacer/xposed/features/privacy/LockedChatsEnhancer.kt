@@ -25,27 +25,48 @@ class LockedChatsEnhancer(classLoader: ClassLoader, preferences: SharedPreferenc
             val jidNotifications = loadNotificationMethod(classLoader)
             val lockedChatsMethod = loadLockedChatsMethod(classLoader)
 
-            XposedBridge.hookMethod(jidNotifications, object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) {
-                    val unhook = XposedBridge.hookMethod(lockedChatsMethod, object : XC_MethodHook() {
-                        override fun beforeHookedMethod(param: MethodHookParam) {
-                            param.setResult(ArrayList<Any?>())
-                        }
-                    })
-                    param.setObjectExtra("hook", unhook)
-                }
+            if (jidNotifications != null) {
+                XposedBridge.hookMethod(jidNotifications, object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        // Ensure notifications for locked chats are stripped/hidden
+                        val result = param.result
+                        if (result is MutableList<*>) {
+                            val currentCache = chatCache
+                            if (currentCache != null && lockedChatsMethod != null) {
+                                try {
+                                    val lockedChats = lockedChatsMethod.invoke(currentCache) as? Collection<*>
+                                    if (lockedChats != null && lockedChats.isNotEmpty()) {
+                                        val lockedSet = lockedChats.mapNotNull {
+                                            try { UserJid(it).phoneNumber ?: UserJid(it).userRawString } catch (_: Throwable) { null }
+                                        }.toSet()
 
-                override fun afterHookedMethod(param: MethodHookParam) {
-                    val unhook = param.getObjectExtra("hook") as? XC_MethodHook.Unhook
-                    unhook?.unhook()
-                }
-            })
+                                        if (lockedSet.isNotEmpty()) {
+                                            result.removeIf { item ->
+                                                if (item == null) return@removeIf false
+                                                try {
+                                                    val jidObj = UserJid.extractFrom(item)
+                                                    val phone = jidObj?.phoneNumber ?: jidObj?.userRawString
+                                                    phone != null && phone in lockedSet
+                                                } catch (_: Throwable) {
+                                                    false
+                                                }
+                                            }
+                                        }
+                                    }
+                                } catch (e: Throwable) {
+                                    logDebug("LockedChatsEnhancer: filter notifications failed: ${e.message}")
+                                }
+                            }
+                        }
+                    }
+                })
+            }
         } catch (e: Throwable) {
             logDebug("LockedChatsEnhancer: jidNotifications hook failed: ${e.message}")
         }
 
         try {
-            val chatCacheClass = loadChatCacheClass(classLoader)
+            val chatCacheClass = loadChatCacheClass(classLoader) ?: return
             val lockedChatsFields = ReflectionUtils.findAllFieldsUsingFilter(chatCacheClass) { f ->
                 HashSet::class.java.isAssignableFrom(f.type)
             }

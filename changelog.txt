@@ -1,14 +1,30 @@
 [ADDED]
-* Added iOS-Style Status Long-Press Preview with background blur and quick actions (Facebook 1 row layout)
+* Status Replay Tracker: Track and display how many times contacts replay/re-watch your status updates with relative timestamps in viewer list
+* Status Replay History Dialog: Tap on status replay badge to view exact timestamps of every view/replay for each contact
+* Floating Bottom Bar: Fluid iOS-style floating navigation bar with real-time blur effect (AGSL Shader)
+* iOS Glassmorphism Header: Real-time blur backdrop with AGSL Liquid Glass refraction and chromatic aberration effect on iOS Header toolbar
+* Auto DB Persistence: Persistent SQLite storage (StatusReplayStore) with automatic 24-hour cleanup for expired status replays
+* Full compatibility and support for WhatsApp version 2.26.32.xx and 2.26.34.xx
 
 [IMPROVED]
+* Improved AGSL Liquid Glass shader with Apple VisionOS convex lens profile, dual-light specular highlights, and edge-only dispersion
+* Improved glass clarity by rendering sharp crystal-clear center sampling and reducing blur radius
+* Improved AGSL dynamic resize listener to maintain correct aspect ratio during screen rotation and split-screen mode
+* Improved asynchronous SharedPreferences and batched database operations for faster startup performance
 * Improved iOS Floating Bottom Bar layout and vertical spacing between icons and text labels
 * Improved unvalidated status caption editing and direct status sharing flow
 
 [FIXED]
+* Fixed pending message clock delay in Hide Seen and Blue on Reply by offloading SQLite writes to single-thread background executor
+* Fixed Meta AI icon flickering by replacing layout listener with hierarchy change listener and view whitelisting
+* Fixed iOS Header three-dot navigation icon disappearing due to Toolbar view hierarchy race condition
+* Fixed WhatsApp native logo and title leaking when switching tabs by applying persistent pre-draw listener
+* Fixed type-check bug preventing BlurView and AGSL RuntimeShader from activating on iOS Header
 * Fixed Status Download feature and asynchronous media saving for modern WhatsApp versions
-* Fixed native Status Forward / Resend (Teruskan Status) button disappearing or failing to trigger
-* Fixed header overlap and top clipping on Calls tab (Telepon, Jadwal, Keypad, Favorit shortcut buttons).
-* Fixed top content clipping on Communities and Updates tabs under iOS Large Title header.
-* Fixed pending/clock (🕒) icon bug when Hide Second Tick (SeenTick) is enabled.
-* Fixed hook and UI dialog collision between View Edited Message and iOS Status Preview.
+* Fixed native Status Forward / Resend button disappearing or failing to trigger
+* Fixed header overlap and top clipping on Calls tab (Keypad, Schedule, Favorites shortcut buttons)
+* Fixed top content clipping on Communities and Updates tabs under iOS Large Title header
+* Fixed hook and UI dialog collision between View Edited Message and iOS Status Preview
+* Fixed NullPointerException crash in WhatsApp 2.26.32 by adding defensive hook that returns safe default
+* Fixed toolbar rendering black-screen bug by applying transparent AGSL glass backdrop
+* Fixed Floating Bottom Bar drag gestures, visual bounds, touch reset, and tab reordering across multiple languages

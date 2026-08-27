@@ -1,14 +1,12 @@
 package com.wmods.wppenhacer.xposed.features.privacy
 
 import android.content.SharedPreferences
-import android.os.Message
 import com.wmods.wppenhacer.xposed.core.Feature
 import com.wmods.wppenhacer.xposed.core.WppCore
 import com.wmods.wppenhacer.xposed.core.components.FMessageWpp
 import com.wmods.wppenhacer.xposed.core.components.ProtocolTreeNodeWpp
 import com.wmods.wppenhacer.xposed.core.db.MessageHistoryStore
 import com.wmods.wppenhacer.xposed.core.devkit.Unobfuscator
-import com.wmods.wppenhacer.xposed.features.general.Others
 import com.wmods.wppenhacer.xposed.utils.ReflectionUtils
 import com.wmods.wppenhacer.xposed.utils.Utils
 import de.robv.android.xposed.XC_MethodHook
@@ -22,6 +20,7 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
 
     companion object {
         private const val MEDIA_TYPE_VOICE_NOTE = 2
+        private val dbExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
 
         @JvmStatic
         fun generateFMessageKey(protocolTreeNodeWpp: ProtocolTreeNodeWpp): FMessageWpp.Key? {
@@ -37,31 +36,22 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
         }
     }
 
-    private var hideReceipt = false
-    private var ghostMode = false
-    private var hideRead = false
-    private var hideAudioSeen = false
-    private var hideOnceSeen = false
-    private var hideReadGroup = false
-    private var hideStatusView = false
+    private var cachedMessageIdsField: java.lang.reflect.Field? = null
 
     override fun doHook() {
-        loadPreferences()
-        runCatching { hookSendReadReceiptJob() }
-        runCatching { hookReceiptMethod() }
-        runCatching { hookSenderPlayed() }
-        runCatching { hookSenderPlayedBusiness() }
+        runCatching { hookSendReadReceiptJob() }.onFailure { log(it) }
+        runCatching { hookReceiptMethod() }.onFailure { log(it) }
+        runCatching { hookSenderPlayed() }.onFailure { log(it) }
+        runCatching { hookSenderPlayedBusiness() }.onFailure { log(it) }
     }
 
-    private fun loadPreferences() {
-        ghostMode = WppCore.getPrivBoolean("ghostmode", false)
-        hideRead = prefs.getBoolean("hideread", false)
-        hideAudioSeen = prefs.getBoolean("hideaudioseen", false)
-        hideOnceSeen = prefs.getBoolean("hideonceseen", false)
-        hideReadGroup = prefs.getBoolean("hideread_group", false)
-        hideStatusView = prefs.getBoolean("hidestatusview", false)
-        hideReceipt = prefs.getBoolean("hidereceipt", false)
-    }
+    private val isGhostMode: Boolean get() = WppCore.getPrivBoolean("ghostmode", false)
+    private val isHideRead: Boolean get() = prefs.getBoolean("hideread", false)
+    private val isHideAudioSeen: Boolean get() = prefs.getBoolean("hideaudioseen", false)
+    private val isHideOnceSeen: Boolean get() = prefs.getBoolean("hideonceseen", false)
+    private val isHideReadGroup: Boolean get() = prefs.getBoolean("hideread_group", false)
+    private val isHideStatusView: Boolean get() = prefs.getBoolean("hidestatusview", false)
+    private val isHideReceipt: Boolean get() = prefs.getBoolean("hidereceipt", false)
 
     private fun hookSendReadReceiptJob() {
         val sendReadReceiptJobMethod = Unobfuscator.loadHideViewSendReadJob(classLoader)
@@ -77,16 +67,6 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
                 val hasBlueOnReply =
                     XposedHelpers.getAdditionalInstanceField(job, "blue_on_reply") as? Boolean
                         ?: false
-
-                XposedBridge.log("[HideSeen] SendReadReceiptJob.onRun isInstance=${sendJobClass.isInstance(job)} blue_on_reply=$hasBlueOnReply class=${job.javaClass.simpleName}")
-
-                // Log semua field dari job untuk dibandingkan
-                try {
-                    job.javaClass.declaredFields.forEach { f ->
-                        f.isAccessible = true
-                        XposedBridge.log("[HideSeen]   field ${f.name} (${f.type.simpleName}) = ${f.get(job)}")
-                    }
-                } catch (_: Throwable) {}
 
                 // Job yang dibuat oleh SeenTick sendiri — biarkan lewat
                 if (!sendJobClass.isInstance(job) || hasBlueOnReply) return
@@ -107,7 +87,9 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
                 val blueOnReply = Utils.isBlueOnReplyEnabled(prefs)
                 if (blueOnReply) {
                     param.result = null
-                    recordHiddenMessages(job, userJid)
+                    dbExecutor.execute {
+                        runCatching { recordHiddenMessages(job, userJid) }.onFailure { log(it) }
+                    }
                     return
                 }
 
@@ -115,7 +97,9 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
                 val isHide = processReadReceiptByType(param, job, userJid, privacy)
 
                 if (isHide) {
-                    recordHiddenMessages(job, userJid)
+                    dbExecutor.execute {
+                        runCatching { recordHiddenMessages(job, userJid) }.onFailure { log(it) }
+                    }
                 }
             }
         })
@@ -127,9 +111,10 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
         userJid: FMessageWpp.UserJid,
         privacy: JSONObject
     ): Boolean {
+        val ghost = isGhostMode
         return when {
             userJid.isGroup -> {
-                if (privacy.optBoolean("HideSeen", hideReadGroup) || ghostMode) {
+                if (privacy.optBoolean("HideSeen", isHideReadGroup) || ghost) {
                     param.result = null
                     true
                 } else false
@@ -139,16 +124,16 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
                 val participant = XposedHelpers.getObjectField(job, "participant") as? String
                 val statusJid = FMessageWpp.UserJid(participant)
                 val customHideStatusView = CustomPrivacy.getJSON(statusJid.phoneNumber)
-                    .optBoolean("HideViewStatus", hideStatusView)
+                    .optBoolean("HideViewStatus", isHideStatusView)
 
-                if (customHideStatusView || ghostMode) {
+                if (customHideStatusView || ghost) {
                     param.result = null
                 }
                 false
             }
 
             else -> {
-                if (privacy.optBoolean("HideSeen", hideRead) || ghostMode) {
+                if (privacy.optBoolean("HideSeen", isHideRead) || ghost) {
                     param.result = null
                     true
                 } else false
@@ -157,11 +142,16 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
     }
 
     private fun recordHiddenMessages(sendReadReceiptJob: Any, userJid: FMessageWpp.UserJid) {
-        val messageIds =
+        val messageIds = try {
             (XposedHelpers.getObjectField(sendReadReceiptJob, "messageIds") as? Array<*>)
-                ?: (ReflectionUtils.findFieldUsingFilter(sendReadReceiptJob.javaClass) {
+        } catch (_: Throwable) {
+            val field = cachedMessageIdsField ?: run {
+                ReflectionUtils.findFieldUsingFilter(sendReadReceiptJob.javaClass) {
                     it.type == Array<String>::class.java
-                }?.get(sendReadReceiptJob) as? Array<*>) ?: return
+                }?.also { it.isAccessible = true; cachedMessageIdsField = it }
+            }
+            field?.get(sendReadReceiptJob) as? Array<*>
+        } ?: return
 
         val ids = messageIds.mapNotNull { it as? String }
         if (ids.isEmpty()) return
@@ -189,11 +179,11 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
     }
 
     private fun hookReceiptMethod() {
-        if (!hideReceipt && !ghostMode) return
         val receiptMethod = runCatching { Unobfuscator.loadReceiptMethod(classLoader) }.getOrNull() ?: return
 
         XposedBridge.hookMethod(receiptMethod, object : XC_MethodHook() {
             override fun afterHookedMethod(param: MethodHookParam) {
+                if (!isHideReceipt && !isGhostMode) return
                 runCatching {
                     val protocolTreeNodeWpp = ProtocolTreeNodeWpp(param.result ?: return)
 
@@ -235,14 +225,14 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
 
     private fun checkPrivacyAndHideReceipt(fmessageKey: FMessageWpp.Key): Boolean {
         val privacy = CustomPrivacy.getJSON(fmessageKey.remoteJid.phoneNumber)
-        val customHideReceipt = privacy.optBoolean("HideReceipt", hideReceipt)
-        return customHideReceipt || ghostMode
+        val customHideReceipt = privacy.optBoolean("HideReceipt", isHideReceipt)
+        return customHideReceipt || isGhostMode
     }
 
     private fun checkPrivacyAndHideSeen(fmessageKey: FMessageWpp.Key): Boolean {
         val privacy = CustomPrivacy.getJSON(fmessageKey.remoteJid.phoneNumber)
-        val hideKey = if (fmessageKey.remoteJid.isGroup) hideReadGroup else hideRead
-        val shouldHide = privacy.optBoolean("HideSeen", hideKey) || ghostMode
+        val hideKey = if (fmessageKey.remoteJid.isGroup) isHideReadGroup else isHideRead
+        val shouldHide = privacy.optBoolean("HideSeen", hideKey) || isGhostMode
         return shouldHide
     }
 
@@ -272,32 +262,42 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
     }
 
     private fun processSenderPlayed(param: XC_MethodHook.MethodHookParam, fMessage: FMessageWpp) {
-        val isHideViewOnce = (hideOnceSeen || ghostMode) && fMessage.isViewOnce
+        val ghost = isGhostMode
+        val hideOnce = isHideOnceSeen
+        val isHideViewOnce = (hideOnce || ghost) && fMessage.isViewOnce
         val isHideVoiceNote =
-            (hideAudioSeen || ghostMode) && fMessage.mediaType == MEDIA_TYPE_VOICE_NOTE
+            (isHideAudioSeen || ghost) && fMessage.mediaType == MEDIA_TYPE_VOICE_NOTE
         val key = fMessage.key
 
         val primaryJid = key.remoteJid.phoneRawString ?: key.remoteJid.userRawString ?: return
 
         if (isHideViewOnce || isHideVoiceNote) {
             param.result = null
-            MessageHistoryStore.getInstance().insertHideSeenMessage(
-                primaryJid,
-                key.messageID,
-                MessageHistoryStore.ReceiptType.PLAYED,
-                false
-            )
+            dbExecutor.execute {
+                runCatching {
+                    MessageHistoryStore.getInstance().insertHideSeenMessage(
+                        primaryJid,
+                        key.messageID,
+                        MessageHistoryStore.ReceiptType.PLAYED,
+                        false
+                    )
+                }.onFailure { log(it) }
+            }
         }
 
-        if (fMessage.isViewOnce && !hideOnceSeen && !ghostMode) {
-            MessageHistoryStore.getInstance().apply {
-                updateViewedMessage(
-                    primaryJid,
-                    key.messageID,
-                    MessageHistoryStore.ReceiptType.PLAYED,
-                    true
-                )
-                updateViewedMessage(primaryJid, key.messageID, MessageHistoryStore.ReceiptType.READ, true)
+        if (fMessage.isViewOnce && !hideOnce && !ghost) {
+            dbExecutor.execute {
+                runCatching {
+                    MessageHistoryStore.getInstance().apply {
+                        updateViewedMessage(
+                            primaryJid,
+                            key.messageID,
+                            MessageHistoryStore.ReceiptType.PLAYED,
+                            true
+                        )
+                        updateViewedMessage(primaryJid, key.messageID, MessageHistoryStore.ReceiptType.READ, true)
+                    }
+                }.onFailure { log(it) }
             }
         }
     }

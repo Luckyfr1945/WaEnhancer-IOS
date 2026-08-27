@@ -101,6 +101,29 @@ class WppXposed : IXposedHookLoadPackage, IXposedHookInitPackageResources, IXpos
                 } catch (_: Throwable) {}
                 FeatureLoader.start(classLoader, lpparam.appInfo.sourceDir)
                 disableSecureFlag()
+
+                // Defensive patch for WhatsApp 2.26.32 NullPointerException in X.A8i.A06
+                try {
+                    val classA8i = XposedHelpers.findClassIfExists("X.A8i", classLoader)
+                    val class1Ii = XposedHelpers.findClassIfExists("X.1Ii", classLoader)
+                    val class1YC = XposedHelpers.findClassIfExists("X.1YC", classLoader)
+                    if (classA8i != null && class1Ii != null && class1YC != null) {
+                        val methodA06 = XposedHelpers.findMethodExactIfExists(classA8i, "A06", class1Ii, class1YC)
+                        if (methodA06 != null) {
+                            XposedBridge.hookMethod(methodA06, object : XC_MethodHook() {
+                                override fun afterHookedMethod(param: MethodHookParam) {
+                                    if (param.throwable != null && param.throwable is java.lang.NullPointerException) {
+                                        XposedBridge.log("[WaEnhancer] Caught NullPointerException in X.A8i.A06. Suppressing and returning false.")
+                                        param.throwable = null
+                                        param.result = false
+                                    }
+                                }
+                            })
+                        }
+                    }
+                } catch (e: Throwable) {
+                    XposedBridge.log("[WaEnhancer] Failed to inject defensive hook for X.A8i.A06: ${e.message}")
+                }
             }
         }
     }
