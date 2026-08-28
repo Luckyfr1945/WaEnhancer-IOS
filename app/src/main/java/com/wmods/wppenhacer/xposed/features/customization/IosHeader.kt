@@ -39,6 +39,7 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
         const val TAG_ORIGINAL_MARGIN = 0x7E110001
         const val TAG_SEARCH_ORIGINAL_MARGIN = 0x7E110002
         const val TAG_LARGE_TITLE_VIEW = 0x7E110003
+        const val TAG_ACTIVE_TAB_NAME = 0x7E110005
         const val TAG_ACTION_BUTTONS_CONTAINER = 0x7E120099
         const val TAG_CONFIGURED_TYPE = 0x7E12009A
         val hookedToolbarClasses: MutableSet<Class<*>> = java.util.Collections.synchronizedSet(mutableSetOf<Class<*>>())
@@ -131,12 +132,14 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
 
                                         val largeTitle = getLargeTitleView(header)
                                         if (isSettings) {
+                                            header.setTag(TAG_ACTIVE_TAB_NAME, "Settings")
                                             if (largeTitle != null) {
                                                 largeTitle.text = ""
                                                 largeTitle.visibility = View.GONE
                                             }
                                         } else {
                                             val newTitle = resolveTabTitle(rawTitle)
+                                            header.setTag(TAG_ACTIVE_TAB_NAME, newTitle)
                                             if (largeTitle != null) {
                                                 largeTitle.text = newTitle
                                                 largeTitle.visibility = View.VISIBLE
@@ -441,6 +444,7 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                                                     val hdr = cachedHdr
                                                     val largeTitle = if (hdr != null) getLargeTitleView(hdr) else null
                                                     val currentTitle = largeTitle?.text?.toString() ?: ""
+                                                    val activeTabTag = (hdr?.getTag(TAG_ACTIVE_TAB_NAME) as? String) ?: ""
                                                     
                                                     if (currentTitle != previousTitle) {
                                                         if (previousTitle.isNotEmpty()) {
@@ -451,7 +455,10 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                                                         previousTitle = currentTitle
                                                     }
                                                     
-                                                    val isSettingsTab = isSettingsTabTitle(currentTitle)
+                                                    val isSettingsTab = isSettingsTabTitle(currentTitle) || 
+                                                                        activeTabTag == "Settings" || 
+                                                                        isSettingsTabTitle(activeTabTag) ||
+                                                                        (largeTitle != null && (largeTitle.visibility == View.GONE || currentTitle.isEmpty()))
                                                     val showPlusButton = !isSettingsTab
                                                     val tabChanged = lastIsChatsTab != showPlusButton
                                                     lastIsChatsTab = showPlusButton
@@ -1030,9 +1037,18 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                     val currentTitle = try {
                         val hdrId = Utils.getID("header", "id")
                         val hdr = if (hdrId != 0) activity.findViewById<ViewGroup>(hdrId) else null
-                        val largeTitle = if (hdr != null) getLargeTitleView(hdr) else null
-                        largeTitle?.text?.toString() ?: ""
+                        val tag = hdr?.getTag(TAG_ACTIVE_TAB_NAME) as? String
+                        if (!tag.isNullOrEmpty()) {
+                            tag
+                        } else {
+                            val largeTitle = if (hdr != null) getLargeTitleView(hdr) else null
+                            largeTitle?.text?.toString() ?: ""
+                        }
                     } catch (_: Throwable) { "" }
+
+                    if (isSettingsTabTitle(currentTitle) || currentTitle == "Settings" || currentTitle.isEmpty()) {
+                        return@setOnClickListener
+                    }
 
                     val tabType = resolveTabTitle(currentTitle)
                     var clicked = false
