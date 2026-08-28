@@ -480,7 +480,7 @@ public class HomeFragment extends BaseFragment {
         var dialogBinding = DialogUpdateAvailableBinding.inflate(LayoutInflater.from(context));
 
         dialogBinding.tvUpdateTitle.setText("Catatan Rilis Modul");
-        dialogBinding.tvUpdateSubtitle.setText("Versi 1.5.7 · " + BuildConfig.VERSION_NAME);
+        dialogBinding.tvUpdateSubtitle.setText("Versi 1.5.9 · " + BuildConfig.VERSION_NAME);
         dialogBinding.tvVersionBadge.setText(BuildConfig.VERSION_NAME);
         dialogBinding.tvReleaseDate.setText(new SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(new Date()));
 

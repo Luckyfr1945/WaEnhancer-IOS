@@ -167,7 +167,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
                                 android:fontFamily="sans-serif-medium"
-                                android:text="1.5.7 · 9DA6918A"
+                                android:text="1.5.9 · 9DA6918A"
                                 android:textColor="@color/hero_text_version"
                                 android:textSize="13.5sp"
                                 android:textStyle="bold" />
@@ -284,7 +284,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:text="Wa Enhancer 1.5.7 · Aktif"
+                                android:text="Wa Enhancer 1.5.9 · Aktif"
                                 android:textColor="@color/text_secondary"
                                 android:textSize="11sp" />
                         </LinearLayout>
