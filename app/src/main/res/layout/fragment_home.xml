@@ -2,133 +2,368 @@
 <androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
-    android:id="@+id/fragment_container"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    app:consumeSystemWindowsInsets="@integer/internal_fragment_insets"
-    app:edgeToEdge="true"
-    app:fitsSystemWindowsInsets="@integer/internal_fragment_insets">
+    android:background="@color/background_color">
 
-    <FrameLayout
+    <rikka.widget.borderview.BorderNestedScrollView
+        android:id="@+id/nested_scroll_view"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        app:fitsSystemWindowsInsets="@integer/internal_fragment_bottom_insets"
-        app:layout_behavior="@string/appbar_scrolling_view_behavior"
-        tools:ignore="MissingPrefix">
+        android:layout_height="match_parent"
+        android:clipToPadding="false"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="90dp">
 
-        <rikka.widget.borderview.BorderNestedScrollView
-            android:id="@+id/nestedScrollView"
+        <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:scrollbars="none"
-            app:borderBottomVisibility="never"
-            app:borderTopDrawable="@null"
-            app:borderTopVisibility="whenTop">
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
 
-            <LinearLayout
+            <!-- =========================================================
+                 1. HERO STATUS CARD (THEME-AWARE: MINT IN LIGHT, OLED IN DARK)
+            ========================================================== -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/status"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:animateLayoutChanges="true"
-                android:clipChildren="false"
-                android:clipToPadding="false"
-                android:orientation="vertical"
-                android:paddingHorizontal="@dimen/spacing_medium"
-                android:paddingVertical="@dimen/spacing_large"
-                tools:context=".ui.activity.MainActivity">
+                android:layout_height="240dp"
+                android:layout_marginBottom="16dp"
+                app:cardBackgroundColor="@color/hero_card_bg"
+                app:cardCornerRadius="22dp"
+                app:cardElevation="0dp"
+                app:strokeColor="@color/hero_border_active"
+                app:strokeWidth="1.5dp">
 
-                <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/status"
+                <FrameLayout
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="@dimen/spacing_medium"
-                    app:cardCornerRadius="@dimen/card_radius_large"
-                    app:cardElevation="@dimen/card_elevation_high"
-                    app:cardPreventCornerOverlap="false"
-                    app:strokeWidth="0dp">
+                    android:layout_height="match_parent">
 
+                    <!-- Anime Artwork positioned on Right side -->
+                    <ImageView
+                        android:id="@+id/hero_bg_image"
+                        android:layout_width="280dp"
+                        android:layout_height="match_parent"
+                        android:layout_gravity="end|bottom"
+                        android:scaleType="fitEnd"
+                        android:src="@drawable/hero_active"
+                        tools:ignore="ContentDescription" />
+
+                    <!-- Layer 1: Solid background on the left text area -->
+                    <View
+                        android:layout_width="140dp"
+                        android:layout_height="match_parent"
+                        android:layout_gravity="start"
+                        android:background="@color/hero_solid_scrim" />
+
+                    <!-- Layer 2: Smooth Horizontal Fade Transition from solid to transparent -->
+                    <View
+                        android:layout_width="120dp"
+                        android:layout_height="match_parent"
+                        android:layout_marginStart="138dp"
+                        android:background="@drawable/bg_hero_fade_transition" />
+
+                    <!-- Layer 3: Subtle Bottom Shadow Scrim -->
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="@drawable/bg_hero_bottom_scrim" />
+
+                    <!-- Layer 4: Top-Right Radial Green Glow -->
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="@drawable/bg_hero_glow" />
+
+                    <!-- Hero Foreground Content -->
                     <RelativeLayout
                         android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:background="@drawable/gradient_primary"
-                        android:minHeight="@dimen/status_card_min_height"
-                        android:padding="@dimen/spacing_medium">
+                        android:layout_height="match_parent"
+                        android:padding="18dp">
 
-                        <ImageView
-                            android:id="@+id/status_icon"
-                            android:layout_width="@dimen/status_icon_size"
-                            android:layout_height="@dimen/status_icon_size"
-                            android:layout_centerVertical="true"
-                            app:srcCompat="@drawable/ic_round_check_circle_24"
-                            app:tint="@color/text_on_gradient"
-                            tools:ignore="ContentDescription" />
+                        <!-- Check Icon Box -->
+                        <FrameLayout
+                            android:id="@+id/status_icon_box"
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:background="@drawable/bg_badge_category">
 
-                        <com.google.android.material.textview.MaterialTextView
-                            android:id="@+id/status_title"
-                            style="@style/StatusCardTitle"
+                            <ImageView
+                                android:id="@+id/status_icon"
+                                android:layout_width="22dp"
+                                android:layout_height="22dp"
+                                android:layout_gravity="center"
+                                app:srcCompat="@drawable/ic_round_check_circle_24"
+                                app:tint="@color/whatsapp_green"
+                                tools:ignore="ContentDescription" />
+                        </FrameLayout>
+
+                        <!-- Title & Subtitle -->
+                        <LinearLayout
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginStart="@dimen/spacing_medium"
-                            android:layout_toEndOf="@id/status_icon"
-                            android:text="@string/module_enabled" />
+                            android:layout_marginStart="12dp"
+                            android:layout_toEndOf="@id/status_icon_box"
+                            android:layout_toStartOf="@+id/hero_active_badge"
+                            android:orientation="vertical">
 
-                        <com.google.android.material.textview.MaterialTextView
-                            android:id="@+id/status_summary"
-                            style="@style/StatusCardSummary"
+                            <TextView
+                                android:id="@+id/status_title"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="sans-serif-medium"
+                                android:text="Module aktif"
+                                android:textColor="@color/hero_text_title"
+                                android:textSize="16.5sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/status_summary"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:fontFamily="sans-serif"
+                                android:text="Hook LSPosed berhasil dimuat"
+                                android:textColor="@color/hero_text_summary"
+                                android:textSize="11.5sp" />
+                        </LinearLayout>
+
+                        <!-- Active Top-Right Badge -->
+                        <TextView
+                            android:id="@+id/hero_active_badge"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_below="@id/status_title"
-                            android:layout_alignStart="@id/status_title"
-                            android:layout_marginTop="@dimen/spacing_xs" />
+                            android:layout_alignParentEnd="true"
+                            android:background="@drawable/category_badge_background"
+                            android:paddingStart="9dp"
+                            android:paddingTop="4dp"
+                            android:paddingEnd="9dp"
+                            android:paddingBottom="4dp"
+                            android:text="● ACTIVE"
+                            android:textColor="@color/badge_green_text"
+                            android:textSize="9.5sp"
+                            android:textStyle="bold" />
+
+                        <!-- Bottom Version Info -->
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_alignParentBottom="true"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="sans-serif-medium"
+                                android:letterSpacing="0.08"
+                                android:text="MODULE VERSION"
+                                android:textColor="@color/hero_text_label"
+                                android:textSize="9sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/hero_version_text"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:fontFamily="sans-serif-medium"
+                                android:text="1.5.7 · 9DA6918A"
+                                android:textColor="@color/hero_text_version"
+                                android:textSize="13.5sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <!-- Bottom LSPosed Hook Pill Badge -->
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_alignParentEnd="true"
+                            android:layout_alignParentBottom="true"
+                            android:background="@drawable/category_badge_background"
+                            android:paddingStart="10dp"
+                            android:paddingTop="4dp"
+                            android:paddingEnd="10dp"
+                            android:paddingBottom="4dp"
+                            android:text="● LSPosed Hook"
+                            android:textColor="@color/badge_green_text"
+                            android:textSize="10sp"
+                            android:textStyle="bold" />
 
                     </RelativeLayout>
-                </com.google.android.material.card.MaterialCardView>
+                </FrameLayout>
+            </com.google.android.material.card.MaterialCardView>
 
-                <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/status2"
+            <!-- =========================================================
+                 2. STATUS SECTION (SINGLE CARD CONTAINER)
+            ========================================================== -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:fontFamily="sans-serif-medium"
+                    android:letterSpacing="0.08"
+                    android:text="STATUS"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="3 komponen"
+                    android:textColor="@color/text_tertiary"
+                    android:textSize="10.5sp" />
+            </LinearLayout>
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:cardBackgroundColor="@color/card_bg"
+                app:cardCornerRadius="18dp"
+                app:cardElevation="0dp"
+                app:strokeColor="@color/card_border"
+                app:strokeWidth="1.2dp">
+
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="@dimen/spacing_medium"
-                    app:cardCornerRadius="@dimen/card_radius_large"
-                    app:cardElevation="@dimen/card_elevation_high"
-                    app:cardPreventCornerOverlap="false"
-                    app:strokeWidth="0dp">
+                    android:orientation="vertical">
 
+                    <!-- Row 1: Module Info Row -->
                     <RelativeLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:background="@drawable/gradient_primary"
-                        android:minHeight="@dimen/status_card_min_height"
-                        android:padding="@dimen/spacing_medium">
+                        android:padding="14dp">
 
-                        <ImageView
-                            android:id="@+id/status_icon2"
-                            android:layout_width="@dimen/status_icon_size"
-                            android:layout_height="@dimen/status_icon_size"
+                        <FrameLayout
+                            android:id="@+id/mod_icon_box"
+                            android:layout_width="34dp"
+                            android:layout_height="34dp"
                             android:layout_centerVertical="true"
-                            app:srcCompat="@drawable/ic_round_check_circle_24"
-                            app:tint="@color/text_on_gradient"
-                            tools:ignore="ContentDescription" />
+                            android:background="@drawable/bg_badge_category">
 
-                        <com.google.android.material.textview.MaterialTextView
-                            android:id="@+id/status_title2"
-                            style="@style/StatusCardTitle"
+                            <ImageView
+                                android:layout_width="20dp"
+                                android:layout_height="20dp"
+                                android:layout_gravity="center"
+                                app:srcCompat="@drawable/ic_dashboard_black_24dp"
+                                app:tint="@color/whatsapp_green"
+                                tools:ignore="ContentDescription" />
+                        </FrameLayout>
+
+                        <LinearLayout
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginStart="@dimen/spacing_medium"
-                            android:layout_marginEnd="@dimen/spacing_medium"
+                            android:layout_centerVertical="true"
+                            android:layout_marginStart="12dp"
+                            android:layout_toStartOf="@+id/mod_active_badge"
+                            android:layout_toEndOf="@id/mod_icon_box"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="sans-serif-medium"
+                                android:text="Module"
+                                android:textColor="@color/text_primary"
+                                android:textSize="13.5sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/mod_subtext"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="Wa Enhancer 1.5.7 · Aktif"
+                                android:textColor="@color/text_secondary"
+                                android:textSize="11sp" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/mod_active_badge"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_alignParentEnd="true"
+                            android:layout_centerVertical="true"
+                            android:background="@drawable/category_badge_background"
+                            android:paddingStart="8dp"
+                            android:paddingTop="3dp"
+                            android:paddingEnd="8dp"
+                            android:paddingBottom="3dp"
+                            android:text="ACTIVE"
+                            android:textColor="@color/badge_green_text"
+                            android:textSize="9.5sp"
+                            android:textStyle="bold" />
+                    </RelativeLayout>
+
+                    <!-- Divider 1 -->
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="@color/card_divider" />
+
+                    <!-- Row 2: WhatsApp Background Row -->
+                    <RelativeLayout
+                        android:id="@+id/status2"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:padding="14dp">
+
+                        <FrameLayout
+                            android:id="@+id/wpp_icon_box"
+                            android:layout_width="34dp"
+                            android:layout_height="34dp"
+                            android:layout_centerVertical="true"
+                            android:background="@drawable/bg_badge_category">
+
+                            <ImageView
+                                android:id="@+id/status_icon2"
+                                android:layout_width="20dp"
+                                android:layout_height="20dp"
+                                android:layout_gravity="center"
+                                app:srcCompat="@drawable/ic_check_circle"
+                                app:tint="@color/whatsapp_green"
+                                tools:ignore="ContentDescription" />
+                        </FrameLayout>
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_centerVertical="true"
+                            android:layout_marginStart="12dp"
                             android:layout_toStartOf="@+id/actions_container"
-                            android:layout_toEndOf="@id/status_icon2"
-                            android:text="@string/whatsapp_in_background" />
+                            android:layout_toEndOf="@id/wpp_icon_box"
+                            android:orientation="vertical">
 
-                        <com.google.android.material.textview.MaterialTextView
-                            android:id="@+id/status_summary1"
-                            style="@style/StatusCardSummary"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_below="@id/status_title2"
-                            android:layout_alignStart="@id/status_title2"
-                            android:layout_alignEnd="@id/status_title2"
-                            android:layout_marginTop="@dimen/spacing_xs" />
+                            <TextView
+                                android:id="@+id/status_title2"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="sans-serif-medium"
+                                android:text="WhatsApp Background"
+                                android:textColor="@color/text_primary"
+                                android:textSize="13.5sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/status_summary1"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="Versi 2.26.33.74"
+                                android:textColor="@color/text_secondary"
+                                android:textSize="11sp" />
+                        </LinearLayout>
 
                         <LinearLayout
                             android:id="@+id/actions_container"
@@ -136,358 +371,560 @@
                             android:layout_height="wrap_content"
                             android:layout_alignParentEnd="true"
                             android:layout_centerVertical="true"
+                            android:gravity="center_vertical"
                             android:orientation="horizontal">
 
                             <ImageView
                                 android:id="@+id/scroll_diag_btn"
-                                android:layout_width="@dimen/icon_size_large"
-                                android:layout_height="@dimen/icon_size_large"
+                                android:layout_width="30dp"
+                                android:layout_height="30dp"
                                 android:background="?attr/selectableItemBackgroundBorderless"
-                                android:padding="@dimen/spacing_xs"
+                                android:padding="5dp"
                                 android:src="@drawable/ic_arrow_down"
-                                app:tint="@color/text_on_gradient"
+                                app:tint="@color/text_secondary"
                                 tools:ignore="ContentDescription" />
 
                             <ImageView
                                 android:id="@+id/reboot_btn"
-                                android:layout_width="@dimen/icon_size_large"
-                                android:layout_height="@dimen/icon_size_large"
+                                android:layout_width="30dp"
+                                android:layout_height="30dp"
+                                android:layout_marginStart="2dp"
                                 android:background="?attr/selectableItemBackgroundBorderless"
-                                android:padding="@dimen/spacing_xs"
+                                android:padding="5dp"
                                 android:src="@drawable/ic_reload"
-                                app:tint="@color/text_on_gradient"
+                                app:tint="@color/text_secondary"
                                 tools:ignore="ContentDescription" />
-
                         </LinearLayout>
-
                     </RelativeLayout>
-                </com.google.android.material.card.MaterialCardView>
 
-                <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/status3"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="@dimen/spacing_medium"
-                    app:cardCornerRadius="@dimen/card_radius_large"
-                    app:cardElevation="@dimen/card_elevation_high"
-                    app:cardPreventCornerOverlap="false"
-                    app:strokeWidth="0dp">
+                    <!-- Divider 2 -->
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="@color/card_divider" />
 
+                    <!-- Row 3: WhatsApp Business Background Row (Optional) -->
                     <RelativeLayout
+                        android:id="@+id/status3"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:background="@drawable/gradient_primary"
-                        android:minHeight="@dimen/status_card_min_height"
-                        android:padding="@dimen/spacing_medium">
+                        android:padding="14dp"
+                        android:visibility="gone">
 
-                        <ImageView
-                            android:id="@+id/status_icon3"
-                            android:layout_width="@dimen/status_icon_size"
-                            android:layout_height="@dimen/status_icon_size"
+                        <FrameLayout
+                            android:id="@+id/w4b_icon_box"
+                            android:layout_width="34dp"
+                            android:layout_height="34dp"
                             android:layout_centerVertical="true"
-                            app:srcCompat="@drawable/ic_round_check_circle_24"
-                            app:tint="@color/text_on_gradient"
-                            tools:ignore="ContentDescription" />
+                            android:background="@drawable/bg_badge_category">
 
-                        <com.google.android.material.textview.MaterialTextView
-                            android:id="@+id/status_title3"
-                            style="@style/StatusCardTitle"
+                            <ImageView
+                                android:id="@+id/status_icon3"
+                                android:layout_width="20dp"
+                                android:layout_height="20dp"
+                                android:layout_gravity="center"
+                                app:srcCompat="@drawable/ic_check_circle"
+                                app:tint="@color/whatsapp_teal"
+                                tools:ignore="ContentDescription" />
+                        </FrameLayout>
+
+                        <LinearLayout
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginStart="@dimen/spacing_medium"
-                            android:layout_marginEnd="@dimen/spacing_large"
+                            android:layout_centerVertical="true"
+                            android:layout_marginStart="12dp"
                             android:layout_toStartOf="@+id/reboot_btn2"
-                            android:layout_toEndOf="@id/status_icon3"
-                            android:text="@string/business_in_background" />
+                            android:layout_toEndOf="@id/w4b_icon_box"
+                            android:orientation="vertical">
 
-                        <com.google.android.material.textview.MaterialTextView
-                            android:id="@+id/status_summary3"
-                            style="@style/StatusCardSummary"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_below="@id/status_title3"
-                            android:layout_alignStart="@id/status_title3"
-                            android:layout_marginTop="@dimen/spacing_xs" />
+                            <TextView
+                                android:id="@+id/status_title3"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="sans-serif-medium"
+                                android:text="WhatsApp Business Background"
+                                android:textColor="@color/text_primary"
+                                android:textSize="13.5sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/status_summary3"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="Versi 2.26.33.74"
+                                android:textColor="@color/text_secondary"
+                                android:textSize="11sp" />
+                        </LinearLayout>
 
                         <ImageView
                             android:id="@+id/reboot_btn2"
-                            android:layout_width="@dimen/icon_size_large"
-                            android:layout_height="@dimen/icon_size_large"
+                            android:layout_width="30dp"
+                            android:layout_height="30dp"
                             android:layout_alignParentEnd="true"
                             android:layout_centerVertical="true"
                             android:background="?attr/selectableItemBackgroundBorderless"
-                            android:padding="@dimen/spacing_xs"
+                            android:padding="5dp"
                             android:src="@drawable/ic_reload"
-                            app:tint="@color/text_on_gradient"
+                            app:tint="@color/text_secondary"
                             tools:ignore="ContentDescription" />
-
                     </RelativeLayout>
-                </com.google.android.material.card.MaterialCardView>
 
-                <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/update_card"
+                    <!-- Row 4: Pembaruan Tersedia Row -->
+                    <RelativeLayout
+                        android:id="@+id/update_card"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:padding="14dp">
+
+                        <FrameLayout
+                            android:id="@+id/update_icon_box"
+                            android:layout_width="34dp"
+                            android:layout_height="34dp"
+                            android:layout_centerVertical="true"
+                            android:background="@drawable/bg_badge_category">
+
+                            <ImageView
+                                android:id="@+id/update_icon"
+                                android:layout_width="20dp"
+                                android:layout_height="20dp"
+                                android:layout_gravity="center"
+                                app:srcCompat="@drawable/ic_round_update_24"
+                                app:tint="@color/whatsapp_green"
+                                tools:ignore="ContentDescription" />
+                        </FrameLayout>
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_centerVertical="true"
+                            android:layout_marginStart="12dp"
+                            android:layout_toStartOf="@+id/update_badge"
+                            android:layout_toEndOf="@id/update_icon_box"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/update_title"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="sans-serif-medium"
+                                android:text="Pembaruan Tersedia"
+                                android:textColor="@color/text_primary"
+                                android:textSize="13.5sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/update_summary"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="Versi 1.5.5 · 883041c6"
+                                android:textColor="@color/text_secondary"
+                                android:textSize="11sp" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/update_badge"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_alignParentEnd="true"
+                            android:layout_centerVertical="true"
+                            android:background="@drawable/category_badge_background"
+                            android:paddingStart="8dp"
+                            android:paddingTop="3dp"
+                            android:paddingEnd="8dp"
+                            android:paddingBottom="3dp"
+                            android:text="UPDATE"
+                            android:textColor="@color/badge_green_text"
+                            android:textSize="9.5sp"
+                            android:textStyle="bold" />
+                    </RelativeLayout>
+
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- =========================================================
+                 3. PERANGKAT (DEVICE INFO) SECTION
+            ========================================================== -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp"
+                android:fontFamily="sans-serif-medium"
+                android:letterSpacing="0.08"
+                android:paddingStart="4dp"
+                android:text="PERANGKAT"
+                android:textColor="@color/text_secondary"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/info_card"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:cardBackgroundColor="@color/card_bg"
+                app:cardCornerRadius="18dp"
+                app:cardElevation="0dp"
+                app:strokeColor="@color/card_border"
+                app:strokeWidth="1.2dp">
+
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="@dimen/spacing_medium"
-                    app:cardCornerRadius="@dimen/card_radius_large"
-                    app:cardElevation="@dimen/card_elevation_high"
-                    app:cardPreventCornerOverlap="false"
-                    app:strokeWidth="0dp">
+                    android:orientation="vertical"
+                    android:padding="16dp">
 
+                    <!-- Row 1: Android SDK -->
                     <RelativeLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:background="@drawable/gradient_update"
-                        android:minHeight="@dimen/status_card_min_height"
-                        android:padding="@dimen/spacing_medium">
+                        android:paddingTop="4dp"
+                        android:paddingBottom="10dp">
 
-                        <ImageView
-                            android:id="@+id/update_icon"
-                            android:layout_width="@dimen/status_icon_size"
-                            android:layout_height="@dimen/status_icon_size"
-                            android:layout_centerVertical="true"
-                            app:srcCompat="@drawable/ic_round_update_24"
-                            app:tint="@color/text_on_gradient"
-                            tools:ignore="ContentDescription" />
-
-                        <com.google.android.material.textview.MaterialTextView
-                            android:id="@+id/update_title"
-                            style="@style/StatusCardTitle"
+                        <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_marginStart="@dimen/spacing_medium"
-                            android:layout_toEndOf="@id/update_icon"
-                            android:text="@string/checking_for_updates" />
+                            android:text="Android SDK"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12.5sp" />
 
-                        <com.google.android.material.textview.MaterialTextView
-                            android:id="@+id/update_summary"
-                            style="@style/StatusCardSummary"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_below="@id/update_title"
-                            android:layout_alignStart="@id/update_title"
-                            android:layout_marginTop="@dimen/spacing_xs" />
-
-                    </RelativeLayout>
-                </com.google.android.material.card.MaterialCardView>
-
-                <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/developer_warning_card"
-                    style="@style/CardInfoStyle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="@dimen/spacing_medium"
-                    android:visibility="gone"
-                    app:cardBackgroundColor="?colorSecondaryContainer">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="@dimen/spacing_medium">
-
-                        <com.google.android.material.textview.MaterialTextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="string/developer_warning_title"
-                            android:textAppearance="?textAppearanceTitleMedium"
-                            android:textColor="?colorOnSecondaryContainer" />
-
-                        <com.google.android.material.textview.MaterialTextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/spacing_xs"
-                            android:text="string/developer_warning_summary"
-                            android:textAppearance="?textAppearanceBodyMedium"
-                            android:textColor="?colorOnSecondaryContainer" />
-
-                    </LinearLayout>
-                </com.google.android.material.card.MaterialCardView>
-
-                <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/info_card"
-                    style="@style/CardInfoStyle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="@dimen/spacing_medium"
-                    app:cardBackgroundColor="@color/surface_container">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="@dimen/spacing_medium">
-
-                        <com.google.android.material.textview.MaterialTextView
-                            style="@style/DeviceInfoDialogLabel"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="@string/android_version" />
-
-                        <com.google.android.material.textview.MaterialTextView
+                        <TextView
                             android:id="@+id/sdk"
-                            style="@style/DeviceInfoDialogValue"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content" />
-
-                        <com.google.android.material.textview.MaterialTextView
-                            style="@style/DeviceInfoDialogLabel"
-                            android:layout_width="match_parent"
+                            android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="@string/device_name" />
+                            android:layout_alignParentEnd="true"
+                            android:textColor="@color/whatsapp_green"
+                            android:textSize="13sp"
+                            android:textStyle="bold"
+                            tools:text="36" />
+                    </RelativeLayout>
 
-                        <com.google.android.material.textview.MaterialTextView
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="@color/card_divider" />
+
+                    <!-- Row 2: Nama Perangkat -->
+                    <RelativeLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="10dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/device_name"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12.5sp" />
+
+                        <TextView
                             android:id="@+id/device_name"
-                            style="@style/DeviceInfoDialogValue"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content" />
-
-                        <com.google.android.material.textview.MaterialTextView
-                            style="@style/DeviceInfoDialogLabel"
-                            android:layout_width="match_parent"
+                            android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="@string/device_model" />
+                            android:layout_alignParentEnd="true"
+                            android:textColor="@color/text_primary"
+                            android:textSize="13sp"
+                            android:textStyle="bold"
+                            tools:text="OnePlus" />
+                    </RelativeLayout>
 
-                        <com.google.android.material.textview.MaterialTextView
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="@color/card_divider" />
+
+                    <!-- Row 3: Model -->
+                    <RelativeLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="4dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/device_model"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12.5sp" />
+
+                        <TextView
                             android:id="@+id/model_name"
-                            style="@style/DeviceInfoDialogValue"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content" />
-
-                        <com.google.android.material.textview.MaterialTextView
-                            android:id="@+id/list_wpp_title"
-                            style="@style/DeviceInfoDialogLabel"
-                            android:layout_width="match_parent"
+                            android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="@string/list_wpp" />
+                            android:layout_alignParentEnd="true"
+                            android:textColor="@color/text_primary"
+                            android:textSize="13sp"
+                            android:textStyle="bold"
+                            tools:text="OP5D35L1" />
+                    </RelativeLayout>
 
-                        <com.google.android.material.textview.MaterialTextView
-                            android:id="@+id/list_wpp"
-                            style="@style/DeviceInfoDialogValue"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:gravity="center_vertical" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
-                        <com.google.android.material.textview.MaterialTextView
-                            style="@style/DeviceInfoDialogLabel"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="@string/list_business" />
+            <!-- =========================================================
+                 4. VERSI WHATSAPP SECTION
+            ========================================================== -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp">
 
-                        <com.google.android.material.textview.MaterialTextView
-                            android:id="@+id/list_business"
-                            style="@style/DeviceInfoDialogValue"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content" />
-
-                    </LinearLayout>
-
-                </com.google.android.material.card.MaterialCardView>
-
-                <com.google.android.material.card.MaterialCardView
-                    style="@style/CardInfoStyle"
-                    android:layout_width="match_parent"
+                <TextView
+                    android:id="@+id/list_wpp_title"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    app:cardBackgroundColor="@color/surface_container">
+                    android:layout_weight="1"
+                    android:fontFamily="sans-serif-medium"
+                    android:letterSpacing="0.08"
+                    android:text="VERSI WHATSAPP"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
 
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:gravity="center"
-                        android:orientation="vertical"
-                        android:padding="@dimen/spacing_medium">
-
-                        <com.google.android.material.textview.MaterialTextView
-                            style="@style/DeviceInfoDialogLabel"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="@string/backup_settings"
-                            android:textAlignment="center" />
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/spacing_small"
-                            android:orientation="horizontal">
-
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/importBtn"
-                                style="@style/ModernButton.Outlined"
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_marginEnd="@dimen/spacing_small"
-                                android:layout_weight="1"
-                                android:text="@string/import_settings" />
-
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/exportBtn"
-                                style="@style/ModernButton"
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_marginStart="@dimen/spacing_small"
-                                android:layout_weight="1"
-                                android:text="@string/export_settings" />
-
-                        </LinearLayout>
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/resetBtn"
-                            style="@style/ModernButton.Outlined"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/spacing_small"
-                            android:text="@string/reset_settings"
-                            app:strokeColor="?colorError" />
-
-                    </LinearLayout>
-
-                </com.google.android.material.card.MaterialCardView>
-
-                <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/diag_card"
-                    style="@style/CardInfoStyle"
-                    android:layout_width="match_parent"
+                <TextView
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_medium"
-                    app:cardBackgroundColor="@color/surface_container">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:gravity="center"
-                        android:orientation="vertical"
-                        android:padding="@dimen/spacing_medium">
-
-                        <com.google.android.material.textview.MaterialTextView
-                            style="@style/DeviceInfoDialogLabel"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="@string/diag_title"
-                            android:textAlignment="center" />
-
-                        <com.google.android.material.textview.MaterialTextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/spacing_xs"
-                            android:text="@string/diag_summary"
-                            android:textAlignment="center"
-                            android:textAppearance="?textAppearanceBodyMedium"
-                            android:textColor="?colorOnSurfaceVariant" />
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/diagBtn"
-                            style="@style/ModernButton.Outlined"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/spacing_small"
-                            android:text="@string/diag_button"
-                            app:icon="@drawable/ic_round_bug_report_24" />
-
-                    </LinearLayout>
-
-                </com.google.android.material.card.MaterialCardView>
-
+                    android:text="Didukung"
+                    android:textColor="@color/whatsapp_green"
+                    android:textSize="10.5sp" />
             </LinearLayout>
-        </rikka.widget.borderview.BorderNestedScrollView>
-    </FrameLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                android:orientation="horizontal">
+
+                <!-- WhatsApp Card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:layout_weight="1"
+                    app:cardBackgroundColor="@color/card_bg"
+                    app:cardCornerRadius="16dp"
+                    app:cardElevation="0dp"
+                    app:strokeColor="@color/card_border"
+                    app:strokeWidth="1.2dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="14dp">
+
+                        <RelativeLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="WhatsApp"
+                                android:textColor="@color/text_primary"
+                                android:textSize="13sp"
+                                android:textStyle="bold" />
+
+                            <ImageView
+                                android:layout_width="16dp"
+                                android:layout_height="16dp"
+                                android:layout_alignParentEnd="true"
+                                android:src="@drawable/ic_check_circle"
+                                app:tint="@color/whatsapp_green"
+                                tools:ignore="ContentDescription" />
+                        </RelativeLayout>
+
+                        <TextView
+                            android:id="@+id/list_wpp"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="11sp"
+                            tools:text="2.26.33.74" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- WhatsApp Business Card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:layout_weight="1"
+                    app:cardBackgroundColor="@color/card_bg"
+                    app:cardCornerRadius="16dp"
+                    app:cardElevation="0dp"
+                    app:strokeColor="@color/card_border"
+                    app:strokeWidth="1.2dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="14dp">
+
+                        <RelativeLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="WhatsApp Bisnis"
+                                android:textColor="@color/text_primary"
+                                android:textSize="13sp"
+                                android:textStyle="bold" />
+
+                            <ImageView
+                                android:layout_width="16dp"
+                                android:layout_height="16dp"
+                                android:layout_alignParentEnd="true"
+                                android:src="@drawable/ic_check_circle"
+                                app:tint="@color/whatsapp_teal"
+                                tools:ignore="ContentDescription" />
+                        </RelativeLayout>
+
+                        <TextView
+                            android:id="@+id/list_business"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="11sp"
+                            tools:text="2.26.33.74" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+
+            <!-- =========================================================
+                 5. CADANGAN & PENGATURAN SECTION
+            ========================================================== -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp"
+                android:fontFamily="sans-serif-medium"
+                android:letterSpacing="0.08"
+                android:paddingStart="4dp"
+                android:text="CADANGAN PENGATURAN"
+                android:textColor="@color/text_secondary"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:cardBackgroundColor="@color/card_bg"
+                app:cardCornerRadius="18dp"
+                app:cardElevation="0dp"
+                app:strokeColor="@color/card_border"
+                app:strokeWidth="1.2dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="14dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/importBtn"
+                            style="@style/ModernButton.Outlined"
+                            android:layout_width="0dp"
+                            android:layout_height="44dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:text="@string/import_settings"
+                            android:textSize="12sp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/exportBtn"
+                            style="@style/ModernButton"
+                            android:layout_width="0dp"
+                            android:layout_height="44dp"
+                            android:layout_marginStart="6dp"
+                            android:layout_weight="1"
+                            android:text="@string/export_settings"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/resetBtn"
+                        style="@style/ModernButton.Outlined"
+                        android:layout_width="match_parent"
+                        android:layout_height="44dp"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/reset_settings"
+                        android:textColor="?colorError"
+                        android:textSize="12sp"
+                        app:strokeColor="?colorError" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- =========================================================
+                 6. DIAGNOSTIK SECTION
+            ========================================================== -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/diag_card"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="24dp"
+                app:cardBackgroundColor="@color/card_bg"
+                app:cardCornerRadius="18dp"
+                app:cardElevation="0dp"
+                app:strokeColor="@color/card_border"
+                app:strokeWidth="1.2dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="sans-serif-medium"
+                        android:text="@string/diag_title"
+                        android:textColor="@color/text_primary"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:gravity="center"
+                        android:text="@string/diag_summary"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11.5sp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/diagBtn"
+                        style="@style/ModernButton.Outlined"
+                        android:layout_width="match_parent"
+                        android:layout_height="44dp"
+                        android:layout_marginTop="12dp"
+                        android:text="@string/diag_button"
+                        android:textSize="12.5sp"
+                        app:icon="@drawable/ic_round_bug_report_24"
+                        app:iconGravity="textStart" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+        </LinearLayout>
+    </rikka.widget.borderview.BorderNestedScrollView>
+
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

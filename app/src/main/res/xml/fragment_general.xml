@@ -4,17 +4,20 @@
     <Preference
         app:fragment="com.wmods.wppenhacer.ui.fragments.GeneralFragment$HomeGeneralPreference"
         app:iconSpaceReserved="false"
-        app:title="@string/general" />
+        app:title="@string/general"
+        app:widgetLayout="@layout/preference_widget_chevron" />
 
     <Preference
         app:fragment="com.wmods.wppenhacer.ui.fragments.GeneralFragment$HomeScreenGeneralPreference"
         app:iconSpaceReserved="false"
-        app:title="@string/home_screen" />
+        app:title="@string/home_screen"
+        app:widgetLayout="@layout/preference_widget_chevron" />
 
     <Preference
         app:fragment="com.wmods.wppenhacer.ui.fragments.GeneralFragment$ConversationGeneralPreference"
         app:iconSpaceReserved="false"
-        app:title="@string/conversation" />
+        app:title="@string/conversation"
+        app:widgetLayout="@layout/preference_widget_chevron" />
 
     <PreferenceCategory
         app:iconSpaceReserved="false"

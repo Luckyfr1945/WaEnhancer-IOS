@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -31,7 +32,9 @@ import com.wmods.wppenhacer.R;
 import com.wmods.wppenhacer.activities.MainActivity;
 import com.wmods.wppenhacer.adapter.LogLineAdapter;
 import com.wmods.wppenhacer.databinding.DialogDiagnosticsLogBinding;
+import com.wmods.wppenhacer.databinding.DialogUpdateAvailableBinding;
 import com.wmods.wppenhacer.databinding.FragmentHomeBinding;
+import io.noties.markwon.Markwon;
 import com.wmods.wppenhacer.ui.fragments.base.BaseFragment;
 import com.wmods.wppenhacer.utils.FilePicker;
 import com.wmods.wppenhacer.utils.RootDiagnostics;
@@ -41,8 +44,6 @@ import com.wmods.wppenhacer.xposed.utils.Utils;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
-
-import java.net.UnknownHostException;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -55,7 +56,6 @@ import java.util.concurrent.TimeUnit;
 
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
-
 import rikka.core.util.IOUtils;
 
 public class HomeFragment extends BaseFragment {
@@ -120,53 +120,29 @@ public class HomeFragment extends BaseFragment {
             resetConfigs(this.getContext());
         });
 
-        binding.updateCard.setOnClickListener(view -> {
-            animateClick(view);
-            Utils.openLink(requireActivity(), "https://t.me/waenhancher");
-        });
-
         binding.diagBtn.setOnClickListener(view -> {
             animateClick(view);
             showDiagnosticsDialog();
         });
 
-        checkForUpdates();
+        binding.status.setOnClickListener(view -> {
+            animateClick(view);
+            showChangelogDialog();
+        });
 
-        startCardAnimations();
+        binding.updateCard.setOnClickListener(view -> {
+            animateClick(view);
+            showChangelogDialog();
+        });
+
+        var prefs = PreferenceManager.getDefaultSharedPreferences(requireContext());
+        if (prefs.getBoolean("update_check", true)) {
+            checkForUpdates();
+        } else {
+            binding.updateCard.setVisibility(View.GONE);
+        }
 
         return binding.getRoot();
-    }
-
-    private void startCardAnimations() {
-        var context = getContext();
-        if (context == null) return;
-        var slideUp = AnimationUtils.loadAnimation(context, R.anim.slide_up);
-        var fadeIn = AnimationUtils.loadAnimation(context, R.anim.fade_in);
-
-        binding.status.startAnimation(slideUp);
-
-        binding.status2.postDelayed(() -> {
-            if (!isAdded() || binding == null) return;
-            var anim = AnimationUtils.loadAnimation(requireContext(), R.anim.slide_up);
-            binding.status2.startAnimation(anim);
-        }, 100);
-
-        binding.status3.postDelayed(() -> {
-            if (!isAdded() || binding == null) return;
-            var anim = AnimationUtils.loadAnimation(requireContext(), R.anim.slide_up);
-            binding.status3.startAnimation(anim);
-        }, 200);
-
-        binding.infoCard.postDelayed(() -> {
-            if (!isAdded() || binding == null) return;
-            binding.infoCard.startAnimation(fadeIn);
-        }, 300);
-
-        binding.updateCard.postDelayed(() -> {
-            if (!isAdded() || binding == null) return;
-            var anim = AnimationUtils.loadAnimation(requireContext(), R.anim.slide_up);
-            binding.updateCard.startAnimation(anim);
-        }, 400);
     }
 
     private void animateClick(View view) {
@@ -183,37 +159,28 @@ public class HomeFragment extends BaseFragment {
     @SuppressLint("StringFormatInvalid")
     private void receiverBroadcastBusiness(Context context, Intent intent) {
         if (App.isOriginalPackage()) binding.status3.setVisibility(View.VISIBLE);
-        binding.statusTitle3.setText(R.string.business_in_background);
+        binding.statusTitle3.setText("WhatsApp Business Background");
         var version = intent.getStringExtra("VERSION");
-        var supported_list = Arrays.asList(context.getResources().getStringArray(R.array.supported_versions_business));
-        if (version != null && supported_list.stream().anyMatch(s -> version.startsWith(s.replace(".xx", "")))) {
-            binding.statusSummary3.setText(getString(R.string.version_s, version));
-            binding.status3.getChildAt(0).setBackgroundResource(R.drawable.gradient_success);
-        } else {
-            binding.statusSummary3.setText(getString(R.string.version_s_not_listed, version));
-            binding.status3.getChildAt(0).setBackgroundResource(R.drawable.gradient_warning);
+        if (version != null) {
+            binding.statusSummary3.setText("Versi " + version);
+            binding.listBusiness.setText(version);
         }
         binding.rebootBtn2.setVisibility(View.VISIBLE);
         binding.statusSummary3.setVisibility(View.VISIBLE);
-        binding.statusIcon3.setImageResource(R.drawable.ic_round_check_circle_24);
+        binding.statusIcon3.setImageResource(R.drawable.ic_check_circle);
     }
 
     @SuppressLint("StringFormatInvalid")
     private void receiverBroadcastWpp(Context context, Intent intent) {
-        binding.statusTitle2.setText(R.string.whatsapp_in_background);
+        binding.statusTitle2.setText("WhatsApp Background");
         var version = intent.getStringExtra("VERSION");
-        var supported_list = Arrays.asList(context.getResources().getStringArray(R.array.supported_versions_wpp));
-
-        if (version != null && supported_list.stream().anyMatch(s -> version.startsWith(s.replace(".xx", "")))) {
-            binding.statusSummary1.setText(getString(R.string.version_s, version));
-            binding.status2.getChildAt(0).setBackgroundResource(R.drawable.gradient_success);
-        } else {
-            binding.statusSummary1.setText(getString(R.string.version_s_not_listed, version));
-            binding.status2.getChildAt(0).setBackgroundResource(R.drawable.gradient_warning);
+        if (version != null) {
+            binding.statusSummary1.setText("Versi " + version);
+            binding.listWpp.setText(version);
         }
         binding.rebootBtn.setVisibility(View.VISIBLE);
         binding.statusSummary1.setVisibility(View.VISIBLE);
-        binding.statusIcon2.setImageResource(R.drawable.ic_round_check_circle_24);
+        binding.statusIcon2.setImageResource(R.drawable.ic_check_circle);
     }
 
     private void resetConfigs(Context context) {
@@ -311,18 +278,28 @@ public class HomeFragment extends BaseFragment {
 
     @SuppressLint("StringFormatInvalid")
     private void checkStateWpp(FragmentActivity activity) {
+        // Automatically format dynamic version string: e.g. "1.5.7 (EFB7AAB0)" -> "1.5.7 · EFB7AAB0"
+        var formattedVersion = BuildConfig.VERSION_NAME.replace(" (", " · ").replace(")", "");
+        binding.heroVersionText.setText(formattedVersion);
 
         if (MainActivity.isXposedEnabled()) {
             binding.statusIcon.setImageResource(R.drawable.ic_round_check_circle_24);
             binding.statusTitle.setText(R.string.module_enabled);
-            binding.statusSummary.setText(String.format(getString(R.string.version_s), BuildConfig.VERSION_NAME));
-            binding.status.getChildAt(0).setBackgroundResource(R.drawable.gradient_success);
+            binding.statusSummary.setText("Hook LSPosed berhasil dimuat");
+            binding.heroBgImage.setImageResource(R.drawable.hero_active);
+            binding.heroActiveBadge.setText("● ACTIVE");
+            binding.modSubtext.setText("Wa Enhancer " + BuildConfig.VERSION_NAME + " · Aktif");
+            binding.modActiveBadge.setText("ACTIVE");
         } else {
             binding.statusIcon.setImageResource(R.drawable.ic_round_error_outline_24);
             binding.statusTitle.setText(R.string.module_disabled);
-            binding.status.getChildAt(0).setBackgroundResource(R.drawable.gradient_error);
-            binding.statusSummary.setVisibility(View.GONE);
+            binding.statusSummary.setText("Modul belum diaktifkan di LSPosed");
+            binding.heroBgImage.setImageResource(R.drawable.hero_inactive);
+            binding.heroActiveBadge.setText("● INACTIVE");
+            binding.modSubtext.setText("Wa Enhancer " + BuildConfig.VERSION_NAME + " · Tidak Aktif");
+            binding.modActiveBadge.setText("INACTIVE");
         }
+
         if (isInstalled(FeatureLoader.PACKAGE_WPP) && App.isOriginalPackage()) {
             disableWpp(activity);
         } else {
@@ -330,17 +307,28 @@ public class HomeFragment extends BaseFragment {
         }
         if (App.isOriginalPackage())
             binding.status3.setVisibility(View.GONE);
+
         checkWpp(activity);
+
+        // Auto-detect Device Hardware & Android OS level
         binding.deviceName.setText(Build.MANUFACTURER);
         binding.sdk.setText(String.valueOf(Build.VERSION.SDK_INT));
-        binding.modelName.setText(Build.DEVICE);
-        if (App.isOriginalPackage()) {
-            binding.listWpp.setText(Arrays.toString(activity.getResources().getStringArray(R.array.supported_versions_wpp)));
-        } else {
-            binding.listWppTitle.setVisibility(View.GONE);
-            binding.listWpp.setVisibility(View.GONE);
+        binding.modelName.setText(Build.MODEL != null ? Build.MODEL : Build.DEVICE);
+
+        // Auto-detect installed WhatsApp versions
+        try {
+            var pInfo = App.instance.getPackageManager().getPackageInfo(FeatureLoader.PACKAGE_WPP, 0);
+            binding.listWpp.setText(pInfo.versionName);
+        } catch (PackageManager.NameNotFoundException e) {
+            binding.listWpp.setText("Tidak Terpasang");
         }
-        binding.listBusiness.setText(Arrays.toString(activity.getResources().getStringArray(R.array.supported_versions_business)));
+
+        try {
+            var pInfoBiz = App.instance.getPackageManager().getPackageInfo(FeatureLoader.PACKAGE_BUSINESS, 0);
+            binding.listBusiness.setText(pInfoBiz.versionName);
+        } catch (PackageManager.NameNotFoundException e) {
+            binding.listBusiness.setText("Tidak Terpasang");
+        }
     }
 
     private boolean isInstalled(String packageWpp) {
@@ -354,17 +342,15 @@ public class HomeFragment extends BaseFragment {
 
     private void disableBusiness(FragmentActivity activity) {
         binding.statusIcon3.setImageResource(R.drawable.ic_round_error_outline_24);
-        binding.statusTitle3.setText(R.string.business_is_not_running_or_has_not_been_activated_in_lsposed);
-        binding.status3.getChildAt(0).setBackgroundResource(R.drawable.gradient_error);
-        binding.statusSummary3.setVisibility(View.GONE);
+        binding.statusTitle3.setText("WhatsApp Business (Nonaktif)");
+        binding.statusSummary3.setText(R.string.business_is_not_running_or_has_not_been_activated_in_lsposed);
         binding.rebootBtn2.setVisibility(View.GONE);
     }
 
     private void disableWpp(FragmentActivity activity) {
         binding.statusIcon2.setImageResource(R.drawable.ic_round_error_outline_24);
-        binding.statusTitle2.setText(R.string.whatsapp_is_not_running_or_has_not_been_activated_in_lsposed);
-        binding.status2.getChildAt(0).setBackgroundResource(R.drawable.gradient_error);
-        binding.statusSummary1.setVisibility(View.GONE);
+        binding.statusTitle2.setText("WhatsApp (Nonaktif)");
+        binding.statusSummary1.setText(R.string.whatsapp_is_not_running_or_has_not_been_activated_in_lsposed);
         binding.rebootBtn.setVisibility(View.GONE);
     }
 
@@ -397,7 +383,6 @@ public class HomeFragment extends BaseFragment {
                     }
 
                     var body = response.body();
-
                     var content = body.string();
                     var release = new JSONObject(content);
                     var tagName = release.optString("tag_name", "");
@@ -412,8 +397,6 @@ public class HomeFragment extends BaseFragment {
 
                     updateCardState(true, !isNewVersion, tagName);
                 }
-            } catch (UnknownHostException e) {
-                updateCardState(false, false, null);
             } catch (Exception e) {
                 updateCardState(false, false, null);
             }
@@ -431,17 +414,19 @@ public class HomeFragment extends BaseFragment {
                 binding.updateIcon.setImageResource(R.drawable.ic_round_error_outline_24);
                 binding.updateTitle.setText(R.string.update_check_failed);
                 binding.updateSummary.setText(R.string.update_check_failed_summary);
-                binding.updateCard.getChildAt(0).setBackgroundResource(R.drawable.gradient_warning);
+                binding.updateBadge.setVisibility(View.GONE);
             } else if (isUpToDate) {
                 binding.updateIcon.setImageResource(R.drawable.ic_round_check_circle_24);
                 binding.updateTitle.setText(R.string.up_to_date);
                 binding.updateSummary.setText(getString(R.string.current_version_s, BuildConfig.VERSION_NAME));
-                binding.updateCard.getChildAt(0).setBackgroundResource(R.drawable.gradient_success);
+                binding.updateBadge.setText("UP TO DATE");
+                binding.updateBadge.setVisibility(View.VISIBLE);
             } else {
                 binding.updateIcon.setImageResource(R.drawable.ic_round_update_24);
                 binding.updateTitle.setText(R.string.update_available);
                 binding.updateSummary.setText(getString(R.string.update_available_summary, newVersion));
-                binding.updateCard.getChildAt(0).setBackgroundResource(R.drawable.gradient_update);
+                binding.updateBadge.setText("UPDATE");
+                binding.updateBadge.setVisibility(View.VISIBLE);
             }
         });
     }
@@ -488,6 +473,61 @@ public class HomeFragment extends BaseFragment {
             }
         };
         handler.postDelayed(poller, 120);
+    }
+
+    private void showChangelogDialog() {
+        var context = requireContext();
+        var dialogBinding = DialogUpdateAvailableBinding.inflate(LayoutInflater.from(context));
+
+        dialogBinding.tvUpdateTitle.setText("Catatan Rilis Modul");
+        dialogBinding.tvUpdateSubtitle.setText("Versi 1.5.7 · " + BuildConfig.VERSION_NAME);
+        dialogBinding.tvVersionBadge.setText(BuildConfig.VERSION_NAME);
+        dialogBinding.tvReleaseDate.setText(new SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(new Date()));
+
+        String changelogText = """
+                ### [ADDED]
+
+                • **iOS Green Plus (+) Header Button:** Added green plus action button to Communities, Calls, and Status tabs matching iOS header style in Chats.
+                • **Language-Independent Tab Detection:** Hooked ViewPager page selection with WhatsApp internal numeric Tab IDs (200 Chats, 300 Status, 400 Calls, 600 Communities, 700 Settings), supporting 100% of device languages and locales.
+                • **Toolbar Tab Title Badge Stripping:** Automatically cleans unread counter badges (e.g. '(12)') from tab titles for clean header rendering.
+                • **Direct SQLite Database Queries:** Added fast background SQLite queries to chatsettings.db and msgstore.db for accurate Pinned, Muted, and Unread counts on iOS Swipe Menu.
+
+                ### [IMPROVED]
+
+                • **Dynamic Header Plus Action:** Improved click handler to dynamically trigger primary creation actions (New Chat, New Call, New Status, New Community) across all main tabs.
+                • **Header Tab Visibility:** Improved top bar action button manager to display green plus button on all main content tabs while hiding it on Settings tab.
+                • **Unified Toolbar Layout & PreDraw Performance:** Consolidated multiple pre-draw passes into a single unified OnPreDrawListener with translation caching to prevent frame jank.
+                • **Toolbar Lifecycle Resilience:** Added View.OnAttachStateChangeListener to safely re-register OnPreDrawListener across fragment detach and re-attach cycles.
+                • **iOS Header Action Buttons Layout:** Cleaned up action buttons with transparent borderless ripple and precise right edge alignment.
+                • **Tag Collision Prevention:** Re-assigned unique tag keys across views to eliminate tag ID collisions.
+                • **Comprehensive Defensive Logging:** Replaced silent try-catch blocks across IosHeader and IosSwipeMenu with zero-overhead logDebug for debugging.
+                • **Action Menu Retry & Diagnostics:** Added retry timeout budget logging in IosSwipeMenu and item matching failure diagnostics in silentToolbarAction.
+                • **Clean Code Refactoring:** Removed dead code and unused legacy helpers (ProfileInfo, checkProfileCardInRv, findSettingsRecyclerView).
+                • **Removed Duplicate Preference:** Removed duplicate 'Gaya Kolom Chat iOS' (ios_text_entry) preference toggle from Customization settings menu.
+
+                ### [FIXED]
+
+                • **Fixed missing green plus button** in Communities, Calls, and Status header tabs.
+                • **Fixed Communities tab green plus button** triggering existing community group profile popups instead of opening New Community creation flow.
+                • **Fixed awkward spacing and padding** on Restart and action buttons in iOS header.
+                • **Fixed missing user profile name title** in toolbar when scrolling down on Settings/Anda tab.
+                • **Fixed SQLite Database Path Bug:** Corrected dbParent path to point directly to app data directory, enabling SQLite queries to find chatsettings.db and msgstore.db.
+                • **Fixed Navigation Icon and Action Buttons Disappearing:** Re-injected ensureNavigationIcon and container persistence across all tab transitions to prevent three-dot icon and action buttons from disappearing.
+                • **Fixed Tab Reset on Empty Title:** Prevented toolbar from blindly resetting active tab to 'Chats' when title is empty by reading persisted active tab tag.
+                • **Fixed False-Positive Tab Matching:** Replaced loose substring matching with exact matching and numeric ID verification.""";
+
+        var markwon = Markwon.create(context);
+        dialogBinding.tvChangelog.setText(markwon.toMarkdown(changelogText));
+
+        dialogBinding.btnIgnore.setVisibility(View.GONE);
+        dialogBinding.btnUpdate.setText("Tutup");
+
+        var dialog = new MaterialAlertDialogBuilder(context)
+                .setView(dialogBinding.getRoot())
+                .setCancelable(true)
+                .show();
+
+        dialogBinding.btnUpdate.setOnClickListener(v -> dialog.dismiss());
     }
 
     @Override

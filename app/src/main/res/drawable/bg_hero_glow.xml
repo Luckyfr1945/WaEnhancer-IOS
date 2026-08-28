@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:type="radial"
+        android:gradientRadius="180dp"
+        android:centerX="1.0"
+        android:centerY="0.0"
+        android:startColor="@color/hero_glow_start"
+        android:endColor="@android:color/transparent" />
+    <corners android:radius="22dp" />
+</shape>

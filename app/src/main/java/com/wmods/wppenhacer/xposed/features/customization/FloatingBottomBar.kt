@@ -322,7 +322,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             val stepDx = ev.x - state.lastDragX
                             state.lastDragX = ev.x
 
-                            if (!state.isDragging && abs(dx) > Utils.dipToPixels(4f)) {
+                            if (!state.isDragging && abs(dx) > Utils.dipToPixels(12f)) {
                                 state.isDragging = true
                                 state.isScrubbing = true
                                 try {
@@ -526,11 +526,21 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                         override fun afterHookedMethod(param: MethodHookParam) {
                             val view = param.thisObject as? View ?: return
                             if (!isBarOrChild(view)) return
-                            // Always suppress native indicator, regardless of argument type
                             disableNativeActiveIndicator(view)
-                            cancelNativeAnimatorsOnly(view)
                             val isNowSelected = param.args.getOrNull(0) as? Boolean ?: return
                             if (isNowSelected) {
+                                val rank = getTabRank(view)
+                                val tabTitle = when (rank) {
+                                    1 -> "Updates"
+                                    2 -> "Calls"
+                                    3 -> "Communities"
+                                    4 -> "Chats"
+                                    5 -> "Settings"
+                                    else -> null
+                                }
+                                if (tabTitle != null) {
+                                    IosHeader.updateTabFromBottomBar(tabTitle)
+                                }
                                 for ((bar, state) in barStates) {
                                     val items = state.items
                                     val idx = items.indexOf(view)
@@ -538,20 +548,12 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                                         state.checkedViewRef = java.lang.ref.WeakReference(view)
                                         if (idx != state.selectedIndex) {
                                             state.selectedIndex = idx
-                                            view.post { animateToItem(bar, state, items, idx) }
+                                            animateToItem(bar, state, items, idx)
                                         }
                                         break
                                     }
                                 }
                             }
-                        }
-                    })
-                    XposedBridge.hookAllMethods(itemClass, "refreshDrawableState", object : XC_MethodHook() {
-                        override fun afterHookedMethod(param: MethodHookParam) {
-                            val view = param.thisObject as? View ?: return
-                            if (!isBarOrChild(view)) return
-                            disableNativeActiveIndicator(view)
-                            cancelNativeAnimatorsOnly(view)
                         }
                     })
                     XposedBridge.hookAllMethods(itemClass, "getActiveIndicatorDrawable", object : XC_MethodHook() {
@@ -566,7 +568,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             val view = param.thisObject as? View ?: return
                             if (!isBarOrChild(view)) return
                             disableNativeActiveIndicator(view)
-                            cancelNativeAnimatorsOnly(view)
                             param.result = null
                         }
                     })
@@ -1285,6 +1286,21 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
 
         val selected = getTrueSelectedIndex(items, state)
         if (selected < 0) return
+
+        if (selected in items.indices) {
+            val rank = getTabRank(items[selected])
+            val tabTitle = when (rank) {
+                1 -> "Updates"
+                2 -> "Calls"
+                3 -> "Communities"
+                4 -> "Chats"
+                5 -> "Settings"
+                else -> null
+            }
+            if (tabTitle != null) {
+                IosHeader.updateTabFromBottomBar(tabTitle)
+            }
+        }
         
         if (items[selected].width <= 0) return
 
@@ -1368,6 +1384,10 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
 
     /** Disables native Material 3 / WhatsApp active indicator on item. */
     private fun disableNativeActiveIndicator(item: View) {
+        val TAG_DISABLED = 0x7E110099
+        if (item.getTag(TAG_DISABLED) == true) return
+        item.setTag(TAG_DISABLED, true)
+
         try {
             val indView = XposedHelpers.getObjectField(item, "A0P") as? View
             indView?.let { v ->

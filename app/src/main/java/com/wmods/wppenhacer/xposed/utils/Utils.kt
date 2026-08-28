@@ -428,11 +428,7 @@ object Utils {
     }
 
     @JvmStatic
-    private var cachedAvatarDrawable: Drawable? = null
-    @JvmStatic
-    private var cachedAvatarMtime: Long = -1L
-    @JvmStatic
-    private var cachedAvatarSizeDp: Int = -1
+    private val avatarCache = java.util.concurrent.ConcurrentHashMap<Int, Pair<Long, Drawable>>()
 
     @JvmStatic
     fun getUserProfileAvatar(context: Context, sizeDp: Int = 26): Drawable? {
@@ -443,18 +439,17 @@ object Utils {
                 File("/data/user/0/com.whatsapp/files/me.jpg")
             )
             val file = paths.firstOrNull { it.exists() && it.length() > 0 } ?: run {
-                cachedAvatarDrawable = null
-                cachedAvatarMtime = -1L
-                cachedAvatarSizeDp = -1
+                avatarCache.clear()
                 return null
             }
 
             val mtime = file.lastModified()
-            if (cachedAvatarDrawable != null && mtime == cachedAvatarMtime && sizeDp == cachedAvatarSizeDp) {
-                return cachedAvatarDrawable
+            val cached = avatarCache[sizeDp]
+            if (cached != null && cached.first == mtime) {
+                return cached.second
             }
 
-            val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return cachedAvatarDrawable
+            val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return cached?.second
             val density = context.resources.displayMetrics.density
             val sizePx = (sizeDp * density).toInt().coerceAtLeast(1)
             val scaled = Bitmap.createScaledBitmap(bitmap, sizePx, sizePx, true)
@@ -465,14 +460,10 @@ object Utils {
                 isCircular = true
             }
             val drawable = UntintedAvatarDrawable(rounded)
-            if (sizeDp == 26) {
-                cachedAvatarDrawable = drawable
-                cachedAvatarMtime = mtime
-                cachedAvatarSizeDp = sizeDp
-            }
+            avatarCache[sizeDp] = Pair(mtime, drawable)
             return drawable
         } catch (_: Throwable) {}
-        return cachedAvatarDrawable
+        return avatarCache[sizeDp]?.second
     }
 
     class UntintedAvatarDrawable(

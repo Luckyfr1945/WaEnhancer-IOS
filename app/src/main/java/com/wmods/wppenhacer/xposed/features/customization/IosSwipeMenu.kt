@@ -27,6 +27,11 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
         private val INT_COLOR_MORE_DARK = Color.parseColor("#5A5A5F")
         private val INT_COLOR_ARCHIVE = Color.parseColor("#4CAF50")
         private val INT_COLOR_UNARCHIVE = Color.parseColor("#007AFF")
+
+        private const val DELAY_ACTION_RETRY_MS = 60L
+        private const val DELAY_FIRST_ACTION_MS = 100L
+        // Delay (4000ms) to allow WhatsApp native chat lock confirmation/biometrics to conclude before dismissing selection
+        private const val DELAY_CHAT_LOCK_DISMISS_MS = 4000L
         
         var currentInstance: IosSwipeMenu? = null
         
@@ -241,13 +246,25 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
         return null
     }
 
-    private fun getChatState(row: View): Triple<Boolean, Boolean, Boolean> {
+    private data class ChatRowSnapshot(
+        val jid: String?,
+        val isArchived: Boolean,
+        var isPinned: Boolean,
+        var isMuted: Boolean,
+        var isUnread: Boolean,
+        val dbParentDir: java.io.File?
+    )
+
+    private fun extractChatSnapshotFromRow(row: View): ChatRowSnapshot {
         val jid = getJidStr(row)
         val now = android.os.SystemClock.elapsedRealtime()
+        val isArchived = isInArchivedView(row)
+
         if (jid != null) {
             chatStateCache[jid]?.let { cached ->
                 if (now - cached.timestamp < 1500L) {
-                    return Triple(cached.isPinned, cached.isMuted, cached.isUnread)
+                    val dbParent = try { row.context.filesDir?.parentFile?.parentFile } catch (_: Throwable) { null }
+                    return ChatRowSnapshot(jid, isArchived, cached.isPinned, cached.isMuted, cached.isUnread, dbParent)
                 }
             }
         }
@@ -256,13 +273,13 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
         var isMuted = false
         var isUnread = false
 
-        // 1. Cek accessibility contentDescription pada row dan child-nya (fast memory check)
+        // 1. Cek accessibility contentDescription pada row dan child-nya (UI thread)
         val rowDesc = row.contentDescription?.toString()?.lowercase() ?: ""
         if (rowDesc.contains("belum dibaca") || rowDesc.contains("unread") || rowDesc.contains("tidak dibaca")) {
             isUnread = true
         }
 
-        // 2. Cek indikator UI langsung di row (badge angka, dot hijau, pin, mute)
+        // 2. Cek indikator UI langsung di row (UI thread)
         try {
             val context = row.context
             val res = context.resources
@@ -285,58 +302,7 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
             }
         } catch (_: Exception) {}
 
-        // 3. Cek SQLite (chatsettings.db & msgstore.db) jika JID ada
-        if (jid != null) {
-            val contextFallback = row.context
-
-            try {
-                val dbFile = java.io.File(contextFallback.filesDir?.parentFile?.parentFile, "databases/chatsettings.db")
-                if (dbFile.exists()) {
-                    android.database.sqlite.SQLiteDatabase.openDatabase(
-                        dbFile.absolutePath, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY
-                    ).use { db ->
-                        db.rawQuery("SELECT pinned, mute_end, muted_notifications FROM settings WHERE jid = ?", arrayOf(jid)).use { c ->
-                            if (c.moveToFirst()) {
-                                if (!isPinned) isPinned = c.getInt(0) == 1 || c.getLong(0) > 0
-                                if (!isMuted) {
-                                    val muteEnd = c.getLong(1)
-                                    val mutedNotif = c.getInt(2) == 1
-                                    isMuted = mutedNotif || (muteEnd != 0L && (muteEnd == -1L || muteEnd > System.currentTimeMillis()))
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch (_: Throwable) {}
-
-            try {
-                val msgStorePath = java.io.File(contextFallback.filesDir?.parentFile?.parentFile, "databases/msgstore.db")
-                if (msgStorePath.exists()) {
-                    android.database.sqlite.SQLiteDatabase.openDatabase(
-                        msgStorePath.absolutePath, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY
-                    ).use { db ->
-                        val cleanUser = jid.substringBefore("@").substringBefore(":")
-                        db.rawQuery(
-                            "SELECT c.unseen_message_count, c.marked_unread, c.unseen_row_count " +
-                            "FROM chat c JOIN jid j ON c.jid_row_id = j._id " +
-                            "WHERE j.raw_string = ? OR j.raw_string LIKE ? OR j.user = ?",
-                            arrayOf(jid, "%$cleanUser%", cleanUser)
-                        ).use { c ->
-                            if (c.moveToFirst()) {
-                                val count = c.getInt(0)
-                                val marked = if (c.columnCount > 1) c.getInt(1) else 0
-                                val unseenRows = if (c.columnCount > 2) c.getInt(2) else 0
-                                if (count != 0 || marked == 1 || unseenRows > 0) {
-                                    isUnread = true
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch (_: Throwable) {}
-        }
-
-        // 4. Fallback: Cek dari Objek Percakapan (Conversation Object via Reflection) jika masih ada field yang belum terdeteksi
+        // 3. Fallback: Cek dari Objek Percakapan via Reflection (UI thread)
         if (!isPinned || !isMuted || !isUnread) {
             val conversationObj = try {
                 val pos = row.getTag(TAG_KEY_POSITION) as? Int
@@ -355,14 +321,75 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
             }
         }
 
-        if (jid != null) {
-            if (chatStateCache.size > 256) {
-                chatStateCache.entries.removeIf { now - it.value.timestamp >= 1500L }
+        val dbParent = try { row.context.filesDir?.parentFile } catch (e: Throwable) {
+            logDebug("IosSwipeMenu: get dbParent failed: ${e.message}", e)
+            null
+        }
+        return ChatRowSnapshot(jid, isArchived, isPinned, isMuted, isUnread, dbParent)
+    }
+
+    private fun queryChatDatabases(snapshot: ChatRowSnapshot) {
+        val jid = snapshot.jid ?: return
+        val dbParent = snapshot.dbParentDir ?: return
+        try {
+            val dbFile = java.io.File(dbParent, "databases/chatsettings.db")
+            if (dbFile.exists()) {
+                android.database.sqlite.SQLiteDatabase.openDatabase(
+                    dbFile.absolutePath, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY
+                ).use { db ->
+                    db.rawQuery("SELECT pinned, mute_end, muted_notifications FROM settings WHERE jid = ?", arrayOf(jid)).use { c ->
+                        if (c.moveToFirst()) {
+                            if (!snapshot.isPinned) snapshot.isPinned = c.getInt(0) == 1 || c.getLong(0) > 0
+                            if (!snapshot.isMuted) {
+                                val muteEnd = c.getLong(1)
+                                val mutedNotif = c.getInt(2) == 1
+                                snapshot.isMuted = mutedNotif || (muteEnd != 0L && (muteEnd == -1L || muteEnd > System.currentTimeMillis()))
+                            }
+                        }
+                    }
+                }
+            } else {
+                logDebug("IosSwipeMenu: chatsettings.db not found at ${dbFile.absolutePath}")
             }
-            chatStateCache[jid] = CachedChatState(isPinned, isMuted, isUnread, now)
+        } catch (e: Throwable) {
+            logDebug("IosSwipeMenu: query chatsettings.db error: ${e.message}", e)
         }
 
-        return Triple(isPinned, isMuted, isUnread)
+        try {
+            val msgStorePath = java.io.File(dbParent, "databases/msgstore.db")
+            if (msgStorePath.exists()) {
+                android.database.sqlite.SQLiteDatabase.openDatabase(
+                    msgStorePath.absolutePath, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY
+                ).use { db ->
+                    val cleanUser = jid.substringBefore("@").substringBefore(":")
+                    db.rawQuery(
+                        "SELECT c.unseen_message_count, c.marked_unread, c.unseen_row_count " +
+                        "FROM chat c JOIN jid j ON c.jid_row_id = j._id " +
+                        "WHERE j.raw_string = ? OR j.raw_string LIKE ? OR j.user = ?",
+                        arrayOf(jid, "%$cleanUser%", cleanUser)
+                    ).use { c ->
+                        if (c.moveToFirst()) {
+                            val count = c.getInt(0)
+                            val marked = if (c.columnCount > 1) c.getInt(1) else 0
+                            val unseenRows = if (c.columnCount > 2) c.getInt(2) else 0
+                            if (count != 0 || marked == 1 || unseenRows > 0) {
+                                snapshot.isUnread = true
+                            }
+                        }
+                    }
+                }
+            } else {
+                logDebug("IosSwipeMenu: msgstore.db not found at ${msgStorePath.absolutePath}")
+            }
+        } catch (e: Throwable) {
+            logDebug("IosSwipeMenu: query msgstore.db error: ${e.message}", e)
+        }
+
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (chatStateCache.size > 256) {
+            chatStateCache.entries.removeIf { now - it.value.timestamp >= 1500L }
+        }
+        chatStateCache[jid] = CachedChatState(snapshot.isPinned, snapshot.isMuted, snapshot.isUnread, now)
     }
 
     private fun checkUnreadInViewHierarchy(view: View): Boolean {
@@ -455,35 +482,38 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
         val context = row.context
         val activity = findActivity(context) ?: return
 
+        // 1. Snapshot all View/UI state synchronously on the UI thread
+        val snapshot = extractChatSnapshotFromRow(row)
+
+        // 2. Offload purely database I/O to background thread
         bgExecutor.execute {
             try {
-                val isArchived = isInArchivedView(row)
-                val (isPinned, isMuted, isUnread) = getChatState(row)
+                queryChatDatabases(snapshot)
 
-                val labelInfo = getLocalizedMenuLabel("info")
-                val labelMute = getLocalizedMenuLabel("mute", isMuted)
-                val labelRead = getLocalizedMenuLabel("read", isUnread)
-                val labelDelete = getLocalizedMenuLabel("delete")
+                val labelInfo = getLocalizedMenuLabel("info", ctx = context)
+                val labelMute = getLocalizedMenuLabel("mute", snapshot.isMuted, ctx = context)
+                val labelRead = getLocalizedMenuLabel("read", snapshot.isUnread, ctx = context)
+                val labelDelete = getLocalizedMenuLabel("delete", ctx = context)
 
-                val menuItems = if (isArchived) {
+                val menuItems = if (snapshot.isArchived) {
                     // Menu ringkas dan relevan khusus di dalam layar Arsip
                     listOf(
                         labelInfo to { executeDirectAction(row, "info") },
-                        labelMute to { executeDirectAction(row, if (isMuted) "unmute" else "mute") },
-                        labelRead to { executeDirectAction(row, if (isUnread) "read" else "unread") },
+                        labelMute to { executeDirectAction(row, if (snapshot.isMuted) "unmute" else "mute") },
+                        labelRead to { executeDirectAction(row, if (snapshot.isUnread) "read" else "unread") },
                         labelDelete to { executeDirectAction(row, "delete") }
                     )
                 } else {
-                    val labelPin = getLocalizedMenuLabel("pin", isPinned)
-                    val labelShortcut = getLocalizedMenuLabel("shortcut")
-                    val labelLock = getLocalizedMenuLabel("lock")
-                    val labelSelect = getLocalizedMenuLabel("select")
+                    val labelPin = getLocalizedMenuLabel("pin", snapshot.isPinned, ctx = context)
+                    val labelShortcut = getLocalizedMenuLabel("shortcut", ctx = context)
+                    val labelLock = getLocalizedMenuLabel("lock", ctx = context)
+                    val labelSelect = getLocalizedMenuLabel("select", ctx = context)
 
                     listOf(
                         labelInfo to { executeDirectAction(row, "info") },
-                        labelPin to { executeDirectAction(row, if (isPinned) "unpin" else "pin") },
-                        labelMute to { executeDirectAction(row, if (isMuted) "unmute" else "mute") },
-                        labelRead to { executeDirectAction(row, if (isUnread) "read" else "unread") },
+                        labelPin to { executeDirectAction(row, if (snapshot.isPinned) "unpin" else "pin") },
+                        labelMute to { executeDirectAction(row, if (snapshot.isMuted) "unmute" else "mute") },
+                        labelRead to { executeDirectAction(row, if (snapshot.isUnread) "read" else "unread") },
                         labelShortcut to { executeDirectAction(row, "shortcut") },
                         labelLock to { executeDirectAction(row, "lock") },
                         labelSelect to { triggerProgrammaticLongClick(row) },
@@ -603,9 +633,9 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
                 background = createRoundedBackground(blockBgColor, Utils.dipToPixels(18f).toFloat())
             }
 
-            val deleteLabel = getLocalizedMenuLabel("delete")
+            val deleteLabel = getLocalizedMenuLabel("delete", ctx = context)
             menuItems.forEachIndexed { index, (label, action) ->
-                val isDelete = label.equals("Delete Chat", ignoreCase = true) || label.equals(deleteLabel, ignoreCase = true)
+                val isDelete = label.equals(deleteLabel, ignoreCase = true)
 
                 val itemView = createMenuItem(label, isDelete, isDarkMode) {
                     action()
@@ -644,7 +674,7 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
                 background = createRoundedBackground(blockBgColor, Utils.dipToPixels(18f).toFloat())
             }
 
-            val labelCancel = getLocalizedMenuLabel("cancel")
+            val labelCancel = getLocalizedMenuLabel("cancel", ctx = context)
             val cancelBtn = createMenuItem(labelCancel, false, isDarkMode) { dismiss() }
             cancelBlock.addView(cancelBtn)
             menuContainer.addView(cancelBlock)
@@ -671,7 +701,7 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
                         setTextColor(Color.parseColor("#FF3B30"))
                         typeface = android.graphics.Typeface.DEFAULT
                     }
-                    label.equals("Cancel", ignoreCase = true) || label.equals(getLocalizedMenuLabel("cancel"), ignoreCase = true) -> {
+                    label.equals(getLocalizedMenuLabel("cancel", ctx = context), ignoreCase = true) -> {
                         setTextColor(if (isDarkMode) Color.WHITE else Color.parseColor("#007AFF"))
                         typeface = android.graphics.Typeface.create(
                             android.graphics.Typeface.DEFAULT,
@@ -716,8 +746,12 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
         }
     }
 
-    private fun getLocalizedMenuLabel(key: String, state: Boolean = false): String {
-        val lang = java.util.Locale.getDefault().language
+    private fun getLocalizedMenuLabel(key: String, state: Boolean = false, ctx: android.content.Context? = null): String {
+        val lang = if (ctx != null) {
+            ctx.resources.configuration.locales[0].language.lowercase()
+        } else {
+            java.util.Locale.getDefault().language.lowercase()
+        }
         return when (key) {
             "info" -> when (lang) {
                 "in", "id" -> "Info Kontak"
@@ -919,17 +953,21 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
                 if (success && jid != null) {
                     chatStateCache.remove(jid)
                 }
-                if (!success && attempt < 10) {
-                    row.postDelayed({ tryAction(attempt + 1) }, 60)
+                if (!success) {
+                    if (attempt < 10) {
+                        row.postDelayed({ tryAction(attempt + 1) }, DELAY_ACTION_RETRY_MS)
+                    } else {
+                        logDebug("IosSwipeMenu: executeDirectAction failed for action '$action' on jid '$jid' after 10 attempts")
+                    }
                 }
             }
-            row.postDelayed({ tryAction(0) }, 100)
+            row.postDelayed({ tryAction(0) }, DELAY_FIRST_ACTION_MS)
 
             if (action == "lock") {
                 row.postDelayed({
                     val activity = findActivity(row.context)
                     if (activity != null) dismissSelection(activity)
-                }, 4000)
+                }, DELAY_CHAT_LOCK_DISMISS_MS)
             }
         } catch (e: Exception) {
             logDebug("IosSwipeMenu: executeDirectAction error: ${e.message}")
@@ -1081,6 +1119,7 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
             }
         }
 
+        logDebug("IosSwipeMenu: silentToolbarAction failed to find/match menu item for action '$action'")
         return false
     }
 

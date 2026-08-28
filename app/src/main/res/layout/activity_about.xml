@@ -1,282 +1,295 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fitsSystemWindows="true">
-
-    <com.google.android.material.appbar.AppBarLayout
-        android:id="@+id/appbar"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:fitsSystemWindows="true"
-        app:elevation="0dp">
-
-        <com.google.android.material.appbar.CollapsingToolbarLayout
-            android:layout_width="match_parent"
-            android:layout_height="200dp"
-            android:fitsSystemWindows="true"
-            app:contentScrim="?attr/colorPrimary"
-            app:expandedTitleGravity="bottom|start"
-            app:expandedTitleMarginBottom="@dimen/spacing_medium"
-            app:expandedTitleMarginStart="@dimen/spacing_medium"
-            app:layout_scrollFlags="scroll|exitUntilCollapsed">
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:background="@drawable/gradient_primary"
-                android:fitsSystemWindows="true" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:gravity="center"
-                android:orientation="vertical"
-                android:padding="@dimen/spacing_large">
-
-                <com.google.android.material.card.MaterialCardView
-                    android:layout_width="80dp"
-                    android:layout_height="80dp"
-                    app:cardCornerRadius="@dimen/card_radius_medium"
-                    app:cardElevation="@dimen/card_elevation_medium"
-                    app:strokeWidth="0dp">
-
-                    <ImageView
-                        android:layout_width="match_parent"
-                        android:layout_height="match_parent"
-                        android:scaleType="centerCrop"
-                        android:src="@mipmap/launcher" />
-
-                </com.google.android.material.card.MaterialCardView>
-
-                <com.google.android.material.textview.MaterialTextView
-                    android:id="@+id/tvTitle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_medium"
-                    android:text="@string/app_name"
-                    android:textColor="@color/text_on_gradient"
-                    android:textSize="22sp"
-                    android:textStyle="bold" />
-
-                <com.google.android.material.textview.MaterialTextView
-                    android:id="@+id/tvDevName"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_xs"
-                    android:alpha="0.9"
-                    android:text="@string/developer"
-                    android:textColor="@color/text_on_gradient"
-                    android:textSize="14sp" />
-
-            </LinearLayout>
-
-        </com.google.android.material.appbar.CollapsingToolbarLayout>
-    </com.google.android.material.appbar.AppBarLayout>
+    android:background="@color/background_color">
 
     <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:clipToPadding="false"
-        android:scrollbars="none"
-        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+        android:paddingBottom="40dp">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="@dimen/spacing_medium">
+            android:orientation="vertical">
 
-            <com.google.android.material.card.MaterialCardView
-                style="@style/CardInfoStyle"
+            <!-- =========================================================
+                 1. HERO HEADER WITH GRADIENT, LOGO, TITLE, & FORK BADGE
+            ========================================================== -->
+            <FrameLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="@dimen/spacing_medium"
-                app:cardBackgroundColor="@color/surface_container">
+                android:layout_marginBottom="16dp"
+                android:background="@drawable/bg_about_header"
+                android:paddingTop="36dp"
+                android:paddingBottom="24dp">
 
+                <!-- Back Button Circle -->
+                <ImageView
+                    android:id="@+id/btnBack"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:layout_gravity="start|top"
+                    android:layout_marginStart="16dp"
+                    android:background="@drawable/bg_btn_circle_translucent"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:padding="8dp"
+                    android:src="@drawable/ic_baseline_arrow_back_24"
+                    app:tint="#FFFFFF"
+                    tools:ignore="ContentDescription" />
+
+                <!-- Center Content -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:gravity="center"
                     android:orientation="vertical"
-                    android:padding="@dimen/spacing_medium">
+                    android:paddingStart="20dp"
+                    android:paddingEnd="20dp">
 
-                    <com.google.android.material.textview.MaterialTextView
-                        android:id="@+id/tvMainFeatures"
-                        style="@style/SectionTitle"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/about" />
+                    <!-- App Icon Card -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:layout_width="82dp"
+                        android:layout_height="82dp"
+                        app:cardCornerRadius="22dp"
+                        app:cardElevation="6dp"
+                        app:strokeColor="#40FFFFFF"
+                        app:strokeWidth="1.5dp">
 
-                    <com.google.android.material.textview.MaterialTextView
-                        android:id="@+id/tvFeaturesSummary"
-                        style="@style/SectionDescription"
-                        android:layout_width="match_parent"
+                        <ImageView
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:scaleType="centerCrop"
+                            android:src="@mipmap/launcher"
+                            tools:ignore="ContentDescription" />
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <!-- App Name Title -->
+                    <TextView
+                        android:id="@+id/tvTitle"
+                        android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/about_info" />
+                        android:layout_marginTop="12dp"
+                        android:fontFamily="sans-serif-medium"
+                        android:text="@string/app_name"
+                        android:textColor="#FFFFFF"
+                        android:textSize="21sp"
+                        android:textStyle="bold" />
+
+                    <!-- Developer Subtitle -->
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="3dp"
+                        android:fontFamily="sans-serif"
+                        android:text="Pengembang: Dev4Mod"
+                        android:textColor="#E2FFEB"
+                        android:textSize="12sp" />
+
+                    <!-- Fork Attribution Badge Pill -->
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:background="@drawable/bg_fork_pill"
+                        android:fontFamily="sans-serif-medium"
+                        android:paddingStart="12dp"
+                        android:paddingTop="5dp"
+                        android:paddingEnd="12dp"
+                        android:paddingBottom="5dp"
+                        android:text="⚲ Fork oleh lukzy1945 &amp; mbin"
+                        android:textColor="#FFFFFF"
+                        android:textSize="10.5sp"
+                        android:textStyle="bold" />
 
                 </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
+            </FrameLayout>
 
-            <com.google.android.material.card.MaterialCardView
-                style="@style/CardInfoStyle"
+            <!-- Content Area Containers -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="@dimen/spacing_medium"
-                app:cardBackgroundColor="@color/surface_container">
+                android:orientation="vertical"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp">
 
-                <LinearLayout
+                <!-- =========================================================
+                     2. CARD TENTANG
+                ========================================================== -->
+                <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="@dimen/spacing_medium">
-
-                    <com.google.android.material.textview.MaterialTextView
-                        android:id="@+id/tvInstallation"
-                        style="@style/SectionTitle"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/installation" />
-
-                    <com.google.android.material.textview.MaterialTextView
-                        android:id="@+id/tvInstallationSteps"
-                        style="@style/SectionDescription"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/installation_desc" />
-
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <com.google.android.material.card.MaterialCardView
-                style="@style/CardInfoStyle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="@dimen/spacing_medium"
-                app:cardBackgroundColor="@color/surface_container">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="@dimen/spacing_medium">
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnTelegram"
-                        style="@style/ModernButton"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:backgroundTint="?attr/colorPrimary"
-                        android:text="@string/go_to_telegram"
-                        app:icon="@drawable/ic_telegram"
-                        app:iconGravity="start"
-                        app:iconPadding="@dimen/spacing_small" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnGithub"
-                        style="@style/ModernButton.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/spacing_small"
-                        android:text="@string/go_to_github"
-                        app:icon="@drawable/ic_github"
-                        app:iconGravity="start"
-                        app:iconPadding="@dimen/spacing_small"
-                        app:strokeColor="?attr/colorPrimary" />
-
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <com.google.android.material.card.MaterialCardView
-                style="@style/CardInfoStyle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="@dimen/spacing_medium"
-                app:cardBackgroundColor="@color/surface_container">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="@dimen/spacing_medium">
-
-                    <com.google.android.material.textview.MaterialTextView
-                        android:id="@+id/tvContributors"
-                        style="@style/SectionTitle"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/contributors" />
+                    android:layout_marginBottom="14dp"
+                    app:cardBackgroundColor="@color/card_bg"
+                    app:cardCornerRadius="18dp"
+                    app:cardElevation="0dp"
+                    app:strokeColor="@color/card_border"
+                    app:strokeWidth="1.2dp">
 
                     <LinearLayout
-                        android:id="@+id/contributorsContainer"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/spacing_small"
-                        android:orientation="vertical" />
+                        android:orientation="vertical"
+                        android:padding="16dp">
 
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="sans-serif-medium"
+                            android:text="Tentang"
+                            android:textColor="@color/text_primary"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
 
-            <com.google.android.material.card.MaterialCardView
-                style="@style/CardInfoStyle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="@dimen/spacing_medium"
-                app:cardBackgroundColor="@color/surface_container">
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:lineSpacingExtra="3dp"
+                            android:text="Wa Enhancer adalah modul Xposed yang meningkatkan pengalaman WhatsApp Anda dengan menawarkan fitur privasi tingkat lanjut, penyesuaian layar beranda, penyesuaian umum, dan peningkatan media."
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12.5sp" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
 
-                <LinearLayout
+                <!-- =========================================================
+                     3. CARD PANDUAN INSTAL
+                ========================================================== -->
+                <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="@dimen/spacing_medium">
+                    android:layout_marginBottom="14dp"
+                    app:cardBackgroundColor="@color/card_bg"
+                    app:cardCornerRadius="18dp"
+                    app:cardElevation="0dp"
+                    app:strokeColor="@color/card_border"
+                    app:strokeWidth="1.2dp">
 
-                    <com.google.android.material.textview.MaterialTextView
-                        android:id="@+id/tvSupport"
-                        style="@style/SectionTitle"
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="@string/support" />
+                        android:orientation="vertical"
+                        android:padding="16dp">
 
-                    <com.google.android.material.textview.MaterialTextView
-                        android:id="@+id/tvSupportDetails"
-                        style="@style/SectionDescription"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/support_desc" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="sans-serif-medium"
+                            android:text="Panduan Instal"
+                            android:textColor="@color/text_primary"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
 
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:lineSpacingExtra="4dp"
+                            android:text="1. Pastikan perangkat Anda telah di-root.\n2. Instal Xposed Framework di perangkat Anda.\n3. Unduh Wa Enhancer dari bagian Tindakan.\n4. Instal APK Wa Enhancer.\n5. Aktifkan modul Wa Enhancer di aplikasi Xpose Installer."
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12.5sp" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
 
-            <com.google.android.material.card.MaterialCardView
-                style="@style/CardInfoStyle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="@dimen/spacing_large"
-                app:cardBackgroundColor="@color/surface_container">
-
-                <LinearLayout
+                <!-- =========================================================
+                     4. CARD ACTION BUTTONS (TELEGRAM & GITHUB)
+                ========================================================== -->
+                <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="@dimen/spacing_medium">
+                    android:layout_marginBottom="14dp"
+                    app:cardBackgroundColor="@color/card_bg"
+                    app:cardCornerRadius="18dp"
+                    app:cardElevation="0dp"
+                    app:strokeColor="@color/card_border"
+                    app:strokeWidth="1.2dp">
 
-                    <com.google.android.material.textview.MaterialTextView
-                        android:id="@+id/tvLicense"
-                        style="@style/SectionTitle"
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="@string/license" />
+                        android:orientation="vertical"
+                        android:padding="16dp">
 
-                    <com.google.android.material.textview.MaterialTextView
-                        android:id="@+id/tvLicenseDetails"
-                        style="@style/SectionDescription"
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnTelegram"
+                            android:layout_width="match_parent"
+                            android:layout_height="50dp"
+                            android:backgroundTint="#62D87A"
+                            android:fontFamily="sans-serif-medium"
+                            android:text="Buka Telegram"
+                            android:textAllCaps="false"
+                            android:textColor="#051A0B"
+                            android:textSize="13.5sp"
+                            android:textStyle="bold"
+                            app:cornerRadius="999dp"
+                            app:icon="@drawable/ic_telegram"
+                            app:iconGravity="textStart"
+                            app:iconTint="#051A0B" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnGithub"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="match_parent"
+                            android:layout_height="50dp"
+                            android:layout_marginTop="10dp"
+                            android:fontFamily="sans-serif-medium"
+                            android:text="Buka GitHub"
+                            android:textAllCaps="false"
+                            android:textColor="@color/whatsapp_green"
+                            android:textSize="13.5sp"
+                            android:textStyle="bold"
+                            app:cornerRadius="999dp"
+                            app:icon="@drawable/ic_github"
+                            app:iconGravity="textStart"
+                            app:iconTint="@color/whatsapp_green"
+                            app:strokeColor="@color/whatsapp_green"
+                            app:strokeWidth="1.5dp" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- =========================================================
+                     5. CARD KONTRIBUSI
+                ========================================================== -->
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="14dp"
+                    app:cardBackgroundColor="@color/card_bg"
+                    app:cardCornerRadius="18dp"
+                    app:cardElevation="0dp"
+                    app:strokeColor="@color/card_border"
+                    app:strokeWidth="1.2dp">
+
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="@string/license_desc" />
+                        android:orientation="vertical"
+                        android:padding="16dp">
 
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="sans-serif-medium"
+                            android:text="Kontribusi"
+                            android:textColor="@color/text_primary"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
 
+                        <LinearLayout
+                            android:id="@+id/contributorsContainer"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:orientation="vertical" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+            </LinearLayout>
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 

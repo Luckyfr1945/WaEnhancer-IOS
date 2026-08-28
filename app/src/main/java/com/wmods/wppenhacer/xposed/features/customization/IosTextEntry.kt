@@ -30,6 +30,24 @@ class IosTextEntry(loader: ClassLoader, prefs: SharedPreferences) : Feature(load
     private var stickerDrawable: BitmapDrawable? = null
 
     companion object {
+        // Tag keys for idempotency and resource state tracking
+        private const val TAG_GLOBAL_LAYOUT_ADDED = 0x7E110005
+        private const val TAG_LISTENERS_SWAPPED = 0x7E1100F3
+        private const val TAG_ORIGINAL_EMOJI_LISTENER = 0x7E1100F4
+        private const val TAG_ORIGINAL_ATTACH_LISTENER = 0x7E1100F5
+        private const val TAG_PLUS_DRAWABLE_SET = 0x7E1100F6
+
+        // Cached Resource IDs (resolved once)
+        private val ID_ENTRY by lazy { Utils.getID("entry", "id") }
+        private val ID_TEXT_ENTRY_LAYOUT by lazy { Utils.getID("text_entry_layout", "id") }
+        private val ID_EDIT_LAYOUT by lazy { Utils.getID("edit_layout", "id") }
+        private val ID_INPUT_LAYOUT_CONTENT by lazy { Utils.getID("input_layout_content", "id") }
+        private val ID_INPUT_LAYOUT by lazy { Utils.getID("input_layout", "id") }
+        private val ID_EMOJI_PICKER_BTN by lazy { Utils.getID("emoji_picker_btn", "id") }
+        private val ID_INPUT_ATTACH_BUTTON by lazy { Utils.getID("input_attach_button", "id") }
+        private val ID_CAMERA_BTN by lazy { Utils.getID("camera_btn", "id") }
+        private val ID_BUTTONS by lazy { Utils.getID("buttons", "id") }
+
         // Semua nilai "rasa" iOS dikumpulkan di satu tempat biar gampang di-tuning
         // dan tidak ada drift antara restructureInput() dan listener dinamis.
         private const val PILL_RADIUS_DP = 22f
@@ -52,7 +70,7 @@ class IosTextEntry(loader: ClassLoader, prefs: SharedPreferences) : Feature(load
     }
 
     override fun doHook() {
-        if (!prefs.getBoolean("ios_text_entry", false)) return
+        if (!prefs.getBoolean("ios_text_entry", false) && !prefs.getBoolean("ios_header", false)) return
 
         logDebug("IosTextEntry Feature Enabled")
 
@@ -61,138 +79,81 @@ class IosTextEntry(loader: ClassLoader, prefs: SharedPreferences) : Feature(load
                 logDebug("IosTextEntry: Resumed ${activity.javaClass.name}")
 
                 val rootView = activity.window.decorView.rootView
-                val TAG_GLOBAL_LAYOUT_ADDED = 0x7E110005
                 if (rootView.getTag(TAG_GLOBAL_LAYOUT_ADDED) == true) return@addListenerActivity
                 rootView.setTag(TAG_GLOBAL_LAYOUT_ADDED, true)
                 
-                rootView.viewTreeObserver.addOnGlobalLayoutListener(object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+                val layoutListener = object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
                     private var cachedEntry: View? = null
                     private var cachedTextEntryLayout: ViewGroup? = null
                     private var cachedEditLayout: ViewGroup? = null
                     private var cachedEmojiBtn: ImageView? = null
                     private var cachedInputContent: ViewGroup? = null
-                    private var cachedCameraBtn: View? = null
-                    private var cachedInputLayout: View? = null
-                    private var cachedButtonsFrame: ViewGroup? = null
-                    private var cachedVoiceBtn: View? = null
 
                     override fun onGlobalLayout() {
                         try {
-                            val entryId = Utils.getID("entry", "id")
-                            if (entryId <= 0) return
+                            if (ID_ENTRY <= 0 || ID_TEXT_ENTRY_LAYOUT <= 0) return
 
-                            if (cachedEntry == null) cachedEntry = rootView.findViewById<View>(entryId)
+                            if (cachedEntry == null) cachedEntry = rootView.findViewById<View>(ID_ENTRY)
                             val entry = cachedEntry ?: return
 
-                            val textEntryLayoutId = Utils.getID("text_entry_layout", "id")
-                            if (textEntryLayoutId <= 0) return
-                            if (cachedTextEntryLayout == null) cachedTextEntryLayout = rootView.findViewById<ViewGroup>(textEntryLayoutId)
+                            if (cachedTextEntryLayout == null) cachedTextEntryLayout = rootView.findViewById<ViewGroup>(ID_TEXT_ENTRY_LAYOUT)
                             val textEntryLayout = cachedTextEntryLayout ?: return
 
-                            val editLayoutId = Utils.getID("edit_layout", "id")
                             if (cachedEditLayout == null) {
-                                cachedEditLayout = if (editLayoutId > 0) rootView.findViewById<ViewGroup>(editLayoutId) else textEntryLayout.parent as? ViewGroup
+                                cachedEditLayout = if (ID_EDIT_LAYOUT > 0) rootView.findViewById<ViewGroup>(ID_EDIT_LAYOUT) else textEntryLayout.parent as? ViewGroup
                             }
                             val editLayout = cachedEditLayout
 
-                            val inputContentId = Utils.getID("input_layout_content", "id")
-                            if (cachedInputContent == null && inputContentId > 0) cachedInputContent = rootView.findViewById<ViewGroup>(inputContentId)
+                            if (cachedInputContent == null && ID_INPUT_LAYOUT_CONTENT > 0) cachedInputContent = rootView.findViewById<ViewGroup>(ID_INPUT_LAYOUT_CONTENT)
                             val inputContent = cachedInputContent
 
                             val isStyled = textEntryLayout.tag == "ios_styled"
                             val pillExists = inputContent?.findViewWithTag<View>("ios_pill") != null
 
-                            // Full restructure if not yet styled or if pill was removed/rebuilt by WhatsApp
+                            // Full restructure ONLY if not yet styled or if pill was removed/rebuilt by WhatsApp
                             if (!isStyled || !pillExists) {
                                 textEntryLayout.tag = "ios_styled"
                                 logDebug("IosTextEntry: Applying iOS style")
                                 restructureInput(entry, textEntryLayout, editLayout)
+                                return
                             }
 
-                            // Always maintain the + icon (WhatsApp overwrites it when emoji panel opens)
-                            val emojiId = Utils.getID("emoji_picker_btn", "id")
-                            if (cachedEmojiBtn == null && emojiId > 0) cachedEmojiBtn = rootView.findViewById<ImageView>(emojiId)
+                            // Lightweight maintenance of the + icon (only update if color/mode actually changed)
+                            if (cachedEmojiBtn == null && ID_EMOJI_PICKER_BTN > 0) cachedEmojiBtn = rootView.findViewById<ImageView>(ID_EMOJI_PICKER_BTN)
                             val emojiBtn = cachedEmojiBtn
                             if (emojiBtn != null) {
                                 val ctx = emojiBtn.context
                                 val isDark = isDarkMode(ctx)
                                 val plusColor = if (isDark) Color.parseColor(PLUS_DARK) else Color.parseColor(PLUS_LIGHT)
-                                if (plusDrawable == null || plusBitmapColor != plusColor) {
-                                    plusBitmapColor = plusColor
-                                    plusBitmap = createPlusDrawable(plusColor)
-                                    plusDrawable = BitmapDrawable(ctx.resources, plusBitmap)
-                                }
-                                if (emojiBtn.drawable !== plusDrawable) {
+                                if (emojiBtn.getTag(TAG_PLUS_DRAWABLE_SET) != plusColor) {
+                                    emojiBtn.setTag(TAG_PLUS_DRAWABLE_SET, plusColor)
+                                    if (plusDrawable == null || plusBitmapColor != plusColor) {
+                                        plusBitmapColor = plusColor
+                                        plusBitmap?.recycle()
+                                        plusBitmap = createPlusDrawable(plusColor)
+                                        plusDrawable = BitmapDrawable(ctx.resources, plusBitmap)
+                                    }
                                     emojiBtn.setImageDrawable(plusDrawable)
                                     emojiBtn.imageTintList = null
                                 }
                             }
-
-                            // Dynamically update pill background based on real button widths
-                            val cameraId = Utils.getID("camera_btn", "id")
-                            if (cachedCameraBtn == null && cameraId > 0) cachedCameraBtn = rootView.findViewById<View>(cameraId)
-                            val cameraBtn = cachedCameraBtn
-
-                            if (inputContent != null) {
-                            val cameraVisible = cameraBtn != null && cameraBtn.visibility == View.VISIBLE
-                            val gap = Utils.dipToPixels(PILL_GAP_DP)
-                            val fallback = Utils.dipToPixels(BTN_FALLBACK_DP)
-
-                            // Gunakan lebar view + margin (jika ada) + gap. 
-                            // getLocationInWindow menyebabkan infinite relayout loop (ngeblink)
-                            // karena merubah background juga sedikit menggeser window coordinates.
-                            var plusWidth = fallback
-                            if (emojiBtn != null && emojiBtn.width > 0) {
-                                plusWidth = emojiBtn.width
-                                val lp = emojiBtn.layoutParams as? ViewGroup.MarginLayoutParams
-                                if (lp != null) plusWidth += lp.leftMargin + lp.rightMargin
-                            }
-                            
-                            var cameraWidth = fallback
-                            if (cameraBtn != null && cameraBtn.width > 0) {
-                                cameraWidth = cameraBtn.width
-                                val lp = cameraBtn.layoutParams as? ViewGroup.MarginLayoutParams
-                                if (lp != null) cameraWidth += lp.leftMargin + lp.rightMargin
-                            }
-
-                            // Only strip backgrounds if they are actually non-null to prevent layout invalidation loops
-                            if (textEntryLayout.background != null) textEntryLayout.background = null
-
-                            val inputLayoutId = Utils.getID("input_layout", "id")
-                            if (cachedInputLayout == null && inputLayoutId > 0) {
-                                cachedInputLayout = rootView.findViewById<View>(inputLayoutId)
-                            }
-                            if (cachedInputLayout?.background != null) cachedInputLayout?.background = null
-                            if (cameraBtn?.background != null) cameraBtn?.background = null
-                            
-                            val buttonsId2 = Utils.getID("buttons", "id")
-                            if (cachedButtonsFrame == null && buttonsId2 > 0) {
-                                cachedButtonsFrame = editLayout?.findViewById<ViewGroup>(buttonsId2)
-                            }
-                            if (cachedButtonsFrame?.background != null) cachedButtonsFrame?.background = null
-                            
-                            val voiceNoteId = Utils.getID("voice_note_btn", "id")
-                            if (cachedVoiceBtn == null && voiceNoteId > 0) {
-                                cachedVoiceBtn = rootView.findViewById<View>(voiceNoteId)
-                            }
-                            if (cachedVoiceBtn?.background != null) cachedVoiceBtn?.background = null
-
-                            // Jaga jarak konsisten antara pill dan tombol mic/send di kanan.
-                            val buttonsFrame = cachedButtonsFrame
-                            val bfLp = buttonsFrame?.layoutParams
-                            if (bfLp is ViewGroup.MarginLayoutParams) {
-                                val micGap = Utils.dipToPixels(MIC_GAP_DP)
-                                if (bfLp.marginStart != micGap) {
-                                    bfLp.marginStart = micGap
-                                    buttonsFrame.layoutParams = bfLp
-                                }
-                            }
+                        } catch (e: Exception) {
+                            logDebug("IosTextEntry Layout error: ${e.message}")
                         }
-                    } catch (e: Exception) {
-                        logDebug("IosTextEntry Layout error: ${e.message}")
                     }
                 }
-            })
+
+                rootView.viewTreeObserver.addOnGlobalLayoutListener(layoutListener)
+                rootView.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+                    override fun onViewAttachedToWindow(v: View) {}
+                    override fun onViewDetachedFromWindow(v: View) {
+                        try {
+                            v.viewTreeObserver.removeOnGlobalLayoutListener(layoutListener)
+                            v.removeOnAttachStateChangeListener(this)
+                            v.setTag(TAG_GLOBAL_LAYOUT_ADDED, null)
+                        } catch (_: Throwable) {}
+                    }
+                })
             }
         }
     }
@@ -239,28 +200,21 @@ class IosTextEntry(loader: ClassLoader, prefs: SharedPreferences) : Feature(load
             }
 
             // ── 3. Strip input_layout background ──
-            val inputLayoutId = Utils.getID("input_layout", "id")
-            textEntryLayout.findViewById<View>(inputLayoutId)?.background = null
+            if (ID_INPUT_LAYOUT > 0) {
+                textEntryLayout.findViewById<View>(ID_INPUT_LAYOUT)?.background = null
+            }
 
             // ── 4. Find buttons ──
-            val emojiId = Utils.getID("emoji_picker_btn", "id")
-            val emojiBtn = textEntryLayout.findViewById<ImageView>(emojiId)
+            val emojiBtn = if (ID_EMOJI_PICKER_BTN > 0) textEntryLayout.findViewById<ImageView>(ID_EMOJI_PICKER_BTN) else null
+            val attachBtn = if (ID_INPUT_ATTACH_BUTTON > 0) textEntryLayout.findViewById<ImageView>(ID_INPUT_ATTACH_BUTTON) else null
+            val cameraBtn = if (ID_CAMERA_BTN > 0) textEntryLayout.findViewById<View>(ID_CAMERA_BTN) else null
 
-            val attachId = Utils.getID("input_attach_button", "id")
-            val attachBtn = textEntryLayout.findViewById<ImageView>(attachId)
-
-            val cameraId = Utils.getID("camera_btn", "id")
-            val cameraBtn = textEntryLayout.findViewById<View>(cameraId)
-
-            // ── 5. Icon swap + function swap ──
+            // ── 5. Icon swap + function swap (idempotent with tags) ──
             if (emojiBtn != null && attachBtn != null) {
-                val emojiClickListener = getClickListenerXposed(emojiBtn)
-                val attachClickListener = getClickListenerXposed(attachBtn)
-                logDebug("IosTextEntry: emojiListener=${emojiClickListener != null}, attachListener=${attachClickListener != null}")
-
                 val plusColor = if (isDark) Color.parseColor(PLUS_DARK) else Color.parseColor(PLUS_LIGHT)
                 if (plusDrawable == null || plusBitmapColor != plusColor) {
                     plusBitmapColor = plusColor
+                    plusBitmap?.recycle()
                     plusBitmap = createPlusDrawable(plusColor)
                     plusDrawable = BitmapDrawable(ctx.resources, plusBitmap)
                 }
@@ -272,35 +226,50 @@ class IosTextEntry(loader: ClassLoader, prefs: SharedPreferences) : Feature(load
                 val stickerColor = if (isDark) Color.parseColor(PLUS_DARK) else Color.parseColor(PLUS_LIGHT)
                 if (stickerDrawable == null || stickerBitmapColor != stickerColor) {
                     stickerBitmapColor = stickerColor
+                    stickerBitmap?.recycle()
                     stickerBitmap = createStickerDrawable(stickerColor)
                     stickerDrawable = BitmapDrawable(ctx.resources, stickerBitmap)
                 }
                 attachBtn.setImageDrawable(stickerDrawable)
                 attachBtn.scaleType = ImageView.ScaleType.CENTER
-                attachBtn.visibility = View.VISIBLE
                 attachBtn.background = null
                 attachBtn.imageTintList = null
 
-                if (emojiClickListener != null && attachClickListener != null) {
-                    emojiBtn.setOnClickListener { _ -> attachClickListener.onClick(attachBtn) }
-                    attachBtn.setOnClickListener { _ -> emojiClickListener.onClick(emojiBtn) }
-                    logDebug("IosTextEntry: Click listeners swapped successfully")
-                } else {
-                    logDebug("IosTextEntry: Click listener swap FAILED, falling back to performClick")
-                    val swapFlag = booleanArrayOf(false)
-                    emojiBtn.setOnClickListener {
-                        if (!swapFlag[0]) {
-                            swapFlag[0] = true
-                            attachBtn.callOnClick()
-                            swapFlag[0] = false
+                val alreadySwapped = emojiBtn.getTag(TAG_LISTENERS_SWAPPED) == true
+                if (!alreadySwapped) {
+                    val emojiClickListener = getClickListenerXposed(emojiBtn)
+                    val attachClickListener = getClickListenerXposed(attachBtn)
+                    if (emojiClickListener != null) emojiBtn.setTag(TAG_ORIGINAL_EMOJI_LISTENER, emojiClickListener)
+                    if (attachClickListener != null) attachBtn.setTag(TAG_ORIGINAL_ATTACH_LISTENER, attachClickListener)
+
+                    val origEmoji = (emojiBtn.getTag(TAG_ORIGINAL_EMOJI_LISTENER) as? View.OnClickListener) ?: emojiClickListener
+                    val origAttach = (attachBtn.getTag(TAG_ORIGINAL_ATTACH_LISTENER) as? View.OnClickListener) ?: attachClickListener
+
+                    if (origEmoji != null && origAttach != null) {
+                        emojiBtn.setOnClickListener { _ -> origAttach.onClick(attachBtn) }
+                        attachBtn.setOnClickListener { _ -> origEmoji.onClick(emojiBtn) }
+                        emojiBtn.setTag(TAG_LISTENERS_SWAPPED, true)
+                        attachBtn.setTag(TAG_LISTENERS_SWAPPED, true)
+                        logDebug("IosTextEntry: Click listeners swapped successfully")
+                    } else {
+                        logDebug("IosTextEntry: Click listener swap falling back to callOnClick")
+                        val swapFlag = booleanArrayOf(false)
+                        emojiBtn.setOnClickListener {
+                            if (!swapFlag[0]) {
+                                swapFlag[0] = true
+                                attachBtn.callOnClick()
+                                swapFlag[0] = false
+                            }
                         }
-                    }
-                    attachBtn.setOnClickListener {
-                        if (!swapFlag[0]) {
-                            swapFlag[0] = true
-                            emojiBtn.callOnClick()
-                            swapFlag[0] = false
+                        attachBtn.setOnClickListener {
+                            if (!swapFlag[0]) {
+                                swapFlag[0] = true
+                                emojiBtn.callOnClick()
+                                swapFlag[0] = false
+                            }
                         }
+                        emojiBtn.setTag(TAG_LISTENERS_SWAPPED, true)
+                        attachBtn.setTag(TAG_LISTENERS_SWAPPED, true)
                     }
                 }
             }
@@ -309,45 +278,53 @@ class IosTextEntry(loader: ClassLoader, prefs: SharedPreferences) : Feature(load
             cameraBtn?.background = null
 
             // ── 6. Pill background dengan membungkus entry dan sticker ──
-            val inputContentId = Utils.getID("input_layout_content", "id")
-            val inputContent = textEntryLayout.findViewById<ViewGroup>(inputContentId)
-            if (inputContent != null && entry.parent == inputContent && attachBtn != null && attachBtn.parent == inputContent) {
+            val inputContent = (if (ID_INPUT_LAYOUT_CONTENT > 0) textEntryLayout.findViewById<ViewGroup>(ID_INPUT_LAYOUT_CONTENT) else null)
+                ?: (if (ID_INPUT_LAYOUT > 0) textEntryLayout.findViewById<ViewGroup>(ID_INPUT_LAYOUT) else null)
+                ?: (entry.parent as? ViewGroup)
+
+            if (inputContent != null && attachBtn != null) {
                 inputContent.background = null
-                val entryIndex = inputContent.indexOfChild(entry)
-                inputContent.removeView(entry)
-                inputContent.removeView(attachBtn)
+                val entryIndex = if (entry.parent == inputContent) inputContent.indexOfChild(entry) else 0
 
-                val pillContainer = android.widget.LinearLayout(ctx).apply {
-                    tag = "ios_pill"
-                    orientation = android.widget.LinearLayout.HORIZONTAL
-                    layoutParams = android.widget.LinearLayout.LayoutParams(
-                        0, 
-                        ViewGroup.LayoutParams.WRAP_CONTENT, 
-                        1f
-                    ).apply {
-                        gravity = android.view.Gravity.CENTER_VERTICAL
+                try {
+                    val existingPill = inputContent.findViewWithTag<View>("ios_pill")
+                    if (existingPill == null && entry.parent != null) {
+                        val pillContainer = android.widget.LinearLayout(ctx).apply {
+                            tag = "ios_pill"
+                            orientation = android.widget.LinearLayout.HORIZONTAL
+                            layoutParams = android.widget.LinearLayout.LayoutParams(
+                                0, 
+                                ViewGroup.LayoutParams.WRAP_CONTENT, 
+                                1f
+                            ).apply {
+                                gravity = android.view.Gravity.CENTER_VERTICAL
+                            }
+                            gravity = android.view.Gravity.CENTER_VERTICAL
+                            background = buildPillDrawable(isDark)
+                            setPadding(0, Utils.dipToPixels(2f), Utils.dipToPixels(4f), Utils.dipToPixels(2f))
+                        }
+
+                        (entry.parent as? ViewGroup)?.removeView(entry)
+                        (attachBtn.parent as? ViewGroup)?.removeView(attachBtn)
+
+                        entry.layoutParams = android.widget.LinearLayout.LayoutParams(
+                            0, 
+                            ViewGroup.LayoutParams.WRAP_CONTENT, 
+                            1f
+                        )
+                        
+                        attachBtn.layoutParams = android.widget.LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT, 
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        )
+                        
+                        pillContainer.addView(entry)
+                        pillContainer.addView(attachBtn)
+                        inputContent.addView(pillContainer, entryIndex.coerceAtLeast(0))
                     }
-                    gravity = android.view.Gravity.CENTER_VERTICAL
-                    background = buildPillDrawable(isDark)
-                    setPadding(0, Utils.dipToPixels(2f), Utils.dipToPixels(4f), Utils.dipToPixels(2f))
+                } catch (e: Throwable) {
+                    logDebug("IosTextEntry: Pill wrap failed: ${e.message}")
                 }
-
-                // Harus buat ulang LayoutParams supaya entry benar-benar expand 
-                // dan sticker tetap di sebelah kanan!
-                entry.layoutParams = android.widget.LinearLayout.LayoutParams(
-                    0, 
-                    ViewGroup.LayoutParams.WRAP_CONTENT, 
-                    1f
-                )
-                
-                attachBtn.layoutParams = android.widget.LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, 
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                )
-                
-                pillContainer.addView(entry)
-                pillContainer.addView(attachBtn)
-                inputContent.addView(pillContainer, entryIndex)
             }
 
             // ── 7. Entry styling — add left padding so text stays inside pill ──
@@ -359,11 +336,33 @@ class IosTextEntry(loader: ClassLoader, prefs: SharedPreferences) : Feature(load
                 entry.paddingBottom
             )
 
-            // ── 8. Voice Note and Send Button — keep native WhatsApp styling ──
+            // ── 8. Voice Note and Send Button styling ──
             val buttonsId = Utils.getID("buttons", "id")
             val buttonsFrame = editLayout?.findViewById<ViewGroup>(buttonsId)
             if (buttonsFrame != null) {
-                // Remove padding adjustment to let native WhatsApp handle it
+                buttonsFrame.setPadding(0, buttonsFrame.paddingTop, buttonsFrame.paddingRight, buttonsFrame.paddingBottom)
+
+                val voiceNoteId = Utils.getID("voice_note_btn", "id")
+                val voiceBtn = if (voiceNoteId > 0) buttonsFrame.findViewById<ImageView>(voiceNoteId) else null
+                if (voiceBtn != null) {
+                    voiceBtn.background = null
+                    voiceBtn.backgroundTintList = null
+                    voiceBtn.imageTintList = android.content.res.ColorStateList.valueOf(Color.parseColor(MIC_BLUE))
+                }
+
+                val sendId = Utils.getID("send", "id")
+                val sendBtn = if (sendId > 0) buttonsFrame.findViewById<ImageView>(sendId) else null
+                if (sendBtn != null) {
+                    val sendBg = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(Color.parseColor(MIC_BLUE))
+                    }
+                    sendBtn.background = sendBg
+                    sendBtn.backgroundTintList = null
+                    sendBtn.imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+                    val p = Utils.dipToPixels(10f)
+                    sendBtn.setPadding(p, p, p, p)
+                }
             }
         } catch (e: Exception) {
             logDebug("IosTextEntry CSS error: ${e.message}")

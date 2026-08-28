@@ -4,7 +4,7 @@
     <color name="primary_text_material">@color/abc_primary_text_material_light</color>
 
     <color name="ic_launcher_foreground">#FFFFFF</color>
-    <color name="ic_launcher_background">#F48FB1</color>
+    <color name="ic_launcher_background">#25D366</color>
 
     <color name="material_state_yellow">@color/material_yellow_A400</color>
     <color name="material_state_green">@color/material_green_A400</color>
@@ -22,42 +22,63 @@
     <color name="primary_background">@color/background_light</color>
     <color name="codeview_strings">#24D52B</color>
 
-    <color name="gradient_start_primary">#26A69A</color>
+    <color name="gradient_start_primary">#00A884</color>
     <color name="gradient_end_primary">#00796B</color>
-    <color name="gradient_start_success">#4CAF50</color>
-    <color name="gradient_end_success">#1B5E20</color>
+    <color name="gradient_start_success">#25D366</color>
+    <color name="gradient_end_success">#128C7E</color>
     <color name="gradient_start_error">#FF5252</color>
     <color name="gradient_end_error">#D50000</color>
     <color name="gradient_start_warning">#FFD740</color>
     <color name="gradient_end_warning">#FF6D00</color>
 
-    <color name="whatsapp_green">#25D366</color>
-    <color name="whatsapp_dark_green">#128C7E</color>
-    <color name="whatsapp_teal">#075E54</color>
+    <color name="whatsapp_green">#00A884</color>
+    <color name="whatsapp_dark_green">#008069</color>
+    <color name="whatsapp_teal">#00A884</color>
 
-    <color name="surface_elevated">#FAFAFA</color>
-    <color name="surface_container">#F5F5F5</color>
-    <color name="surface_container_high">#EEEEEE</color>
+    <!-- Surface and Containers (Light) -->
+    <color name="background_color">#F2F4F7</color>
+    <color name="surface_color">#FFFFFF</color>
+    <color name="surface_elevated">#FFFFFF</color>
+    <color name="surface_container">#F8FAF9</color>
+    <color name="surface_container_high">#EEF1F0</color>
 
-    <color name="nav_indicator">#E8F5E9</color>
+    <!-- High-visibility crisp border and divider lines -->
+    <color name="card_border">#DDE1E6</color>
+    <color name="card_divider">#E5E8EC</color>
+    <color name="card_bg">#FFFFFF</color>
+
+    <color name="nav_indicator">#D4F2E4</color>
     <color name="nav_background">#FFFFFF</color>
 
     <color name="ripple_color">#1F000000</color>
+    <color name="card_shadow">#0A000000</color>
 
-    <color name="card_shadow">#14000000</color>
-
-    <color name="status_active">#00E676</color>
-    <color name="status_inactive">#FF5252</color>
+    <color name="status_active">#00A884</color>
+    <color name="status_inactive">#EA0038</color>
     <color name="status_warning">#FFAB40</color>
 
-    <color name="text_primary">#212121</color>
-    <color name="text_secondary">#757575</color>
-    <color name="text_tertiary">#9E9E9E</color>
+    <color name="bg_badge_green">#D4F2E4</color>
+    <color name="badge_green_text">#008069</color>
+    <color name="hero_border_active">#4D00A884</color>
+    <color name="hero_border_inactive">#4DEA0038</color>
+
+    <!-- Hero Card Specific Tokens (Light Mode - Mint Aesthetic) -->
+    <color name="hero_card_bg">#E8F5F1</color>
+    <color name="hero_solid_scrim">#E8F5F1</color>
+    <color name="hero_fade_center">#CCE8F5F1</color>
+    <color name="hero_bottom_shadow">#26E8F5F1</color>
+    <color name="hero_glow_start">#3300A884</color>
+    <color name="hero_text_title">#111B21</color>
+    <color name="hero_text_summary">#54656F</color>
+    <color name="hero_text_label">#667781</color>
+    <color name="hero_text_version">#111B21</color>
+
+    <color name="text_primary">#111B21</color>
+    <color name="text_secondary">#667781</color>
+    <color name="text_tertiary">#8696A0</color>
     <color name="text_on_gradient">#FFFFFF</color>
 
-    <color name="background_color">#FAFAFA</color>
-    <color name="surface_color">#FFFFFF</color>
-    <color name="primary_color">#00796B</color>
+    <color name="primary_color">#00A884</color>
 
     <color name="log_info">#424242</color>
     <color name="log_success">#18733D</color>

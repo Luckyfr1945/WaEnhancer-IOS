@@ -93,6 +93,32 @@ public class MainActivity extends BaseActivity {
                 super.onPageSelected(position);
                 binding.navView.getMenu().getItem(position).setChecked(true);
 
+                String subtitle;
+                switch (position) {
+                    case 0:
+                        subtitle = "Setelan & Kustomisasi";
+                        break;
+                    case 1:
+                        subtitle = "Pengaturan Privasi";
+                        break;
+                    case 2:
+                        subtitle = "Module Control Center";
+                        break;
+                    case 3:
+                        subtitle = "Pengaturan Media & Unduhan";
+                        break;
+                    case 4:
+                        subtitle = "Kustomisasi Tampilan";
+                        break;
+                    case 5:
+                        subtitle = "Perekam Panggilan";
+                        break;
+                    default:
+                        subtitle = "Module Control Center";
+                        break;
+                }
+                binding.toolbarSubtitle.setText(subtitle);
+
                 // Handle pending scroll after page change
                 if (pendingScrollToFragment == position && pendingScrollToPreference != null) {
                     final String scrollKey = pendingScrollToPreference;

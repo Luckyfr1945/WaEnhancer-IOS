@@ -909,6 +909,14 @@ public class FeatureCatalog {
                 null,
                 Arrays.asList("floating", "menu", "context", "ios")));
 
+        catalog.add(new SearchableFeature("ios_text_entry",
+                "iOS Text Entry Bar",
+                "Enables iOS-style pill chat text input and attachment buttons",
+                SearchableFeature.Category.CUSTOMIZATION,
+                SearchableFeature.FragmentType.CUSTOMIZATION,
+                null,
+                Arrays.asList("ios", "text", "entry", "input", "chat", "pill")));
+
         catalog.add(new SearchableFeature("animation_emojis",
                 context.getString(R.string.animation_emojis),
                 context.getString(R.string.animation_emojis_sum),

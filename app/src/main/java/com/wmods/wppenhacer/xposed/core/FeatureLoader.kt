@@ -49,6 +49,7 @@ import com.wmods.wppenhacer.xposed.features.customization.IGStatus
 import com.wmods.wppenhacer.xposed.features.customization.IosContextMenu
 import com.wmods.wppenhacer.xposed.features.customization.IosHeader
 import com.wmods.wppenhacer.xposed.features.customization.IosSwipeMenu
+import com.wmods.wppenhacer.xposed.features.customization.IosTextEntry
 import com.wmods.wppenhacer.xposed.features.customization.SeparateGroup
 import com.wmods.wppenhacer.xposed.features.customization.ShowOnline
 import com.wmods.wppenhacer.xposed.features.customization.StatusLongPressPreview
@@ -377,9 +378,7 @@ class FeatureLoader {
                 if (type == WppCore.ActivityChangeState.ChangeType.RESUMED) {
                     val name = activity.javaClass.simpleName
                     if (name == "HomeActivity" || name.contains("Home")) {
-                        activity.window?.decorView?.post {
-                            checkUpdate(activity)
-                        }
+                        checkUpdateAsync(activity)
                     }
                 }
             }
@@ -388,52 +387,62 @@ class FeatureLoader {
 
         private var mPreferences: SharedPreferences? = null
         private var lastAppliedPrefChangeTime: Long = -1L
+        private var lastCheckTime: Long = 0L
         private var isDialogShowing = false
 
-        private fun checkUpdate(activity: Activity) {
-            try {
-                val pref = mPreferences ?: return
-                if (pref is de.robv.android.xposed.XSharedPreferences) {
-                    pref.reload()
-                }
-                val lastChangeTime = pref.getLong("last_pref_change_time", 0L)
-                val forceNeedRestart = WppCore.getPrivBoolean("need_restart", false)
+        private fun checkUpdateAsync(activity: Activity) {
+            val now = System.currentTimeMillis()
+            if (now - lastCheckTime < 5000L) return // Debounce: check at most once every 5 seconds
+            lastCheckTime = now
 
-                if (forceNeedRestart) {
-                    WppCore.setPrivBoolean("need_restart", false)
-                }
+            Thread {
+                try {
+                    val pref = mPreferences ?: return@Thread
+                    if (pref is de.robv.android.xposed.XSharedPreferences) {
+                        pref.reload()
+                    }
+                    val lastChangeTime = pref.getLong("last_pref_change_time", 0L)
+                    val forceNeedRestart = WppCore.getPrivBoolean("need_restart", false)
 
-                if (lastAppliedPrefChangeTime == -1L) {
-                    lastAppliedPrefChangeTime = lastChangeTime
-                    if (!forceNeedRestart) return
-                }
+                    if (forceNeedRestart) {
+                        WppCore.setPrivBoolean("need_restart", false)
+                    }
 
-                val hasNewChanges = (lastChangeTime > lastAppliedPrefChangeTime) || forceNeedRestart
-                if (hasNewChanges && !isDialogShowing) {
-                    lastAppliedPrefChangeTime = lastChangeTime
-                    isDialogShowing = true
-                    AlertDialogWpp(activity)
-                        .setTitle("WaEnhancer")
-                        .setMessage(activity.getString(R.string.restart_wpp))
-                        .setPositiveButton(activity.getString(R.string.yes)) { _, _ ->
-                            isDialogShowing = false
-                            if (!Utils.doRestart(activity)) {
-                                Toast.makeText(
-                                    activity,
-                                    "Gagal memulai ulang WhatsApp",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
+                    if (lastAppliedPrefChangeTime == -1L) {
+                        lastAppliedPrefChangeTime = lastChangeTime
+                        if (!forceNeedRestart) return@Thread
+                    }
+
+                    val hasNewChanges = (lastChangeTime > lastAppliedPrefChangeTime) || forceNeedRestart
+                    if (hasNewChanges && !isDialogShowing) {
+                        lastAppliedPrefChangeTime = lastChangeTime
+                        activity.runOnUiThread {
+                            if (isDialogShowing || activity.isFinishing || activity.isDestroyed) return@runOnUiThread
+                            isDialogShowing = true
+                            AlertDialogWpp(activity)
+                                .setTitle("WaEnhancer")
+                                .setMessage(activity.getString(R.string.restart_wpp))
+                                .setPositiveButton(activity.getString(R.string.yes)) { _, _ ->
+                                    isDialogShowing = false
+                                    if (!Utils.doRestart(activity)) {
+                                        Toast.makeText(
+                                            activity,
+                                            "Gagal memulai ulang WhatsApp",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
+                                .setNegativeButton(activity.getString(R.string.no)) { dialog, _ ->
+                                    isDialogShowing = false
+                                    dialog?.dismiss()
+                                }
+                                .show()
                         }
-                        .setNegativeButton(activity.getString(R.string.no)) { dialog, _ ->
-                            isDialogShowing = false
-                            dialog?.dismiss()
-                        }
-                        .show()
+                    }
+                } catch (e: Throwable) {
+                    XposedBridge.log("FeatureLoader checkUpdate error: ${e.message}")
                 }
-            } catch (_: Throwable) {
-                isDialogShowing = false
-            }
+            }.start()
         }
 
         @SuppressLint("WrongConstant")
@@ -575,14 +584,16 @@ class FeatureLoader {
                 JumpFirstMessage::class.java,
                 AboutContactPicker::class.java,
                 DefaultEmoji::class.java,
+                IosTextEntry::class.java,
                 IosContextMenu::class.java,
                 StatusReplayTracker::class.java,
                 StatusLongPressPreview::class.java
             )
 
             XposedBridge.log("Loading Plugins")
+            val availableCores = Runtime.getRuntime().availableProcessors()
             val executorService = Executors.newWorkStealingPool(
-                Runtime.getRuntime().availableProcessors().coerceAtMost(4)
+                availableCores.coerceIn(4, 16)
             )
             val times = Collections.synchronizedList(ArrayList<String>())
 

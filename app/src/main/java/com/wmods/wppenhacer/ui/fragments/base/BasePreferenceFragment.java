@@ -60,6 +60,19 @@ public abstract class BasePreferenceFragment extends PreferenceFragmentCompat
     }
 
     @Override
+    public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
+        super.onViewCreated(view, savedInstanceState);
+        setDivider(null);
+        setDividerHeight(0);
+        var listView = getListView();
+        if (listView != null) {
+            listView.setClipToPadding(false);
+            listView.setPadding(0, (int) (6 * getResources().getDisplayMetrics().density), 0, (int) (95 * getResources().getDisplayMetrics().density));
+            listView.addItemDecoration(new com.wmods.wppenhacer.ui.widget.CardPreferenceItemDecoration(requireContext()));
+        }
+    }
+
+    @Override
     public void onResume() {
         super.onResume();
         setDisplayHomeAsUpEnabled(true);

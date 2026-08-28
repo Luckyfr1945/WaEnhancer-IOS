@@ -1,6 +1,8 @@
 package com.wmods.wppenhacer.xposed.features.listeners
 
 import android.app.Activity
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Handler
 import android.os.Looper
 import android.view.View
@@ -92,6 +94,8 @@ class ConversationItemListener(
                     if (listView.id != android.R.id.list) {
                         return
                     }
+
+                    listView.selector = ColorDrawable(Color.TRANSPARENT)
 
                     var currentAdapter = param.args[0] as? ListAdapter
                     if (currentAdapter is HeaderViewListAdapter) {

@@ -1,28 +1,57 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="surface_elevated">#1E1E1E</color>
-    <color name="surface_container">#252525</color>
-    <color name="surface_container_high">#2C2C2C</color>
+    <!-- Deep OLED Modern Dark Palette (stylebaru) -->
+    <color name="background_color">#08090A</color>
+    <color name="surface_color">#101214</color>
+    <color name="surface_elevated">#141618</color>
+    <color name="surface_container">#141618</color>
+    <color name="surface_container_high">#191C1F</color>
 
-    <color name="nav_indicator">#1B5E20</color>
-    <color name="nav_background">#121212</color>
+    <!-- High-visibility crisp border and divider lines -->
+    <color name="card_border">#2E363E</color>
+    <color name="card_divider">#262C33</color>
+    <color name="card_bg">#101214</color>
 
-    <color name="ripple_color">#33FFFFFF</color>
+    <color name="nav_indicator">#1C3D2B</color>
+    <color name="nav_background">#101214</color>
 
-    <color name="card_shadow">#00000000</color>
+    <color name="ripple_color">#26FFFFFF</color>
+    <color name="card_shadow">#40000000</color>
 
-    <color name="text_primary">#FFFFFF</color>
-    <color name="text_secondary">#B3B3B3</color>
+    <color name="text_primary">#F4F5F6</color>
+    <color name="text_secondary">#C3C7CA</color>
+    <color name="text_tertiary">#858A90</color>
+    <color name="text_on_gradient">#FFFFFF</color>
 
-    <color name="gradient_start_primary">#26A69A</color>
-    <color name="gradient_end_primary">#00796B</color>
+    <color name="gradient_start_primary">#133824</color>
+    <color name="gradient_end_primary">#0B1B13</color>
 
     <color name="whatsapp_green">#25D366</color>
     <color name="whatsapp_dark_green">#128C7E</color>
-    <color name="whatsapp_teal">#075E54</color>
+    <color name="whatsapp_teal">#00A884</color>
+
+    <color name="status_active">#25D366</color>
+    <color name="status_inactive">#FF6262</color>
+    <color name="status_warning">#FFB020</color>
+
+    <color name="bg_badge_green">#183324</color>
+    <color name="badge_green_text">#25D366</color>
+    <color name="hero_border_active">#4D25D366</color>
+    <color name="hero_border_inactive">#4DFF6262</color>
+
+    <!-- Hero Card Specific Tokens (Dark Mode) -->
+    <color name="hero_card_bg">#0D100F</color>
+    <color name="hero_solid_scrim">#0D100F</color>
+    <color name="hero_fade_center">#B30D100F</color>
+    <color name="hero_bottom_shadow">#6608090A</color>
+    <color name="hero_glow_start">#2625D366</color>
+    <color name="hero_text_title">#FFFFFF</color>
+    <color name="hero_text_summary">#A2A8AE</color>
+    <color name="hero_text_label">#767D84</color>
+    <color name="hero_text_version">#F4F5F6</color>
 
     <color name="log_info">#E0E0E0</color>
-    <color name="log_success">#69F0AE</color>
+    <color name="log_success">#25D366</color>
     <color name="log_warning">#FFD180</color>
-    <color name="log_error">#FF8A80</color>
+    <color name="log_error">#FF6262</color>
 </resources>
