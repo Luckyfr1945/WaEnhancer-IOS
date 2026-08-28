@@ -909,14 +909,6 @@ public class FeatureCatalog {
                 null,
                 Arrays.asList("floating", "menu", "context", "ios")));
 
-        catalog.add(new SearchableFeature("ios_text_entry",
-                context.getString(R.string.ios_text_entry),
-                context.getString(R.string.ios_text_entry_sum),
-                SearchableFeature.Category.CUSTOMIZATION,
-                SearchableFeature.FragmentType.CUSTOMIZATION,
-                null,
-                Arrays.asList("ios", "text", "entry", "input", "composer", "chat")));
-
         catalog.add(new SearchableFeature("animation_emojis",
                 context.getString(R.string.animation_emojis),
                 context.getString(R.string.animation_emojis_sum),

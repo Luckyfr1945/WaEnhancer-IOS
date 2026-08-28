@@ -451,18 +451,19 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                                                         previousTitle = currentTitle
                                                     }
                                                     
-                                                    val isChatsTab = currentTitle == "Chats"
-                                                    val tabChanged = lastIsChatsTab != isChatsTab
-                                                    lastIsChatsTab = isChatsTab
+                                                    val isSettingsTab = isSettingsTabTitle(currentTitle)
+                                                    val showPlusButton = !isSettingsTab
+                                                    val tabChanged = lastIsChatsTab != showPlusButton
+                                                    lastIsChatsTab = showPlusButton
                                                     
                                                     if (tabChanged && hdr != null) {
-                                                        setContainerMargin(hdr, isChatsTab)
+                                                        setContainerMargin(hdr, showPlusButton)
                                                     }
                                                     
                                                     try {
                                                         val fakePlus = toolbar.findViewWithTag<ImageView>("fake_plus_btn")
                                                         if (fakePlus != null) {
-                                                            val targetVis = if (isChatsTab) View.VISIBLE else View.GONE
+                                                            val targetVis = if (showPlusButton) View.VISIBLE else View.GONE
                                                             if (fakePlus.visibility != targetVis) {
                                                                 fakePlus.visibility = targetVis
                                                             }
@@ -484,7 +485,7 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                                                                     val c = parent.getChildAt(k)
                                                                     if (c == fab) continue
                                                                     if (c.width > 0 && c.height > 0 && c.height < 100 * density && c.x > parent.width / 2f) {
-                                                                        if (isChatsTab) {
+                                                                        if (showPlusButton) {
                                                                             if (fab.top > 0 && fab.height > 0) {
                                                                                 val fabVisualCenterY = fab.top + fab.translationY + (fab.height / 2f)
                                                                                 val targetY = fabVisualCenterY - (c.height / 2f)
@@ -774,7 +775,6 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
 
                 // 1c. Biarkan fake_plus_btn (tombol + buatan kita)
                 if (child.tag == "fake_plus_btn" || (child is ImageView && child.drawable is IosPlusDrawable)) {
-                    if (child.visibility != View.VISIBLE) child.visibility = View.VISIBLE
                     continue
                 }
                 
@@ -839,6 +839,110 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                 return true
             }
             if (c is ViewGroup && hasSearchViewChild(c)) return true
+        }
+        return false
+    }
+
+    private fun clickNewCommunityItem(vg: ViewGroup): Boolean {
+        for (i in 0 until vg.childCount) {
+            val child = vg.getChildAt(i)
+            val desc = child.contentDescription?.toString()?.lowercase() ?: ""
+            val text = (child as? TextView)?.text?.toString()?.lowercase() ?: ""
+            val idName = try { child.resources.getResourceEntryName(child.id).lowercase() } catch (_: Throwable) { "" }
+
+            val hasCommunityKeyword = idName.contains("community") || idName.contains("komunitas") ||
+                    desc.contains("community") || desc.contains("komunitas") ||
+                    text.contains("community") || text.contains("komunitas")
+
+            val hasActionKeyword = idName.contains("create") || idName.contains("new") || idName.contains("add") ||
+                    desc.contains("baru") || desc.contains("new") || desc.contains("create") || desc.contains("buat") || desc.contains("add") ||
+                    text.contains("baru") || text.contains("new") || text.contains("create") || text.contains("buat") || text.contains("add")
+
+            val isExplicitNewCommunity = hasCommunityKeyword && hasActionKeyword
+
+            if (isExplicitNewCommunity) {
+                var target: View? = child
+                var depth = 0
+                while (target != null && depth < 5) {
+                    if (target.isClickable || target.hasOnClickListeners()) {
+                        try {
+                            if (target.performClick()) return true
+                        } catch (_: Throwable) {}
+                    }
+                    target = target.parent as? View
+                    depth++
+                }
+                try {
+                    if (child.performClick()) return true
+                } catch (_: Throwable) {}
+            }
+
+            if (child is ViewGroup && clickNewCommunityItem(child)) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun clickFirstItemOfRecyclerView(vg: ViewGroup): Boolean {
+        val className = vg.javaClass.name
+        if (className.contains("RecyclerView") || className.contains("ListView") || className.contains("AbsListView")) {
+            if (vg.childCount > 0) {
+                val firstItem = vg.getChildAt(0)
+                if (firstItem != null) {
+                    var target: View? = firstItem
+                    var depth = 0
+                    while (target != null && depth < 5) {
+                        if (target.isClickable || target.hasOnClickListeners()) {
+                            try {
+                                if (target.performClick()) return true
+                            } catch (_: Throwable) {}
+                        }
+                        target = target.parent as? View
+                        depth++
+                    }
+                    try {
+                        if (firstItem.performClick()) return true
+                    } catch (_: Throwable) {}
+                }
+            }
+        }
+        for (i in 0 until vg.childCount) {
+            val child = vg.getChildAt(i)
+            if (child is ViewGroup && clickFirstItemOfRecyclerView(child)) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun performFallbackClickOnActiveTab(vg: ViewGroup): Boolean {
+        for (i in 0 until vg.childCount) {
+            val child = vg.getChildAt(i)
+            val desc = child.contentDescription?.toString()?.lowercase() ?: ""
+            val text = (child as? TextView)?.text?.toString()?.lowercase() ?: ""
+            val idName = try { child.resources.getResourceEntryName(child.id).lowercase() } catch (_: Throwable) { "" }
+
+            val isCallMatch = (desc.contains("panggilan") || text.contains("panggilan") || idName.contains("call")) &&
+                    (desc.contains("baru") || text.contains("baru") || desc.contains("new") || text.contains("new") || idName.contains("new") || idName.contains("create"))
+
+            if (isCallMatch) {
+                var curr: View? = child
+                var depth = 0
+                while (curr != null && depth < 5) {
+                    if (curr.isClickable || curr.hasOnClickListeners()) {
+                        try {
+                            if (curr.performClick()) return true
+                        } catch (_: Throwable) {}
+                    }
+                    curr = curr.parent as? View
+                    depth++
+                }
+            }
+
+            if (child is ViewGroup && performFallbackClickOnActiveTab(child)) {
+                return true
+            }
         }
         return false
     }
@@ -923,11 +1027,82 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
             setImageDrawable(IosPlusDrawable(size))
             setOnClickListener {
                 try {
-                    val fabId = activity.resources.getIdentifier("fab", "id", activity.packageName)
-                    if (fabId != 0) {
-                        activity.findViewById<View>(fabId)?.performClick()
+                    val currentTitle = try {
+                        val hdrId = Utils.getID("header", "id")
+                        val hdr = if (hdrId != 0) activity.findViewById<ViewGroup>(hdrId) else null
+                        val largeTitle = if (hdr != null) getLargeTitleView(hdr) else null
+                        largeTitle?.text?.toString() ?: ""
+                    } catch (_: Throwable) { "" }
+
+                    val tabType = resolveTabTitle(currentTitle)
+                    var clicked = false
+
+                    if (tabType == "Communities") {
+                        val decor = activity.window?.decorView as? ViewGroup
+                        if (decor != null) {
+                            clicked = clickNewCommunityItem(decor)
+                            if (!clicked) {
+                                clicked = clickFirstItemOfRecyclerView(decor)
+                            }
+                        }
+
+                        if (!clicked) {
+                            val possibleClasses = arrayOf(
+                                "com.whatsapp.community.NewCommunityActivity",
+                                "com.whatsapp.community.CreateCommunityActivity",
+                                "com.whatsapp.community.CommunityNavigationActivity",
+                                "com.whatsapp.community.home.CommunityHomeActivity",
+                                "com.whatsapp.community.AddMembersWithLinksActivity"
+                            )
+                            for (clsName in possibleClasses) {
+                                try {
+                                    val cls = activity.classLoader.loadClass(clsName)
+                                    val intent = android.content.Intent(activity, cls)
+                                    activity.startActivity(intent)
+                                    clicked = true
+                                    break
+                                } catch (_: Throwable) {}
+                            }
+                        }
                     }
-                } catch (e: Exception) {}
+
+                    if (!clicked) {
+                        val fabId = activity.resources.getIdentifier("fab", "id", activity.packageName)
+                        if (fabId != 0) {
+                            val fabView = activity.findViewById<View>(fabId)
+                            if (fabView != null) {
+                                clicked = try { fabView.performClick() } catch (_: Throwable) { false }
+                            }
+                        }
+                    }
+
+                    if (!clicked) {
+                        val fabNames = arrayOf(
+                            "call_btn", "new_chat_btn", "status_btn", "camera_fab",
+                            "community_fab", "create_community_button", "create_community",
+                            "text_status_fab", "fab_second", "fab_auxiliary", "extended_mini_fab"
+                        )
+                        for (name in fabNames) {
+                            val resId = activity.resources.getIdentifier(name, "id", activity.packageName)
+                            if (resId != 0) {
+                                val v = activity.findViewById<View>(resId)
+                                if (v != null) {
+                                    clicked = try { v.performClick() } catch (_: Throwable) { false }
+                                    if (clicked) break
+                                }
+                            }
+                        }
+                    }
+
+                    if (!clicked) {
+                        val decor = activity.window?.decorView as? ViewGroup
+                        if (decor != null) {
+                            performFallbackClickOnActiveTab(decor)
+                        }
+                    }
+                } catch (e: Exception) {
+                    logDebug("IosHeader: fake_plus_btn onClick error: ${e.message}")
+                }
             }
             visibility = View.VISIBLE
         }
