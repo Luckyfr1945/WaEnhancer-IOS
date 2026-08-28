@@ -1,8 +1,9 @@
 package com.wmods.wppenhacer.xposed.features.customization
 
-import android.view.ViewParent
+import android.app.Activity
 import android.content.Context
 import android.content.SharedPreferences
+import android.view.ViewParent
 import android.content.res.ColorStateList
 import android.graphics.Canvas
 import android.graphics.Color
@@ -87,7 +88,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         private const val BAR_HEIGHT_DP = 66f
         private const val BAR_PADDING_DP = 4f
         private const val INDICATOR_INSET_DP = 4f
-        private const val INDICATOR_WIDTH_RATIO = 0.78f
+        private const val INDICATOR_WIDTH_RATIO = 0.90f
         private const val BLUR_RADIUS = 2.5f
         private const val PRESSED_SCALE = 1.08f
         private const val RUBBER_BAND_DP = 4f
@@ -134,7 +135,8 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             val expansion = 1f + 0.10f * pressProgress
             val halfW = halfWidth * scaleX * expansion
             val halfH = (bottom - top) * 0.5f * scaleY * expansion
-            val corner = halfH.coerceAtMost(halfW)
+            val maxCorner = Utils.dipToPixels(18f).toFloat()
+            val corner = maxCorner.coerceAtMost(halfH).coerceAtMost(halfW)
 
             // 1. Soft multi-layer drop shadow
             shadowPaint.color = shadowColor
@@ -488,7 +490,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
 
                             val inset = Utils.dipToPixels(INDICATOR_INSET_DP).toFloat()
                             val barH = (if (bar.height > 0) bar.height else item1.height).toFloat()
-                            val pillH = Utils.dipToPixels(44f).toFloat()
+                            val pillH = Utils.dipToPixels(52f).toFloat()
                             val centerY = barH / 2f
                             indicator.top = (centerY - pillH / 2f).coerceAtLeast(inset)
                             indicator.bottom = (centerY + pillH / 2f).coerceAtMost(barH - inset)
@@ -1272,12 +1274,11 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                     it.setTag(TAG_ITEM_INITIALIZED, true)
                     clearBackgroundsRecursively(it)
                     disableNativeActiveIndicator(it)
-                    morphAndaToSettings(it)
-                    formatTabItemViews(it)
                 } else {
                     if (it.background != null) it.background = null
-                    formatTabItemViews(it)
                 }
+                morphAndaToSettings(it)
+                formatTabItemViews(it)
             }
         }
         if (items.isEmpty()) return
@@ -1286,6 +1287,34 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         if (selected < 0) return
         
         if (items[selected].width <= 0) return
+
+        try {
+            val act = (bar.context as? Activity)
+                ?: ((bar.context as? android.content.ContextWrapper)?.baseContext as? Activity)
+                ?: (bar.rootView?.context as? Activity)
+            if (act != null) {
+                val photoId = Utils.getID("me_tab_profile_info_photo", "id")
+                if (photoId != 0) {
+                    val photoView = act.findViewById<ImageView>(photoId)
+                    if (photoView != null) {
+                        val avatar = Utils.getUserProfileAvatar(photoView.context, 128)
+                        if (avatar != null && photoView.drawable !== avatar) {
+                            photoView.setImageDrawable(avatar)
+                        }
+                    }
+                }
+                val isAndaSelected = selected == 4 || (selected in items.indices && getTabRank(items[selected]) == 5)
+                if (isAndaSelected) {
+                    val appBarId = Utils.getID("me_tab_appbar_layout", "id")
+                    if (appBarId != 0) {
+                        val appBar = act.findViewById<View>(appBarId)
+                        if (appBar != null) {
+                            XposedHelpers.callMethod(appBar, "setExpanded", true, false)
+                        }
+                    }
+                }
+            }
+        } catch (_: Throwable) {}
         
         // Ensure manual tinting so native wrong selection doesn't bleed through
         val activeColor = resolveBarColor(bar).let { if (isLightColor(it)) Color.BLACK else Color.WHITE }
@@ -1303,10 +1332,14 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             // Tint ImageView and TextView manually
             val group = view as? ViewGroup
             if (group != null) {
+                group.clipChildren = false
+                group.clipToPadding = false
                 for (j in 0 until group.childCount) {
                     val child = group.getChildAt(j)
                     if (child is ImageView) {
-                        if (child.imageTintList !== targetColorState) {
+                        if (getTabRank(view) == 5) {
+                            child.imageTintList = null
+                        } else if (child.imageTintList !== targetColorState) {
                             child.imageTintList = targetColorState
                         }
                     } else if (child is TextView) {
@@ -1360,9 +1393,13 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             XposedHelpers.setBooleanField(item, "A0N", false)
         } catch (_: Throwable) {}
         if (item is ViewGroup) {
+            item.clipChildren = false
+            item.clipToPadding = false
             for (i in 0 until item.childCount) {
                 val child = item.getChildAt(i)
                 if (child is ViewGroup) {
+                    child.clipChildren = false
+                    child.clipToPadding = false
                     val toRemove = mutableListOf<View>()
                     for (j in 0 until child.childCount) {
                         val grandChild = child.getChildAt(j)
@@ -1392,26 +1429,26 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             while (queue.isNotEmpty()) {
                 val v = queue.removeFirst()
                 if (v is TextView) {
-                    val t = v.text?.toString()?.lowercase() ?: ""
-                    if (t.contains("anda") || t.contains("pengaturan") || t.contains("profil")) {
-                        v.text = "Pengaturan"
-                    } else if (t.contains("you") || t.contains("setting") || t.contains("profile")) {
-                        v.text = "Settings"
-                    } else if (t.contains("tú")) {
-                        v.text = "Configuración"
-                    } else if (t.contains("voce") || t.contains("você")) {
-                        v.text = "Configurações"
-                    }
+                    v.text = Utils.getYouTabString(v.context)
                 } else if (v is ImageView) {
-                    val gear = com.wmods.wppenhacer.xposed.utils.DesignUtils.getDrawableByName("ic_settings")?.mutate()
-                    if (gear != null) {
-                        // iOS style gear is usually gray, let's tint it
-                        gear.setTint(android.graphics.Color.parseColor("#8E8E93"))
-                        v.setImageDrawable(gear)
+                    val avatar = Utils.getUserProfileAvatar(v.context, 26)
+                    if (avatar != null) {
+                        v.setImageDrawable(avatar)
                         v.scaleType = ImageView.ScaleType.CENTER_INSIDE
                         v.setPadding(0, 0, 0, 0)
+                        v.imageTintList = null
+                    } else {
+                        val gear = com.wmods.wppenhacer.xposed.utils.DesignUtils.getDrawableByName("ic_settings")?.mutate()
+                        if (gear != null) {
+                            gear.setTint(android.graphics.Color.parseColor("#8E8E93"))
+                            v.setImageDrawable(gear)
+                            v.scaleType = ImageView.ScaleType.CENTER_INSIDE
+                            v.setPadding(0, 0, 0, 0)
+                        }
                     }
                 } else if (v is ViewGroup) {
+                    v.clipChildren = false
+                    v.clipToPadding = false
                     for (i in 0 until v.childCount) {
                         queue.add(v.getChildAt(i))
                     }
@@ -1422,37 +1459,45 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
 
     private fun formatTabItemViews(item: View) {
         if (item !is ViewGroup) return
+        item.clipChildren = false
+        item.clipToPadding = false
         val density = item.resources.displayMetrics.density
+
+        if (item.translationY != 0f) {
+            item.translationY = 0f
+        }
 
         val queue = ArrayDeque<View>()
         queue.add(item)
         while (queue.isNotEmpty()) {
             val v = queue.removeFirst()
+            if (v is ViewGroup) {
+                v.clipChildren = false
+                v.clipToPadding = false
+                for (i in 0 until v.childCount) {
+                    queue.add(v.getChildAt(i))
+                }
+            }
             val clsName = v.javaClass.simpleName
             val isIcon = v is ImageView || clsName.contains("Icon", ignoreCase = true)
             val isLabel = v is TextView || clsName.contains("Label", ignoreCase = true)
 
             if (isIcon) {
-                val targetY = -6f * density
+                val targetY = -3f * density
                 if (v.translationY != targetY) {
                     v.translationY = targetY
                 }
             } else if (isLabel) {
-                val targetY = 6f * density
+                val targetY = 3.5f * density
                 if (v.translationY != targetY) {
                     v.translationY = targetY
                 }
                 if (v is TextView) {
-                    if (v.textSize != 10f * density && v.textSize != 10f) {
-                        v.textSize = 10f
+                    if (v.textSize != 9.5f * density && v.textSize != 9.5f) {
+                        v.textSize = 9.5f
                     }
                     v.maxLines = 1
                     v.ellipsize = android.text.TextUtils.TruncateAt.END
-                }
-            }
-            if (v is ViewGroup) {
-                for (i in 0 until v.childCount) {
-                    queue.add(v.getChildAt(i))
                 }
             }
         }
@@ -1681,7 +1726,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         state.selectedIndex = newIndex
 
         val barH = (if (bar.height > 0) bar.height else target.height).toFloat()
-        val pillH = Utils.dipToPixels(44f).toFloat()
+        val pillH = Utils.dipToPixels(52f).toFloat()
         val centerY = barH / 2f
         indicator.top = (centerY - pillH / 2f).coerceAtLeast(inset)
         indicator.bottom = (centerY + pillH / 2f).coerceAtMost(barH - inset)
