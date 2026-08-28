@@ -4,6 +4,7 @@
 [IMPROVED]
 * Dynamic Header Plus Action: Improved click handler to dynamically trigger primary creation actions (New Chat, New Call, New Status, New Community) across all main tabs
 * Header Tab Visibility: Improved top bar action button manager to display green plus button on all main content tabs while hiding it on Settings tab
+* Removed Duplicate Preference: Removed duplicate 'Gaya Kolom Chat iOS' (ios_text_entry) preference toggle from Customization settings menu
 
 [FIXED]
 * Fixed missing green plus button in Communities, Calls, and Status header tabs

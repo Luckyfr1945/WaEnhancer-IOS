@@ -49,7 +49,6 @@ import com.wmods.wppenhacer.xposed.features.customization.IGStatus
 import com.wmods.wppenhacer.xposed.features.customization.IosContextMenu
 import com.wmods.wppenhacer.xposed.features.customization.IosHeader
 import com.wmods.wppenhacer.xposed.features.customization.IosSwipeMenu
-import com.wmods.wppenhacer.xposed.features.customization.IosTextEntry
 import com.wmods.wppenhacer.xposed.features.customization.SeparateGroup
 import com.wmods.wppenhacer.xposed.features.customization.ShowOnline
 import com.wmods.wppenhacer.xposed.features.customization.StatusLongPressPreview
@@ -576,7 +575,6 @@ class FeatureLoader {
                 JumpFirstMessage::class.java,
                 AboutContactPicker::class.java,
                 DefaultEmoji::class.java,
-                IosTextEntry::class.java,
                 IosContextMenu::class.java,
                 StatusReplayTracker::class.java,
                 StatusLongPressPreview::class.java

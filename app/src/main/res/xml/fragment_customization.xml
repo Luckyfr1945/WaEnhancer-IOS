@@ -147,10 +147,6 @@
             app:key="floatingmenu"
             app:title="@string/new_context_menu_ui" />
 
-        <rikka.material.preference.MaterialSwitchPreference
-            android:summary="@string/ios_text_entry_sum"
-            app:key="ios_text_entry"
-            app:title="@string/ios_text_entry" />
 
         <rikka.material.preference.MaterialSwitchPreference
             android:defaultValue="true"
