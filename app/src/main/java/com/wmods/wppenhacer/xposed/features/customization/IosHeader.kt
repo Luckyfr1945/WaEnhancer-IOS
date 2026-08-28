@@ -127,16 +127,25 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                                         
                                         val title = param2.args.getOrNull(0) as? CharSequence
                                         val rawTitle = title?.toString()?.trim() ?: ""
-                                        val newTitle = resolveTabTitle(rawTitle)
+                                        val isSettings = isSettingsTabTitle(rawTitle)
 
                                         val largeTitle = getLargeTitleView(header)
-                                        if (largeTitle != null) {
-                                            largeTitle.text = newTitle
-                                            param2.args[0] = ""
+                                        if (isSettings) {
+                                            if (largeTitle != null) {
+                                                largeTitle.text = ""
+                                                largeTitle.visibility = View.GONE
+                                            }
                                         } else {
-                                            param2.args[0] = newTitle
+                                            val newTitle = resolveTabTitle(rawTitle)
+                                            if (largeTitle != null) {
+                                                largeTitle.text = newTitle
+                                                largeTitle.visibility = View.VISIBLE
+                                                param2.args[0] = ""
+                                            } else {
+                                                param2.args[0] = newTitle
+                                            }
                                         }
-                                        val isChats = newTitle == "Chats"
+                                        val isChats = !isSettings && resolveTabTitle(rawTitle) == "Chats"
                                         header.post {
                                             setContainerMargin(header, isChats)
                                         }
@@ -154,7 +163,11 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                                         }
                                         if (context.javaClass != WppCore.homeActivityClass) return
                                         
-                                        clearToolbarContent(t)
+                                        val title = param2.args.getOrNull(0) as? CharSequence
+                                        val rawTitle = title?.toString()?.trim() ?: ""
+                                        if (!isSettingsTabTitle(rawTitle)) {
+                                            clearToolbarContent(t)
+                                        }
                                     }
                                 })
                             }
@@ -449,8 +462,10 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                                                     try {
                                                         val fakePlus = toolbar.findViewWithTag<ImageView>("fake_plus_btn")
                                                         if (fakePlus != null) {
-                                                            if (fakePlus.visibility != View.VISIBLE) fakePlus.visibility = View.VISIBLE
-                                                            if (fakePlus.alpha != 1f) fakePlus.alpha = 1f
+                                                            val targetVis = if (isChatsTab) View.VISIBLE else View.GONE
+                                                            if (fakePlus.visibility != targetVis) {
+                                                                fakePlus.visibility = targetVis
+                                                            }
                                                         }
                                                     } catch (_: Exception) {}
                                                     
@@ -611,14 +626,23 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
      * label tab yang dikenal (ID & EN), baru fallback ke "Chats" kalau memang
      * tidak ada judul valid sama sekali.
      */
+    private fun isSettingsTabTitle(rawTitle: String): Boolean {
+        val lower = rawTitle.lowercase().trim()
+        val youTitle = try { Utils.getYouTabString(Utils.application).lowercase().trim() } catch (_: Throwable) { "anda" }
+        return lower == "settings" || lower == "setelan" || lower == "pengaturan" ||
+               lower == "anda" || lower == "you" || lower == "profil" || lower == "profile" ||
+               lower == youTitle
+    }
+
     private fun resolveTabTitle(rawTitle: String): String {
+        val youTitle = try { Utils.getYouTabString(Utils.application) } catch (_: Throwable) { "Anda" }
         val knownTabs = mapOf(
-            "chats" to "Chats", "obrolan" to "Chats",
+            "chats" to "Chats", "obrolan" to "Chats", "chat" to "Chats",
             "status" to "Status", "updates" to "Status", "pembaruan" to "Status",
             "communities" to "Communities", "komunitas" to "Communities",
             "calls" to "Calls", "panggilan" to "Calls",
-            "settings" to "Settings", "setelan" to "Settings", "pengaturan" to "Settings",
-            "anda" to "Settings", "you" to "Settings", "profil" to "Settings", "profile" to "Settings"
+            "settings" to youTitle, "setelan" to youTitle, "pengaturan" to youTitle,
+            "anda" to youTitle, "you" to youTitle, "profil" to youTitle, "profile" to youTitle
         )
 
         knownTabs[rawTitle.lowercase()]?.let { return it }
@@ -648,7 +672,7 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
             val parent = header.parent as? ViewGroup ?: return
             val density = header.resources.displayMetrics.density
             val largeTitle = getLargeTitleView(header)
-            val titleH = largeTitle?.height?.takeIf { it > 0 } ?: (48 * density).toInt()
+            val titleH = if (largeTitle == null || largeTitle.visibility == View.GONE) 0 else (largeTitle.height.takeIf { it > 0 } ?: (48 * density).toInt())
             val toolbarView = header.findViewById<View>(Utils.getID("toolbar", "id"))
             val toolbarH = toolbarView?.height?.takeIf { it > 0 } ?: (56 * density).toInt()
             val headerHeight = if (header.height > 0) header.height else (header.measuredHeight.takeIf { it > 0 } ?: (toolbarH + titleH))
@@ -658,7 +682,7 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
             val desiredGapDp = 4f
             val desiredGapPx = (desiredGapDp * density).toInt()
 
-            // 1. Shift pager_holder (parent tunggal untuk semua tab termasuk Chats, Calls, Updates, Communities)
+            // 1. Shift pager_holder (parent tunggal untuk semua tab termasuk Chats, Calls, Updates, Communities, Anda)
             val pagerHolderId = Utils.getID("pager_holder", "id")
             if (pagerHolderId != 0) {
                 val ph = parent.findViewById<ViewGroup>(pagerHolderId)

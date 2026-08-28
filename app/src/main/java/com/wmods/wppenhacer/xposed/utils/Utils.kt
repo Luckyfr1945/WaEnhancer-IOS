@@ -26,6 +26,16 @@ import com.wmods.wppenhacer.xposed.core.WppCore.getClientBridge
 import com.wmods.wppenhacer.xposed.core.WppCore.getContactName
 import com.wmods.wppenhacer.xposed.core.components.FMessageWpp.UserJid
 import de.robv.android.xposed.XposedBridge
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.ColorFilter
+import android.graphics.PorterDuff
+import android.content.res.ColorStateList
+import android.graphics.drawable.Drawable
+import androidx.core.graphics.drawable.RoundedBitmapDrawableFactory
+import com.wmods.wppenhacer.xposed.core.WppCore
+import com.wmods.wppenhacer.xposed.core.components.WaContactWpp
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -390,6 +400,101 @@ object Utils {
         mActivity.startActivity(browserIntent)
     }
 
+
+    @JvmStatic
+    fun getYouTabString(context: Context): String {
+        val resId = getID("you", "string")
+        if (resId != 0) {
+            try {
+                val str = context.getString(resId)
+                if (!str.isNullOrBlank()) return str
+            } catch (_: Throwable) {}
+        }
+        val lang = Locale.getDefault().language
+        return when (lang) {
+            "in", "id" -> "Anda"
+            "es" -> "Tú"
+            "pt" -> "Você"
+            "fr" -> "Vous"
+            "de" -> "Du"
+            "it" -> "Tu"
+            "ar" -> "أنت"
+            "ru" -> "Вы"
+            "zh" -> "你"
+            "ja" -> "あなた"
+            "ko" -> "나"
+            else -> "You"
+        }
+    }
+
+    @JvmStatic
+    private var cachedAvatarDrawable: Drawable? = null
+    @JvmStatic
+    private var cachedAvatarMtime: Long = -1L
+    @JvmStatic
+    private var cachedAvatarSizeDp: Int = -1
+
+    @JvmStatic
+    fun getUserProfileAvatar(context: Context, sizeDp: Int = 26): Drawable? {
+        try {
+            val paths = listOf(
+                File(context.filesDir, "me.jpg"),
+                File("/data/data/com.whatsapp/files/me.jpg"),
+                File("/data/user/0/com.whatsapp/files/me.jpg")
+            )
+            val file = paths.firstOrNull { it.exists() && it.length() > 0 } ?: run {
+                cachedAvatarDrawable = null
+                cachedAvatarMtime = -1L
+                cachedAvatarSizeDp = -1
+                return null
+            }
+
+            val mtime = file.lastModified()
+            if (cachedAvatarDrawable != null && mtime == cachedAvatarMtime && sizeDp == cachedAvatarSizeDp) {
+                return cachedAvatarDrawable
+            }
+
+            val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return cachedAvatarDrawable
+            val density = context.resources.displayMetrics.density
+            val sizePx = (sizeDp * density).toInt().coerceAtLeast(1)
+            val scaled = Bitmap.createScaledBitmap(bitmap, sizePx, sizePx, true)
+            val rounded = RoundedBitmapDrawableFactory.create(
+                context.resources,
+                scaled
+            ).apply {
+                isCircular = true
+            }
+            val drawable = UntintedAvatarDrawable(rounded)
+            if (sizeDp == 26) {
+                cachedAvatarDrawable = drawable
+                cachedAvatarMtime = mtime
+                cachedAvatarSizeDp = sizeDp
+            }
+            return drawable
+        } catch (_: Throwable) {}
+        return cachedAvatarDrawable
+    }
+
+    class UntintedAvatarDrawable(
+        private val wrapped: Drawable
+    ) : Drawable() {
+        override fun draw(canvas: Canvas) {
+            wrapped.colorFilter = null
+            wrapped.draw(canvas)
+        }
+        override fun setAlpha(alpha: Int) { wrapped.alpha = alpha }
+        override fun setColorFilter(colorFilter: ColorFilter?) {}
+        override fun setTint(tintColor: Int) {}
+        override fun setTintList(tint: ColorStateList?) {}
+        override fun setTintMode(tintMode: PorterDuff.Mode?) {}
+        override fun getOpacity(): Int = wrapped.opacity
+        override fun getIntrinsicWidth(): Int = wrapped.intrinsicWidth
+        override fun getIntrinsicHeight(): Int = wrapped.intrinsicHeight
+        override fun setBounds(left: Int, top: Int, right: Int, bottom: Int) {
+            super.setBounds(left, top, right, bottom)
+            wrapped.setBounds(left, top, right, bottom)
+        }
+    }
 
     fun interface BinderLocalScopeBlock<T> {
         fun execute(): T?

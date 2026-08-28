@@ -14,6 +14,7 @@ import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.view.isVisible
@@ -75,6 +76,7 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
         properties = Utils.getProperties(prefs, "custom_css", "custom_filters")
         val menuWIcons = prefs.getBoolean("menuwicon", false)
         val newSettings = getNewSettingsVariant()
+        logDebug("Others: newSettings value is $newSettings (configui_mode=${prefs.getString("configui_mode", null)})")
         val filterChats = prefs.getString("chatfilter", "2")
         val filterSeen = prefs.getBoolean("filterseen", false)
         var statusStyle = prefs.getString("status_style", "0")?.toInt() ?: 0
@@ -121,6 +123,32 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
             })
         }
         propsInteger[18564] = newSettings // ME_TAB_V2_VARIANTS_CODE
+
+        // WA 2.26+ Native Settings Tab injection:
+        // When configui_mode is 6 (You Tab), hook WDSBottomBar, TabList, TabName, TabIcon, and GetTabMethod
+        // to inject WhatsApp's native SettingsFragment into ViewPager.
+        if (newSettings == 6) {
+            try {
+                val wdsBottomBarClass = classLoader.loadClass(
+                    "com.whatsapp.ui.wds.components.bottombar.WDSBottomBar"
+                )
+                XposedBridge.hookAllConstructors(wdsBottomBarClass, object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        try {
+                            XposedHelpers.callMethod(param.thisObject, "setSettingsTabVariantEnabled", true)
+                            XposedHelpers.callMethod(param.thisObject, "setSettingsTabVariant", true)
+                            logDebug("WDSBottomBar: Settings tab variant enabled")
+                        } catch (e: Throwable) {
+                            logDebug("WDSBottomBar: Failed to enable settings tab: ${e.message}")
+                        }
+                    }
+                })
+            } catch (e: Throwable) {
+                logDebug("WDSBottomBar class not found: ${e.message}")
+            }
+
+            hookNativeSettingsTab()
+        }
 
         propsBoolean[2889] = floatingMenu
 
@@ -1169,6 +1197,204 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
         if (view is ViewGroup) {
             for (i in 0 until view.childCount) {
                 val found = findFirstTextView(view.getChildAt(i))
+                if (found != null) return found
+            }
+        }
+        return null
+    }
+
+    private fun hookNativeSettingsTab() {
+        val SETTINGS_TAB = 700
+        var activeTabs = ArrayList<Int>()
+
+        try {
+            val bottomNavigationViewCls = Unobfuscator.findFirstClassUsingName(
+                classLoader,
+                StringMatchType.EndsWith,
+                ".BottomNavigationView"
+            )
+            XposedHelpers.findAndHookMethod(
+                bottomNavigationViewCls,
+                "getMaxItemCount",
+                XC_MethodReplacement.returnConstant(99)
+            )
+        } catch (e: Throwable) {
+            logDebug("Others: Error hooking getMaxItemCount for Settings Tab: ${e.message}")
+        }
+
+        // 1. Hook Tab List (ViewPager Adapter tab IDs)
+        try {
+            val onCreateTabList = Unobfuscator.loadTabListMethod(classLoader)
+            XposedBridge.hookMethod(onCreateTabList, object : XC_MethodHook() {
+                @Suppress("UNCHECKED_CAST")
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    val resultTabs = param.result as? ArrayList<Int> ?: return
+                    activeTabs = resultTabs
+                    if (!resultTabs.contains(SETTINGS_TAB)) {
+                        resultTabs.add(SETTINGS_TAB)
+                    }
+                }
+            })
+        } catch (e: Throwable) {
+            logDebug("Others: Error hooking TabList for Settings Tab: ${e.message}")
+        }
+
+        // 2. Hook Tab Name (Localized "Anda" / "You" etc.)
+        try {
+            val tabNameMethod = Unobfuscator.loadTabNameMethod(classLoader)
+            XposedBridge.hookMethod(tabNameMethod, object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    val tab = param.args[0] as? Int ?: return
+                    if (tab == SETTINGS_TAB) {
+                        param.result = Utils.getYouTabString(Utils.application)
+                    }
+                }
+            })
+        } catch (e: Throwable) {
+            logDebug("Others: Error hooking TabName for Settings Tab: ${e.message}")
+        }
+
+        // 3. Hook Tab Icon (User profile picture / avatar)
+        try {
+            val iconTabMethod = Unobfuscator.loadIconTabMethod(classLoader)
+            val menuAddAndroidX = Unobfuscator.loadAddMenuAndroidX(classLoader)
+            XposedBridge.hookMethod(iconTabMethod, object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    val hooked = XposedBridge.hookMethod(menuAddAndroidX, object : XC_MethodHook() {
+                        override fun afterHookedMethod(innerParam: MethodHookParam) {
+                            if (innerParam.args.size > 2 && (innerParam.args[1] as? Int) == SETTINGS_TAB) {
+                                val menuItem = innerParam.result as? MenuItem ?: return
+                                val avatar = Utils.getUserProfileAvatar(Utils.application, 26)
+                                if (avatar != null) {
+                                    menuItem.icon = avatar
+                                } else {
+                                    val gear = com.wmods.wppenhacer.xposed.utils.DesignUtils.getDrawableByName("ic_settings")
+                                    if (gear != null) {
+                                        menuItem.icon = gear
+                                    }
+                                }
+                            }
+                        }
+                    })
+                    param.setObjectExtra("hooked_settings", hooked)
+                }
+
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    val hooked = param.getObjectExtra("hooked_settings") as? XC_MethodHook.Unhook
+                    hooked?.unhook()
+                }
+            })
+        } catch (e: Throwable) {
+            logDebug("Others: Error hooking TabIcon for Settings Tab: ${e.message}")
+        }
+
+        // 4. Hook Tab Instance (GetTabMethod returns SettingsFragment)
+        try {
+            val settingsFragClass = XposedHelpers.findClass(
+                "com.whatsapp.settings.ui.SettingsFragment",
+                classLoader
+            )
+            val getTabMethod = Unobfuscator.loadGetTabMethod(classLoader)
+            XposedBridge.hookMethod(getTabMethod, object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    val index = param.args[0] as? Int ?: return
+                    val tabId = if (index in activeTabs.indices) activeTabs[index] else index
+                    if (tabId == SETTINGS_TAB) {
+                        val fragment = settingsFragClass.declaredConstructors.first {
+                            it.parameterCount == 0
+                        }.newInstance()
+                        param.result = fragment
+                        logDebug("Others: Successfully instantiated SettingsFragment for tab $tabId")
+                    }
+                }
+            })
+
+            try {
+                val wdsProfilePhotoClass = classLoader.loadClass("com.whatsapp.ui.wds.components.profilephoto.WDSProfilePhoto")
+                XposedBridge.hookAllConstructors(wdsProfilePhotoClass, object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        val iv = param.thisObject as? ImageView ?: return
+                        iv.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+                            override fun onViewAttachedToWindow(v: View) {
+                                val targetPhotoId = Utils.getID("me_tab_profile_info_photo", "id")
+                                if (targetPhotoId != 0 && v.id == targetPhotoId) {
+                                    val avatar = Utils.getUserProfileAvatar(v.context, 128)
+                                    if (avatar != null) {
+                                        (v as? ImageView)?.setImageDrawable(avatar)
+                                        logDebug("Others: Set avatar on me_tab_profile_info_photo onViewAttachedToWindow")
+                                    }
+                                }
+                            }
+                            override fun onViewDetachedFromWindow(v: View) {}
+                        })
+                    }
+                })
+            } catch (e: Throwable) {
+                logDebug("Others: Error hooking WDSProfilePhoto constructor: ${e.message}")
+            }
+
+            for (m in settingsFragClass.methods) {
+                if (m.name == "onViewCreated" || m.name == "onResume") {
+                    XposedBridge.hookMethod(m, object : XC_MethodHook() {
+                        override fun afterHookedMethod(param: MethodHookParam) {
+                            val frag = param.thisObject
+                            if (settingsFragClass.isInstance(frag)) {
+                                val root = (param.args.getOrNull(0) as? View) ?: try {
+                                    XposedHelpers.callMethod(frag, "getView") as? View
+                                } catch (_: Throwable) { null } ?: return
+                                root.post {
+                                    val appBarId = Utils.getID("me_tab_appbar_layout", "id")
+                                    if (appBarId != 0) {
+                                        val appBar = root.findViewById<View>(appBarId)
+                                        if (appBar != null) {
+                                            try {
+                                                XposedHelpers.callMethod(appBar, "setExpanded", true, false)
+                                            } catch (_: Throwable) {}
+                                        }
+                                    }
+                                    val scrollViewId = Utils.getID("settings_nested_scroll_view", "id")
+                                    if (scrollViewId != 0) {
+                                        val scroll = root.findViewById<View>(scrollViewId)
+                                        scroll?.isNestedScrollingEnabled = true
+                                    }
+                                    bindSettingsProfilePhoto(root)
+                                }
+                            }
+                        }
+                    })
+                }
+            }
+        } catch (e: Throwable) {
+            logDebug("Others: Error hooking TabInstance for Settings Tab: ${e.message}")
+        }
+    }
+
+    private fun bindSettingsProfilePhoto(root: View) {
+        try {
+            val photoId = Utils.getID("me_tab_profile_info_photo", "id")
+            val photoView = if (photoId != 0) root.findViewById<ImageView>(photoId) else null
+            val target = photoView ?: findProfilePhotoView(root)
+            if (target != null) {
+                val avatar = Utils.getUserProfileAvatar(target.context, 128)
+                if (avatar != null) {
+                    target.setImageDrawable(avatar)
+                    logDebug("Others: Successfully bound user profile photo in SettingsFragment ($target)")
+                }
+            } else {
+                logDebug("Others: photoView not found in SettingsFragment root")
+            }
+        } catch (e: Throwable) {
+            logDebug("Others: Error binding user profile photo: ${e.message}")
+        }
+    }
+
+    private fun findProfilePhotoView(view: View): ImageView? {
+        if (view is ImageView && (view.javaClass.simpleName.contains("ProfilePhoto") || view.id == Utils.getID("me_tab_profile_info_photo", "id"))) {
+            return view
+        }
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                val found = findProfilePhotoView(view.getChildAt(i))
                 if (found != null) return found
             }
         }
