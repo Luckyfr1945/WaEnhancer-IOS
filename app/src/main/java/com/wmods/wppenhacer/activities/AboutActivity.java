@@ -5,11 +5,9 @@ import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
-import android.view.ContextThemeWrapper;
 import android.widget.LinearLayout;
 
 import androidx.annotation.Nullable;
-import androidx.core.content.ContextCompat;
 
 import com.google.android.material.button.MaterialButton;
 import com.wmods.wppenhacer.R;
@@ -56,21 +54,10 @@ public class AboutActivity extends BaseActivity {
 
         for (int i = 0; i < CONTRIBUTORS.length; i++) {
             String[] contributor = CONTRIBUTORS[i];
-            MaterialButton button;
-            
-            // Top 3 primary authors/fork maintainers get solid green pill buttons
-            if (i < 3) {
-                button = new MaterialButton(this);
-                button.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#62D87A")));
-                button.setTextColor(Color.parseColor("#051A0B"));
-                button.setIconTint(ColorStateList.valueOf(Color.parseColor("#051A0B")));
-            } else {
-                button = new MaterialButton(new ContextThemeWrapper(this, com.google.android.material.R.style.Widget_Material3_Button_OutlinedButton));
-                button.setStrokeColor(ColorStateList.valueOf(ContextCompat.getColor(this, R.color.card_border)));
-                button.setStrokeWidth((int) (1.2f * getResources().getDisplayMetrics().density));
-                button.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
-                button.setIconTint(ColorStateList.valueOf(ContextCompat.getColor(this, R.color.text_secondary)));
-            }
+            MaterialButton button = new MaterialButton(this);
+            button.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#62D87A")));
+            button.setTextColor(Color.parseColor("#051A0B"));
+            button.setIconTint(ColorStateList.valueOf(Color.parseColor("#051A0B")));
 
             button.setCornerRadius((int) (999 * getResources().getDisplayMetrics().density));
             button.setText(contributor[0]);

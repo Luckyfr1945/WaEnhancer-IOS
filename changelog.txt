@@ -1,27 +1,16 @@
 [ADDED]
-* iOS Green Plus (+) Header Button: Added green plus action button to Communities, Calls, and Status tabs matching iOS header style in Chats
-* Language-Independent Tab Detection: Hooked ViewPager page selection with WhatsApp internal numeric Tab IDs (200 Chats, 300 Status, 400 Calls, 600 Communities, 700 Settings), supporting 100% of device languages and locales
-* Toolbar Tab Title Badge Stripping: Automatically cleans unread counter badges (e.g. '(12)') from tab titles for clean header rendering
-* Direct SQLite Database Queries: Added fast background SQLite queries to chatsettings.db and msgstore.db for accurate Pinned, Muted, and Unread counts on iOS Swipe Menu
+* Jump to First Message: Added menu option in conversation chats to instantly jump and navigate to the very first message
+* WhatsApp ConversationScrollApi Hook: Hooked WhatsApp's internal ConversationScrollApi for smooth message list scrolling and dynamic history loading
 
 [IMPROVED]
-* Dynamic Header Plus Action: Improved click handler to dynamically trigger primary creation actions (New Chat, New Call, New Status, New Community) across all main tabs
-* Header Tab Visibility: Improved top bar action button manager to display green plus button on all main content tabs while hiding it on Settings tab
-* Unified Toolbar Layout & PreDraw Performance: Consolidated multiple pre-draw passes into a single unified OnPreDrawListener with translation caching to prevent frame jank
-* Toolbar Lifecycle Resilience: Added View.OnAttachStateChangeListener to safely re-register OnPreDrawListener across fragment detach and re-attach cycles
-* iOS Header Action Buttons Layout: Cleaned up action buttons with transparent borderless ripple and precise right edge alignment
-* Tag Collision Prevention: Re-assigned unique tag keys across views to eliminate tag ID collisions
-* Comprehensive Defensive Logging: Replaced silent try-catch blocks across IosHeader and IosSwipeMenu with zero-overhead logDebug for debugging
-* Action Menu Retry & Diagnostics: Added retry timeout budget logging in IosSwipeMenu and item matching failure diagnostics in silentToolbarAction
-* Clean Code Refactoring: Removed dead code and unused legacy helpers (ProfileInfo, checkProfileCardInRv, findSettingsRecyclerView)
-* Removed Duplicate Preference: Removed duplicate 'Gaya Kolom Chat iOS' (ios_text_entry) preference toggle from Customization settings menu
+* Hero Status Card Visual Blending: Upgraded hero artwork with seamless 2D alpha feathering, completely eliminating rectangular borders and seams across all device resolutions
+* Native Voice Note & Send Buttons: Preserved native WhatsApp floating action button styling, colors, and animations for voice note and send buttons
+* About & Contributors UI: Standardized all contributor pill buttons with consistent styling and uniform theme colors
+* Performance & Clean Logging: Streamlined diagnostic logs across modules with zero-overhead logDebug
 
 [FIXED]
-* Fixed missing green plus button in Communities, Calls, and Status header tabs
-* Fixed Communities tab green plus button triggering existing community group profile popups instead of opening New Community creation flow
-* Fixed awkward spacing and padding on Restart and action buttons in iOS header
-* Fixed missing user profile name title in toolbar when scrolling down on Settings/Anda tab
-* Fixed SQLite Database Path Bug: Corrected dbParent path to point directly to app data directory, enabling SQLite queries to find chatsettings.db and msgstore.db
-* Fixed Navigation Icon and Action Buttons Disappearing: Re-injected ensureNavigationIcon and container persistence across all tab transitions to prevent three-dot icon and action buttons from disappearing
-* Fixed Tab Reset on Empty Title: Prevented toolbar from blindly resetting active tab to 'Chats' when title is empty by reading persisted active tab tag
-* Fixed False-Positive Tab Matching: Replaced loose substring matching with exact matching and numeric ID verification
+* Fixed Jump to First Message Navigation: Replaced fragile reflection with direct ConversationScrollApi navigation, resolving issues where message scrolling did not trigger or caused unintended reply quotes
+* Fixed Per-Contact Privacy Overrides (HideSeen): Removed global toggle early-returns in hookReceiptMethod so individual contact privacy overrides are always respected even when global toggles are off
+* Fixed Multi-Job Architecture Crash: Keyed cachedMessageIdsFields by Class in ConcurrentHashMap to prevent IllegalArgumentException across WhatsApp and WhatsApp Business
+* Fixed False-Positive Read Receipts (SeenTick): Replaced fuzzy substring matching with normalized exact-match JID validation to prevent misdirected blue ticks and played receipts
+* Fixed Profile Avatar Lookup: Added multi-package directory support for both WhatsApp Standard and WhatsApp Business profile avatars

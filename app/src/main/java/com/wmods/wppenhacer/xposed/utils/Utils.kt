@@ -433,10 +433,14 @@ object Utils {
     @JvmStatic
     fun getUserProfileAvatar(context: Context, sizeDp: Int = 26): Drawable? {
         try {
+            val pkg = context.packageName.ifBlank { "com.whatsapp" }
             val paths = listOf(
                 File(context.filesDir, "me.jpg"),
+                File("/data/data/$pkg/files/me.jpg"),
+                File("/data/user/0/$pkg/files/me.jpg"),
                 File("/data/data/com.whatsapp/files/me.jpg"),
-                File("/data/user/0/com.whatsapp/files/me.jpg")
+                File("/data/data/com.whatsapp.w4b/files/me.jpg"),
+                File("/data/user/0/com.whatsapp.w4b/files/me.jpg")
             )
             val file = paths.firstOrNull { it.exists() && it.length() > 0 } ?: run {
                 avatarCache.clear()

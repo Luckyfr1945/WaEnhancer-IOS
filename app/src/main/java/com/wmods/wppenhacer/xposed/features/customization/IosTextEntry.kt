@@ -64,7 +64,6 @@ class IosTextEntry(loader: ClassLoader, prefs: SharedPreferences) : Feature(load
         private const val PILL_BORDER_LIGHT = "#C7C7CC"
         private const val PLUS_DARK = "#A0A0A5"
         private const val PLUS_LIGHT = "#8E8E93"
-        private const val MIC_BLUE = "#007AFF"
         private const val BAR_DARK = "#1C1C1E"
         private const val BAR_LIGHT = "#F2F2F7"
     }
@@ -353,35 +352,6 @@ class IosTextEntry(loader: ClassLoader, prefs: SharedPreferences) : Feature(load
                 entry.paddingRight,
                 entry.paddingBottom
             )
-
-            // ── 8. Voice Note and Send Button styling ──
-            val buttonsId = Utils.getID("buttons", "id")
-            val buttonsFrame = editLayout?.findViewById<ViewGroup>(buttonsId)
-            if (buttonsFrame != null) {
-                buttonsFrame.setPadding(0, buttonsFrame.paddingTop, buttonsFrame.paddingRight, buttonsFrame.paddingBottom)
-
-                val voiceNoteId = Utils.getID("voice_note_btn", "id")
-                val voiceBtn = if (voiceNoteId > 0) buttonsFrame.findViewById<ImageView>(voiceNoteId) else null
-                if (voiceBtn != null) {
-                    voiceBtn.background = null
-                    voiceBtn.backgroundTintList = null
-                    voiceBtn.imageTintList = android.content.res.ColorStateList.valueOf(Color.parseColor(MIC_BLUE))
-                }
-
-                val sendId = Utils.getID("send", "id")
-                val sendBtn = if (sendId > 0) buttonsFrame.findViewById<ImageView>(sendId) else null
-                if (sendBtn != null) {
-                    val sendBg = GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
-                        setColor(Color.parseColor(MIC_BLUE))
-                    }
-                    sendBtn.background = sendBg
-                    sendBtn.backgroundTintList = null
-                    sendBtn.imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
-                    val p = Utils.dipToPixels(10f)
-                    sendBtn.setPadding(p, p, p, p)
-                }
-            }
         } catch (e: Exception) {
             logDebug("IosTextEntry CSS error: ${e.message}")
         }

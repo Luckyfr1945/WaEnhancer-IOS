@@ -65,8 +65,8 @@
     <!-- Hero Card Specific Tokens (Light Mode - Mint Aesthetic) -->
     <color name="hero_card_bg">#E8F5F1</color>
     <color name="hero_solid_scrim">#E8F5F1</color>
-    <color name="hero_fade_center">#CCE8F5F1</color>
-    <color name="hero_bottom_shadow">#26E8F5F1</color>
+    <color name="hero_fade_center">#80E8F5F1</color>
+    <color name="hero_bottom_shadow">#E8F5F1</color>
     <color name="hero_glow_start">#3300A884</color>
     <color name="hero_text_title">#111B21</color>
     <color name="hero_text_summary">#54656F</color>
