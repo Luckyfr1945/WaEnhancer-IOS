@@ -558,21 +558,29 @@ class SeenTick(
                 message.fMessage?.let { messages.add(it) }
             }
 
-            // Also check active conversation items if database has no records
+            // Also check active conversation items if database has no records.
+            // Use exact-match on normalized JIDs (strip @domain and :device-id suffixes)
+            // to avoid false positives from substring matching phone numbers that share
+            // common prefixes/suffixes (country codes, operator prefixes, etc.).
             if (messages.isEmpty() && (hiddenMessages == null || hiddenMessages.isEmpty())) {
-                val jidPhone = userJid.phoneNumber ?: ""
+                // Build a set of all normalized forms of the target JID for O(1) lookup
+                val targetNormalized = buildSet<String> {
+                    normalizeJid(primaryJid)?.let { add(it) }
+                    normalizeJid(userRaw)?.let { add(it) }
+                    fullUserRaw?.let { normalizeJid(it)?.let { n -> add(n) } }
+                    userJid.phoneNumber?.let { normalizeJid(it)?.let { n -> add(n) } }
+                }
+
                 val activeItems = com.wmods.wppenhacer.xposed.features.listeners.ConversationItemListener.listItems.values
                     .map { it.message }
                     .filter { m ->
                         if (m.key.isFromMe || m.key.remoteJid.isNull) return@filter false
                         val mJid = m.key.remoteJid
-                        val mPhone = mJid.phoneRawString ?: mJid.userRawString ?: ""
-                        mPhone.isNotBlank() && (
-                            mPhone == primaryJid ||
-                            mPhone == userRaw ||
-                            (jidPhone.isNotBlank() && mPhone.contains(jidPhone)) ||
-                            (mPhone.isNotBlank() && primaryJid.contains(mPhone.substringBefore("@")))
-                        )
+                        val mRaw = mJid.phoneRawString ?: mJid.userRawString ?: ""
+                        if (mRaw.isBlank()) return@filter false
+                        // Only exact match after normalization — no substring/contains
+                        val mNorm = normalizeJid(mRaw) ?: return@filter false
+                        mNorm in targetNormalized
                     }
                     .distinctBy { it.key.messageID }
 
@@ -814,6 +822,24 @@ class SeenTick(
                 logDebug(e)
             }
         }
+    }
+
+    /**
+     * Normalize a raw JID string to a bare phone/lid string for exact comparison.
+     *
+     * Strips:
+     *   - "@s.whatsapp.net", "@c.us", "@g.us", "@lid", "@broadcast", etc.
+     *   - Device-id suffix ":xx" that appears before "@" (e.g. "6281234:0@lid" → "6281234")
+     *
+     * Returns null if the result would be blank (invalid JID).
+     */
+    private fun normalizeJid(raw: String): String? {
+        if (raw.isBlank()) return null
+        // Strip @domain first
+        val withoutDomain = raw.substringBefore("@").trim()
+        // Strip device-id ":digit(s)" suffix (LID format)
+        val withoutDevice = withoutDomain.substringBefore(":")
+        return withoutDevice.ifBlank { null }
     }
 
     override fun getPluginName(): String {

@@ -36,7 +36,8 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
         }
     }
 
-    private var cachedMessageIdsField: java.lang.reflect.Field? = null
+    // Per-class cache to avoid IllegalArgumentException when multiple SendReadReceiptJob subclasses exist
+    private val cachedMessageIdsFields = java.util.concurrent.ConcurrentHashMap<Class<*>, java.lang.reflect.Field>()
 
     override fun doHook() {
         runCatching { hookSendReadReceiptJob() }.onFailure { log(it) }
@@ -74,11 +75,8 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
                 val userJid = FMessageWpp.UserJid.extractFrom(job)
                 if (userJid == null || userJid.isNull) return
 
-                val isInvalidJid =
-                    userJid.phoneRawString?.contains("lid_me") == true ||
-                    userJid.phoneRawString?.contains("status_me") == true ||
-                    userJid.userRawString?.contains("lid_me") == true ||
-                    userJid.userRawString?.contains("status_me") == true
+                val isInvalidJid = listOf(userJid.phoneRawString, userJid.userRawString)
+                    .any { it?.contains("lid_me") == true || it?.contains("status_me") == true }
 
                 if (isInvalidJid) return
 
@@ -145,12 +143,13 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
         val messageIds = try {
             (XposedHelpers.getObjectField(sendReadReceiptJob, "messageIds") as? Array<*>)
         } catch (_: Throwable) {
-            val field = cachedMessageIdsField ?: run {
-                ReflectionUtils.findFieldUsingFilter(sendReadReceiptJob.javaClass) {
+            val jobClass = sendReadReceiptJob.javaClass
+            val field = cachedMessageIdsFields.getOrPut(jobClass) {
+                ReflectionUtils.findFieldUsingFilter(jobClass) {
                     it.type == Array<String>::class.java
-                }?.also { it.isAccessible = true; cachedMessageIdsField = it }
+                }?.also { it.isAccessible = true } ?: return
             }
-            field?.get(sendReadReceiptJob) as? Array<*>
+            field.get(sendReadReceiptJob) as? Array<*>
         } ?: return
 
         val ids = messageIds.mapNotNull { it as? String }
@@ -183,7 +182,10 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
 
         XposedBridge.hookMethod(receiptMethod, object : XC_MethodHook() {
             override fun afterHookedMethod(param: MethodHookParam) {
-                if (!isHideReceipt && !isGhostMode) return
+                // No global-toggle guard here: checkPrivacyAndHideReceipt / checkPrivacyAndHideSeen
+                // already fall back to the global prefs when there is no per-contact override.
+                // A guard based on global toggles would silently skip contacts that have an
+                // independent CustomPrivacy override even when every global toggle is off.
                 runCatching {
                     val protocolTreeNodeWpp = ProtocolTreeNodeWpp(param.result ?: return)
 

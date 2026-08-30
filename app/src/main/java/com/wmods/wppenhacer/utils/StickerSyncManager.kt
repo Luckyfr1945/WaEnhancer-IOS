@@ -254,16 +254,19 @@ object StickerSyncManager {
                 }
                 callback.onLog("✅ Database stickers.db ditemukan di $srcDbDir", LogLevel.SUCCESS)
 
-                // Step 4: Copy database files with root via /data/local/tmp bridge into app cache staging directory
-                callback.onProgress(4, totalSteps, "Menyalin file database stiker...")
+                // Step 4: Copy database and sticker media files with root via /data/local/tmp bridge into app cache staging directory
+                callback.onProgress(4, totalSteps, "Menyalin file database & gambar stiker (.webp)...")
+                val srcFilesDir = "/data/data/$packageName/files"
                 val bridgeTmp = "/data/local/tmp/wa_backup_${System.currentTimeMillis()}"
                 val copyResult = Shell.cmd(
                     "mkdir -p '$bridgeTmp'",
                     "cat '$srcDbDir/$STICKERS_DB' > '$bridgeTmp/$STICKERS_DB'",
                     "[ -f '$srcDbDir/$STICKERS_DB_WAL' ] && cat '$srcDbDir/$STICKERS_DB_WAL' > '$bridgeTmp/$STICKERS_DB_WAL' || true",
                     "[ -f '$srcDbDir/$STICKERS_DB_SHM' ] && cat '$srcDbDir/$STICKERS_DB_SHM' > '$bridgeTmp/$STICKERS_DB_SHM' || true",
+                    "[ -d '$srcFilesDir/Stickers' ] && cp -rf '$srcFilesDir/Stickers' '$bridgeTmp/' || true",
+                    "[ -f '$srcFilesDir/content_stickers' ] && cat '$srcFilesDir/content_stickers' > '$bridgeTmp/content_stickers' || true",
                     "mkdir -p '$stagingPath'",
-                    "cp -f '$bridgeTmp'/* '$stagingPath/'",
+                    "cp -rf '$bridgeTmp'/* '$stagingPath/'",
                     "chown -R $appUid:$appUid '$stagingPath'",
                     "chmod -R 777 '$stagingPath'",
                     "restorecon -RF '$stagingPath' || true",
@@ -279,6 +282,9 @@ object StickerSyncManager {
                     callback.onCompleted(false, "Copy failed: database empty or unreadable")
                     return@getShell
                 }
+
+                val stagedMediaDir = File(stagingDir, "Stickers")
+                val mediaCount = stagedMediaDir.listFiles()?.size ?: 0
 
                 // Analyze stickers inside copied database
                 var starredCount = 0
@@ -300,7 +306,7 @@ object StickerSyncManager {
                     callback.onLog("⚠️ Peringatan saat membaca isi tabel: ${e.message}", LogLevel.WARNING)
                 }
 
-                callback.onLog("✅ Database stickers.db (${copiedDb.length() / 1024} KB) berhasil diekspor. ($starredCount stiker berbintang, total $totalStickers stiker tersimpan)", LogLevel.SUCCESS)
+                callback.onLog("✅ Database stickers.db (${copiedDb.length() / 1024} KB) & $mediaCount file gambar stiker berhasil diekspor. ($starredCount stiker berbintang, total $totalStickers stiker tersimpan)", LogLevel.SUCCESS)
 
                 // Step 5: Write metadata info.json
                 callback.onProgress(5, totalSteps, "Membuat metadata info.json...")
@@ -316,6 +322,7 @@ object StickerSyncManager {
                     put("androidVersion", "Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})")
                     put("starredStickersCount", starredCount)
                     put("totalStickersCount", totalStickers)
+                    put("mediaFilesCount", mediaCount)
                 }
 
                 val infoFile = File(stagingDir, INFO_JSON)
@@ -350,7 +357,7 @@ object StickerSyncManager {
                     return@getShell
                 }
 
-                callback.onLog("🎁 File ZIP cadangan siap: ${zipFile.name} (${zipFile.length() / 1024} KB) [${zipEntries.joinToString(", ")}]", LogLevel.SUCCESS)
+                callback.onLog("🎁 File ZIP cadangan siap: ${zipFile.name} (${zipFile.length() / 1024} KB, ${zipEntries.size} items)", LogLevel.SUCCESS)
 
                 // Clean up raw staging directory in cache
                 stagingDir.deleteRecursively()
@@ -447,7 +454,7 @@ object StickerSyncManager {
             }
 
             try {
-                val totalSteps = if (mergeMode) 8 else 7
+                val totalSteps = if (mergeMode) 9 else 8
                 callback.onProgress(1, totalSteps, "Mempersiapkan data pemulihan...")
                 callback.onLog("🔄 Memulai pemulihan stiker untuk: $packageName (Mode: ${if (mergeMode) "Gabungkan / Merge" else "Ganti Total / Replace"})")
 
@@ -571,10 +578,49 @@ object StickerSyncManager {
                     callback.onLog("✅ Izin akses berhasil diatur (chown $uidGid & chmod 660).", LogLevel.SUCCESS)
                 }
 
-                // Step 7: Fix SELinux Context
+                // Step 7: Deploy sticker media images (.webp / .was) if present in backup
+                val stagingStickersDir = File(workingDir, "Stickers")
+                val dstFilesDir = "/data/data/$packageName/files"
+
+                if (stagingStickersDir.exists() && stagingStickersDir.isDirectory) {
+                    callback.onProgress(8, totalSteps, "Menyalin gambar stiker (.webp)...")
+                    val mediaFiles = stagingStickersDir.listFiles()?.filter { it.isFile } ?: emptyList()
+                    val countMedia = mediaFiles.size
+                    callback.onLog("🖼️ Terdeteksi $countMedia file gambar stiker di dalam cadangan. Menyalin ke $dstFilesDir/Stickers/...")
+
+                    val restoreMediaTmp = "/data/local/tmp/wa_restore_stickers_${System.currentTimeMillis()}"
+                    Shell.cmd(
+                        "mkdir -p '$restoreMediaTmp'",
+                        "cp -rf '${stagingStickersDir.absolutePath}'/* '$restoreMediaTmp/' || true",
+                        "mkdir -p '$dstFilesDir/Stickers'",
+                        "cp -rf '$restoreMediaTmp'/* '$dstFilesDir/Stickers/'",
+                        "chown -R $uidGid '$dstFilesDir/Stickers'",
+                        "chmod 700 '$dstFilesDir/Stickers'",
+                        "chmod 600 '$dstFilesDir/Stickers'/* || true",
+                        "restorecon -RF '$dstFilesDir/Stickers' || chcon -R u:object_r:app_data_file:s0 '$dstFilesDir/Stickers' || true",
+                        "rm -rf '$restoreMediaTmp'"
+                    ).exec()
+                    callback.onLog("✅ $countMedia gambar stiker berhasil disalin & diberi hak akses.", LogLevel.SUCCESS)
+                }
+
+                val srcContentStickers = File(workingDir, "content_stickers")
+                if (srcContentStickers.exists()) {
+                    val restoreContentTmp = "/data/local/tmp/wa_restore_content_${System.currentTimeMillis()}"
+                    Shell.cmd(
+                        "cat '${srcContentStickers.absolutePath}' > '$restoreContentTmp'",
+                        "cat '$restoreContentTmp' > '$dstFilesDir/content_stickers'",
+                        "chown $uidGid '$dstFilesDir/content_stickers'",
+                        "chmod 600 '$dstFilesDir/content_stickers'",
+                        "restorecon -F '$dstFilesDir/content_stickers' || true",
+                        "rm -f '$restoreContentTmp'"
+                    ).exec()
+                }
+
+                // Step 8: Fix SELinux Context
                 callback.onProgress(totalSteps, totalSteps, "Memperbaiki konteks SELinux...")
                 val selinuxCmd = Shell.cmd(
-                    "restorecon -F '$dstDir/$STICKERS_DB'* || chcon u:object_r:app_data_file:s0 '$dstDir/$STICKERS_DB'*"
+                    "restorecon -RF '$dstDir' || chcon -R u:object_r:app_data_file:s0 '$dstDir' || true",
+                    "restorecon -RF '$dstFilesDir/Stickers' || chcon -R u:object_r:app_data_file:s0 '$dstFilesDir/Stickers' || true"
                 ).exec()
                 callback.onLog("🛡️ Konteks SELinux disesuaikan (restorecon / chcon app_data_file).", LogLevel.SUCCESS)
 
@@ -719,14 +765,26 @@ object StickerSyncManager {
 
     private fun createZipArchive(sourceDir: File, zipFile: File) {
         ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
-            sourceDir.listFiles()?.forEach { file ->
-                if (file.isFile) {
-                    FileInputStream(file).use { fis ->
-                        val entry = ZipEntry(file.name)
-                        zos.putNextEntry(entry)
-                        fis.copyTo(zos)
-                        zos.closeEntry()
-                    }
+            zipDirectory(sourceDir, sourceDir, zos)
+        }
+    }
+
+    private fun zipDirectory(rootDir: File, currentDir: File, zos: ZipOutputStream) {
+        val files = currentDir.listFiles() ?: return
+        for (file in files) {
+            if (file.isDirectory) {
+                val relPath = file.relativeTo(rootDir).path.replace('\\', '/') + "/"
+                val entry = ZipEntry(relPath)
+                zos.putNextEntry(entry)
+                zos.closeEntry()
+                zipDirectory(rootDir, file, zos)
+            } else if (file.isFile) {
+                val relPath = file.relativeTo(rootDir).path.replace('\\', '/')
+                FileInputStream(file).use { fis ->
+                    val entry = ZipEntry(relPath)
+                    zos.putNextEntry(entry)
+                    fis.copyTo(zos)
+                    zos.closeEntry()
                 }
             }
         }

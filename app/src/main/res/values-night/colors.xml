@@ -42,8 +42,8 @@
     <!-- Hero Card Specific Tokens (Dark Mode) -->
     <color name="hero_card_bg">#0D100F</color>
     <color name="hero_solid_scrim">#0D100F</color>
-    <color name="hero_fade_center">#B30D100F</color>
-    <color name="hero_bottom_shadow">#6608090A</color>
+    <color name="hero_fade_center">#800D100F</color>
+    <color name="hero_bottom_shadow">#0D100F</color>
     <color name="hero_glow_start">#2625D366</color>
     <color name="hero_text_title">#FFFFFF</color>
     <color name="hero_text_summary">#A2A8AE</color>

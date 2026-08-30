@@ -124,6 +124,7 @@ class StickerSyncFragment : BaseFragment() {
         StickerSyncManager.isRootAvailable { hasRoot ->
             isRootGranted = hasRoot
             activity?.runOnUiThread {
+                if (_binding == null) return@runOnUiThread
                 if (hasRoot) {
                     appendLog("🔒 Status Root: Superuser Aktif & Terverifikasi (UID=0)", StickerSyncManager.LogLevel.SUCCESS)
                     if (selectedPackage.isNotEmpty()) {
@@ -274,6 +275,7 @@ class StickerSyncFragment : BaseFragment() {
         Thread {
             val backups = StickerSyncManager.getAvailableBackups()
             activity?.runOnUiThread {
+                if (_binding == null) return@runOnUiThread
                 backupList.clear()
                 backupList.addAll(backups)
                 backupAdapter.notifyDataSetChanged()
@@ -401,12 +403,14 @@ class StickerSyncFragment : BaseFragment() {
         StickerSyncManager.backupStickers(context, selectedPackage, object : StickerSyncManager.ProgressCallback {
             override fun onLog(message: String, level: StickerSyncManager.LogLevel) {
                 activity?.runOnUiThread {
+                    if (_binding == null) return@runOnUiThread
                     appendLog(message, level)
                 }
             }
 
             override fun onProgress(step: Int, totalSteps: Int, description: String) {
                 activity?.runOnUiThread {
+                    if (_binding == null) return@runOnUiThread
                     viewBinding.tvProgressText.text = "Langkah $step/$totalSteps: $description"
                     val progress = (step.toFloat() / totalSteps.toFloat() * 100).toInt()
                     viewBinding.progressIndicator.progress = progress
@@ -415,6 +419,7 @@ class StickerSyncFragment : BaseFragment() {
 
             override fun onCompleted(success: Boolean, resultData: Any?) {
                 activity?.runOnUiThread {
+                    if (_binding == null) return@runOnUiThread
                     setUiBusy(false)
                     if (success && resultData is StickerSyncManager.BackupInfo) {
                         lastBackupZip = resultData.zipFile
@@ -454,23 +459,28 @@ class StickerSyncFragment : BaseFragment() {
 
     private fun handleSelectedRestoreUri(uri: Uri) {
         val context = requireContext()
-        val fileName = getFileNameFromUri(uri) ?: "cadangan_stiker.zip"
+        // Strip any path separators from the display name to prevent path traversal
+        val rawName = getFileNameFromUri(uri) ?: "cadangan_stiker.zip"
+        val safeName = File(rawName).name.ifBlank { "cadangan_stiker.zip" }
 
         setUiBusy(true, "Membaca file cadangan...")
 
         Thread {
             try {
-                val tempZip = File(context.cacheDir, "imported_${System.currentTimeMillis()}.zip")
+                // Use a timestamped temp name so concurrent imports never collide
+                val tempZip = File(context.cacheDir, "imported_${System.currentTimeMillis()}_${safeName}")
                 context.contentResolver.openInputStream(uri)?.use { input ->
                     FileOutputStream(tempZip).use { output ->
                         input.copyTo(output)
                     }
                 }
                 activity?.runOnUiThread {
+                    if (_binding == null) return@runOnUiThread
                     startRestoreFromBackupFile(tempZip)
                 }
             } catch (e: Exception) {
                 activity?.runOnUiThread {
+                    if (_binding == null) return@runOnUiThread
                     setUiBusy(false)
                     showErrorDialog("Gagal Mengimpor File", "Tidak dapat membaca file ZIP: ${e.localizedMessage}")
                 }
@@ -490,6 +500,7 @@ class StickerSyncFragment : BaseFragment() {
         Thread {
             val backupInfo = StickerSyncManager.inspectBackup(file)
             activity?.runOnUiThread {
+                if (_binding == null) return@runOnUiThread
                 setUiBusy(false)
                 promptRestoreModeAndExecute(file, backupInfo)
             }
@@ -538,12 +549,14 @@ class StickerSyncFragment : BaseFragment() {
         StickerSyncManager.restoreStickers(context, selectedPackage, file, mergeMode, object : StickerSyncManager.ProgressCallback {
             override fun onLog(message: String, level: StickerSyncManager.LogLevel) {
                 activity?.runOnUiThread {
+                    if (_binding == null) return@runOnUiThread
                     appendLog(message, level)
                 }
             }
 
             override fun onProgress(step: Int, totalSteps: Int, description: String) {
                 activity?.runOnUiThread {
+                    if (_binding == null) return@runOnUiThread
                     viewBinding.tvProgressText.text = "Langkah $step/$totalSteps: $description"
                     val progress = (step.toFloat() / totalSteps.toFloat() * 100).toInt()
                     viewBinding.progressIndicator.progress = progress
@@ -552,6 +565,7 @@ class StickerSyncFragment : BaseFragment() {
 
             override fun onCompleted(success: Boolean, resultData: Any?) {
                 activity?.runOnUiThread {
+                    if (_binding == null) return@runOnUiThread
                     setUiBusy(false)
                     if (success) {
                         viewBinding.layoutSecondaryActions.visibility = View.VISIBLE
