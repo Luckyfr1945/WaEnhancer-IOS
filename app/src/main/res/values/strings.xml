@@ -220,6 +220,7 @@
     <string name="rebooting">Rebooting</string>
     <string name="deleted_message">deleted a message</string>
     <string name="deleted_status">deleted a status</string>
+    <string name="message_deleted_tag">Deleted</string>
     <string name="remove_limit_edit_message">Remove Limit To Edit message</string>
     <string name="remove_limit_edit_message_sum">Removes the 15 minute limit for editing a message</string>
     <string name="disable_audio_sensor">Disable Audio Sensor</string>
@@ -563,4 +564,27 @@
     <string name="status_replay_history_message">Your status was replayed %1$d times by %2$s:\n\n</string>
     <string name="remove_limit_edit_status">Remove Status Caption Edit Limit</string>
     <string name="remove_limit_edit_status_sum">Allows editing status captions anytime until the story expires (24h)</string>
+
+    <!-- WA Sticker Sync -->
+    <string name="sticker_sync">Favorite Sticker Sync</string>
+    <string name="sticker_sync_sum">Backup and restore starred favorite stickers database across devices via Root</string>
+    <string name="sticker_sync_title">Sticker Sync &amp; Backup</string>
+    <string name="sticker_sync_desc">Transfer and synchronize your favorite stickers database between devices or WhatsApp variants.</string>
+    <string name="sticker_backup_btn">Backup Stickers</string>
+    <string name="sticker_restore_btn">Restore Stickers</string>
+    <string name="sticker_share_btn">Share Backup</string>
+    <string name="sticker_open_app_btn">Open WhatsApp</string>
+    <string name="sticker_root_granted">Root Access Granted</string>
+    <string name="sticker_root_denied">Root Access Denied / Not Available</string>
+    <string name="sticker_select_package">Target WhatsApp Package</string>
+    <string name="sticker_package_standard">WhatsApp (com.whatsapp)</string>
+    <string name="sticker_package_business">WhatsApp Business (com.whatsapp.w4b)</string>
+    <string name="sticker_version_mismatch_title">Version Mismatch Warning</string>
+    <string name="sticker_version_mismatch_msg">The backup was created on WhatsApp version %1$s, but your installed version is %2$s.\n\nRestoring across different major versions might cause database schema incompatibility or app crashes. Do you want to proceed anyway?</string>
+    <string name="sticker_backup_success">Stickers backup exported successfully to:\n%1$s</string>
+    <string name="sticker_restore_success">Stickers database restored successfully! Permissions and SELinux contexts configured.</string>
+    <string name="sticker_log_console">Terminal Live Log</string>
+    <string name="sticker_copy_log">Copy Log</string>
+    <string name="sticker_clear_log">Clear Log</string>
+    <string name="sticker_select_backup_folder">Select Backup Folder</string>
 </resources>

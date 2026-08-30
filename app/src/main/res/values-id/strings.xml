@@ -219,6 +219,7 @@ Saat Anda mengaktifkan bekukan \"terakhir dilihat dan online\", Anda tidak dapat
     <string name="rebooting">Menyalakan ulang</string>
     <string name="deleted_message">menghapus pesan</string>
     <string name="deleted_status">menghapus status</string>
+    <string name="message_deleted_tag">Dihapus</string>
     <string name="remove_limit_edit_message">Hapus Batas Mengedit Pesan</string>
     <string name="remove_limit_edit_message_sum">Hapus batas waktu 15 menit untuk mengedit pesan</string>
     <string name="disable_audio_sensor">Nonaktifkan Sensor Audio</string>
@@ -579,4 +580,27 @@ Saat Anda mengaktifkan bekukan \"terakhir dilihat dan online\", Anda tidak dapat
     <string name="diag_hma_blocked">Hide My App List menyembunyikan WaEnhancer dari:</string>
     <string name="diag_hma_disable">Nonaktifkan pemblokiran untuk WhatsApp/Business di Hide My App List agar WaEnhancer dapat bekerja dengan benar.</string>
     <string name="diag_copied">Baris disalin ke papan klip</string>
+
+    <!-- WA Sticker Sync -->
+    <string name="sticker_sync">Sinkronisasi Stiker Favorit</string>
+    <string name="sticker_sync_sum">Cadangkan &amp; pulihkan database stiker favorit (bintang) antar perangkat via Root</string>
+    <string name="sticker_sync_title">Sinkronisasi &amp; Cadangan Stiker</string>
+    <string name="sticker_sync_desc">Pindahkan dan sinkronkan database stiker berbintang/favorit antar perangkat atau varian WhatsApp.</string>
+    <string name="sticker_backup_btn">Cadangkan Stiker (Backup)</string>
+    <string name="sticker_restore_btn">Pulihkan Stiker (Restore)</string>
+    <string name="sticker_share_btn">Bagikan Cadangan</string>
+    <string name="sticker_open_app_btn">Buka WhatsApp</string>
+    <string name="sticker_root_granted">Akses Root Diberikan</string>
+    <string name="sticker_root_denied">Akses Root Ditolak / Tidak Tersedia</string>
+    <string name="sticker_select_package">Pilih Paket WhatsApp Target</string>
+    <string name="sticker_package_standard">WhatsApp (com.whatsapp)</string>
+    <string name="sticker_package_business">WhatsApp Business (com.whatsapp.w4b)</string>
+    <string name="sticker_version_mismatch_title">Peringatan Perbedaan Versi</string>
+    <string name="sticker_version_mismatch_msg">Cadangan dibuat pada WhatsApp versi %1$s, namun versi yang terpasang adalah %2$s.\n\nMemulihkan database antar versi utama yang berbeda berisiko menyebabkan ketidakcocokan skema tabel atau aplikasi tertutup (force close). Apakah Anda tetap ingin melanjutkan?</string>
+    <string name="sticker_backup_success">Cadangan stiker berhasil diekspor ke:\n%1$s</string>
+    <string name="sticker_restore_success">Database stiker berhasil dipulihkan! Izin berkas dan konteks SELinux telah disesuaikan.</string>
+    <string name="sticker_log_console">Log Terminal Real-time</string>
+    <string name="sticker_copy_log">Salin Log</string>
+    <string name="sticker_clear_log">Bersihkan Log</string>
+    <string name="sticker_select_backup_folder">Pilih Folder Cadangan</string>
 </resources>

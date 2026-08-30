@@ -440,6 +440,15 @@ public class FeatureCatalog {
                 "conversation",
                 Arrays.asList("added", "contact", "verify")));
 
+        // GENERAL FRAGMENT - Sticker Sync
+        catalog.add(new SearchableFeature("sticker_sync",
+                context.getString(R.string.sticker_sync),
+                context.getString(R.string.sticker_sync_sum),
+                SearchableFeature.Category.GENERAL,
+                SearchableFeature.FragmentType.GENERAL,
+                null,
+                Arrays.asList("sticker", "sync", "backup", "restore", "favorite", "bintang", "stiker", "root")));
+
         // GENERAL FRAGMENT - Status
         catalog.add(new SearchableFeature("autonext_status",
                 context.getString(R.string.disable_auto_status),

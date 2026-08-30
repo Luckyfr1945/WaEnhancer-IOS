@@ -49,7 +49,7 @@ public class AboutActivity extends BaseActivity {
 
         binding.btnBack.setOnClickListener(v -> finish());
         binding.btnTelegram.setOnClickListener(v -> openUrl("https://t.me/waenhancer"));
-        binding.btnGithub.setOnClickListener(view -> openUrl("https://github.com/Dev4Mod/WaEnhancer"));
+        binding.btnGithub.setOnClickListener(view -> openUrl("https://github.com/Luckyfr1945/WaEnhancer-IOS"));
 
         int topMargin = (int) (8 * getResources().getDisplayMetrics().density);
         int buttonHeight = (int) (46 * getResources().getDisplayMetrics().density);

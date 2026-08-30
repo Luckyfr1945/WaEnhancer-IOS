@@ -231,6 +231,9 @@ public class MainActivity extends BaseActivity {
             case "conversation":
                 subFragment = new GeneralFragment.ConversationGeneralPreference();
                 break;
+            case "sticker_sync":
+                subFragment = new com.wmods.wppenhacer.ui.fragments.StickerSyncFragment();
+                break;
         }
 
         if (subFragment != null && parentFragment.getView() != null) {
@@ -302,6 +305,16 @@ public class MainActivity extends BaseActivity {
 
     public static boolean isXposedEnabled() {
         return false;
+    }
+
+    public void setBottomNavVisibility(int visibility) {
+        if (binding != null && binding.navView != null) {
+            binding.navView.setVisibility(visibility);
+        }
+        android.view.View blurView = findViewById(R.id.blur_view);
+        if (blurView != null) {
+            blurView.setVisibility(visibility);
+        }
     }
 
     @Override

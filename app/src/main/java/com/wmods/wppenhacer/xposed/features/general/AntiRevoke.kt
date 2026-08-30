@@ -200,11 +200,7 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
                     param.result = null
                 }
 
-                if (messageKey.remoteJid.isGroup) {
-                    if (deviceJid != null && handleRevocationAttempt(fMessage, messageId) != 0) {
-                        setBlockedResult()
-                    }
-                } else if (!messageKey.isFromMe && handleRevocationAttempt(
+                if (!messageKey.isFromMe && handleRevocationAttempt(
                         fMessage,
                         messageId
                     ) != 0
@@ -306,9 +302,20 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
             when (antirevokeValue) {
                 1 -> {
                     val messageText = originalMessage ?: dateTextView.text
-                    val newTextData = "${
-                        UnobfuscatorCache.getInstance().getString("messagedeleted")
-                    } | $messageText"
+                    var deletedLabel = try {
+                        UnobfuscatorCache.getInstance().getString("thismessagewasdeleted")
+                    } catch (_: Throwable) { "" }
+                    if (deletedLabel.isBlank()) {
+                        deletedLabel = try {
+                            UnobfuscatorCache.getInstance().getString("messagedeleted")
+                        } catch (_: Throwable) { "" }
+                    }
+                    if (deletedLabel.isBlank()) {
+                        deletedLabel = try {
+                            Utils.application.getString(R.string.message_deleted_tag)
+                        } catch (_: Throwable) { "Dihapus" }
+                    }
+                    val newTextData = "$deletedLabel | $messageText"
                     dateTextView.text = newTextData
                     XposedHelpers.setAdditionalInstanceField(
                         dateTextView,
