@@ -87,6 +87,7 @@ public class HomeFragment extends BaseFragment {
         binding = FragmentHomeBinding.inflate(inflater, container, false);
 
         checkStateWpp(requireActivity());
+        checkRootStatus();
 
         binding.rebootBtn.setOnClickListener(view -> {
             animateClick(view);
@@ -125,11 +126,6 @@ public class HomeFragment extends BaseFragment {
             showDiagnosticsDialog();
         });
 
-        binding.status.setOnClickListener(view -> {
-            animateClick(view);
-            showChangelogDialog();
-        });
-
         binding.updateCard.setOnClickListener(view -> {
             animateClick(view);
             showChangelogDialog();
@@ -145,6 +141,29 @@ public class HomeFragment extends BaseFragment {
         return binding.getRoot();
     }
 
+    private void checkRootStatus() {
+        if (getContext() == null || binding == null) return;
+        var context = requireContext();
+
+        binding.heroRootBadge.setText("● ROOT CHECK...");
+        binding.heroRootBadge.setTextColor(ContextCompat.getColor(context, R.color.text_secondary));
+
+        com.wmods.wppenhacer.utils.StickerSyncManager.INSTANCE.isRootAvailable(hasRoot -> {
+            var activity = getActivity();
+            if (activity == null || binding == null) return kotlin.Unit.INSTANCE;
+            activity.runOnUiThread(() -> {
+                if (Boolean.TRUE.equals(hasRoot)) {
+                    binding.heroRootBadge.setText("● ROOT ACTIVE");
+                    binding.heroRootBadge.setTextColor(ContextCompat.getColor(context, R.color.badge_green_text));
+                } else {
+                    binding.heroRootBadge.setText("● NO ROOT");
+                    binding.heroRootBadge.setTextColor(ContextCompat.getColor(context, R.color.log_error));
+                }
+            });
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
     private void animateClick(View view) {
         var scaleIn = AnimationUtils.loadAnimation(getContext(), R.anim.scale_in);
         view.startAnimation(scaleIn);
@@ -154,6 +173,7 @@ public class HomeFragment extends BaseFragment {
     public void onResume() {
         super.onResume();
         setDisplayHomeAsUpEnabled(false);
+        checkRootStatus();
     }
 
     @SuppressLint("StringFormatInvalid")
@@ -373,7 +393,7 @@ public class HomeFragment extends BaseFragment {
                         .build();
 
                 var request = new Request.Builder()
-                        .url("https://api.github.com/repos/Dev4Mod/WaEnhancer/releases/latest")
+                        .url("https://api.github.com/repos/Luckyfr1945/WaEnhancer-IOS/releases/latest")
                         .build();
 
                 try (var response = client.newCall(request).execute()) {
@@ -479,42 +499,34 @@ public class HomeFragment extends BaseFragment {
         var context = requireContext();
         var dialogBinding = DialogUpdateAvailableBinding.inflate(LayoutInflater.from(context));
 
-        dialogBinding.tvUpdateTitle.setText("Catatan Rilis Modul");
-        dialogBinding.tvUpdateSubtitle.setText("Versi 1.5.9 · " + BuildConfig.VERSION_NAME);
-        dialogBinding.tvVersionBadge.setText(BuildConfig.VERSION_NAME);
+        dialogBinding.tvUpdateTitle.setText("Catatan Rilis");
+        dialogBinding.tvUpdateSubtitle.setText("WaEnhancer iOS Modul");
+        dialogBinding.tvVersionBadge.setText("v" + BuildConfig.VERSION_NAME);
         dialogBinding.tvReleaseDate.setText(new SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(new Date()));
 
         String changelogText = """
-                ### [ADDED]
+                ### 🚀 FITUR BARU [ADDED]
 
-                • **iOS Green Plus (+) Header Button:** Added green plus action button to Communities, Calls, and Status tabs matching iOS header style in Chats.
-                • **Language-Independent Tab Detection:** Hooked ViewPager page selection with WhatsApp internal numeric Tab IDs (200 Chats, 300 Status, 400 Calls, 600 Communities, 700 Settings), supporting 100% of device languages and locales.
-                • **Toolbar Tab Title Badge Stripping:** Automatically cleans unread counter badges (e.g. '(12)') from tab titles for clean header rendering.
-                • **Direct SQLite Database Queries:** Added fast background SQLite queries to chatsettings.db and msgstore.db for accurate Pinned, Muted, and Unread counts on iOS Swipe Menu.
+                • **Sinkronisasi & Cadangan Stiker WhatsApp:** Fitur cadangkan stiker (.zip) & pulihkan/gabungkan database antar varian WhatsApp (Standard & Business).
+                • **Manajemen Hasil Cadangan Langsung:** 2-Tab bottom navigation (Cadangkan vs Hasil Cadangan) dengan aksi Pulihkan, Bagikan, dan Hapus file backup.
+                • **iOS Green Plus (+) Header Button:** Tombol aksi hijau iOS pada tab Komunitas, Panggilan, dan Status.
+                • **Pendeteksian Tab Multi-Bahasa:** Deteksi tab numerik WhatsApp independen dari bahasa sistem.
+                • **Query Database SQLite Cepat:** Pengecekan cepat chatsettings.db dan msgstore.db untuk jumlah Disematkan, Dibisukan, dan Belum Dibaca.
 
-                ### [IMPROVED]
+                ### ⚡ PENINGKATAN [IMPROVED]
 
-                • **Dynamic Header Plus Action:** Improved click handler to dynamically trigger primary creation actions (New Chat, New Call, New Status, New Community) across all main tabs.
-                • **Header Tab Visibility:** Improved top bar action button manager to display green plus button on all main content tabs while hiding it on Settings tab.
-                • **Unified Toolbar Layout & PreDraw Performance:** Consolidated multiple pre-draw passes into a single unified OnPreDrawListener with translation caching to prevent frame jank.
-                • **Toolbar Lifecycle Resilience:** Added View.OnAttachStateChangeListener to safely re-register OnPreDrawListener across fragment detach and re-attach cycles.
-                • **iOS Header Action Buttons Layout:** Cleaned up action buttons with transparent borderless ripple and precise right edge alignment.
-                • **Tag Collision Prevention:** Re-assigned unique tag keys across views to eliminate tag ID collisions.
-                • **Comprehensive Defensive Logging:** Replaced silent try-catch blocks across IosHeader and IosSwipeMenu with zero-overhead logDebug for debugging.
-                • **Action Menu Retry & Diagnostics:** Added retry timeout budget logging in IosSwipeMenu and item matching failure diagnostics in silentToolbarAction.
-                • **Clean Code Refactoring:** Removed dead code and unused legacy helpers (ProfileInfo, checkProfileCardInRv, findSettingsRecyclerView).
-                • **Removed Duplicate Preference:** Removed duplicate 'Gaya Kolom Chat iOS' (ios_text_entry) preference toggle from Customization settings menu.
+                • **Strict Superuser Root Detection:** Validasi aktif eksekusi UID=0 dengan badge indikator terintegrasi di kartu status Module Beranda.
+                • **Pembaruan Otomatis Terhubung ke Fork:** Sinkronisasi update langsung dari repositori GitHub `Luckyfr1945/WaEnhancer-IOS`.
+                • **Aksi Header Dinamis:** Trigger aksi pembuatan obrolan, status, dan panggilan baru sesuai tab aktif.
+                • **Optimasi PreDraw & Toolbar Lifecycle:** Penggabungan render pass OnPreDrawListener untuk transisi mulus 120Hz tanpa frame jank.
+                • **Perlindungan Tombol Input Kolom Chat iOS:** Menjaga persistensi ikon tombol `+` dan stiker agar tidak hilang setelah membuka panel stiker.
 
-                ### [FIXED]
+                ### 🐛 PERBAIKAN BUG [FIXED]
 
-                • **Fixed missing green plus button** in Communities, Calls, and Status header tabs.
-                • **Fixed Communities tab green plus button** triggering existing community group profile popups instead of opening New Community creation flow.
-                • **Fixed awkward spacing and padding** on Restart and action buttons in iOS header.
-                • **Fixed missing user profile name title** in toolbar when scrolling down on Settings/Anda tab.
-                • **Fixed SQLite Database Path Bug:** Corrected dbParent path to point directly to app data directory, enabling SQLite queries to find chatsettings.db and msgstore.db.
-                • **Fixed Navigation Icon and Action Buttons Disappearing:** Re-injected ensureNavigationIcon and container persistence across all tab transitions to prevent three-dot icon and action buttons from disappearing.
-                • **Fixed Tab Reset on Empty Title:** Prevented toolbar from blindly resetting active tab to 'Chats' when title is empty by reading persisted active tab tag.
-                • **Fixed False-Positive Tab Matching:** Replaced loose substring matching with exact matching and numeric ID verification.""";
+                • **Select Chat & Context Menu iOS:** Pemulihan penuh fitur iOS Select Chat, efek blur latar belakang, reaksi emoji, dan menu opsi iOS.
+                • **Perbaikan Duplikasi File Cadangan:** Membersihkan folder staging mentah sehingga hanya tersisa 1 file `.zip` rapi.
+                • **Penyesuaian Posisi Toolbar Floating:** Memperbaiki layout_height parent agar posisi toolbar menempel pas di bawah layar.
+                • **Pembersihan Badge Judul Tab:** Menghapus angka counter unread '(12)' dari judul tab toolbar secara otomatis.""";
 
         var markwon = Markwon.create(context);
         dialogBinding.tvChangelog.setText(markwon.toMarkdown(changelogText));
@@ -525,7 +537,13 @@ public class HomeFragment extends BaseFragment {
         var dialog = new MaterialAlertDialogBuilder(context)
                 .setView(dialogBinding.getRoot())
                 .setCancelable(true)
-                .show();
+                .create();
+
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+        }
+
+        dialog.show();
 
         dialogBinding.btnUpdate.setOnClickListener(v -> dialog.dismiss());
     }

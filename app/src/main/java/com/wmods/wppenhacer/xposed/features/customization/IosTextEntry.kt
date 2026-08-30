@@ -118,23 +118,41 @@ class IosTextEntry(loader: ClassLoader, prefs: SharedPreferences) : Feature(load
                                 return
                             }
 
-                            // Lightweight maintenance of the + icon (only update if color/mode actually changed)
+                            // Lightweight maintenance of the + icon and sticker icon (always maintain iOS icons after picker closed/opened)
                             if (cachedEmojiBtn == null && ID_EMOJI_PICKER_BTN > 0) cachedEmojiBtn = rootView.findViewById<ImageView>(ID_EMOJI_PICKER_BTN)
                             val emojiBtn = cachedEmojiBtn
                             if (emojiBtn != null) {
                                 val ctx = emojiBtn.context
                                 val isDark = isDarkMode(ctx)
                                 val plusColor = if (isDark) Color.parseColor(PLUS_DARK) else Color.parseColor(PLUS_LIGHT)
-                                if (emojiBtn.getTag(TAG_PLUS_DRAWABLE_SET) != plusColor) {
-                                    emojiBtn.setTag(TAG_PLUS_DRAWABLE_SET, plusColor)
-                                    if (plusDrawable == null || plusBitmapColor != plusColor) {
-                                        plusBitmapColor = plusColor
-                                        plusBitmap?.recycle()
-                                        plusBitmap = createPlusDrawable(plusColor)
-                                        plusDrawable = BitmapDrawable(ctx.resources, plusBitmap)
-                                    }
+                                if (plusDrawable == null || plusBitmapColor != plusColor) {
+                                    plusBitmapColor = plusColor
+                                    plusBitmap?.recycle()
+                                    plusBitmap = createPlusDrawable(plusColor)
+                                    plusDrawable = BitmapDrawable(ctx.resources, plusBitmap)
+                                }
+                                if (emojiBtn.drawable !== plusDrawable) {
                                     emojiBtn.setImageDrawable(plusDrawable)
                                     emojiBtn.imageTintList = null
+                                    emojiBtn.background = null
+                                }
+                            }
+
+                            val attachBtn = if (ID_INPUT_ATTACH_BUTTON > 0) textEntryLayout.findViewById<ImageView>(ID_INPUT_ATTACH_BUTTON) else null
+                            if (attachBtn != null) {
+                                val ctx = attachBtn.context
+                                val isDark = isDarkMode(ctx)
+                                val stickerColor = if (isDark) Color.parseColor(PLUS_DARK) else Color.parseColor(PLUS_LIGHT)
+                                if (stickerDrawable == null || stickerBitmapColor != stickerColor) {
+                                    stickerBitmapColor = stickerColor
+                                    stickerBitmap?.recycle()
+                                    stickerBitmap = createStickerDrawable(stickerColor)
+                                    stickerDrawable = BitmapDrawable(ctx.resources, stickerBitmap)
+                                }
+                                if (attachBtn.drawable !== stickerDrawable) {
+                                    attachBtn.setImageDrawable(stickerDrawable)
+                                    attachBtn.imageTintList = null
+                                    attachBtn.background = null
                                 }
                             }
                         } catch (e: Exception) {

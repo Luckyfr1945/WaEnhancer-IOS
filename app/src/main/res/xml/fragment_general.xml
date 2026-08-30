@@ -19,6 +19,12 @@
         app:title="@string/conversation"
         app:widgetLayout="@layout/preference_widget_chevron" />
 
+    <Preference
+        app:fragment="com.wmods.wppenhacer.ui.fragments.StickerSyncFragment"
+        app:iconSpaceReserved="false"
+        app:title="@string/sticker_sync"
+        app:widgetLayout="@layout/preference_widget_chevron" />
+
     <PreferenceCategory
         app:iconSpaceReserved="false"
         app:title="@string/status">
