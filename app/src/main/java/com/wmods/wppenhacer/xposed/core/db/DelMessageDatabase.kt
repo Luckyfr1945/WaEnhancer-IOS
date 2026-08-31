@@ -102,7 +102,8 @@ abstract class DelMessageDatabase : RoomDatabase() {
                         MIGRATION_10_11,
                         MIGRATION_11_12
                     )
-                    .fallbackToDestructiveMigrationOnDowngrade(false)
+                    .fallbackToDestructiveMigration(true)
+                    .fallbackToDestructiveMigrationOnDowngrade(true)
                     .allowMainThreadQueries()
                     .build()
                 INSTANCE = instance

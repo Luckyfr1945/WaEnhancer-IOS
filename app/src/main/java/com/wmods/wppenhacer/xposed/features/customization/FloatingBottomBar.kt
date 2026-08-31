@@ -297,88 +297,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
         var isLongPressHandled = false
 
-        // Global touch hook for Anda/Settings tab long press to open WhatsApp Account Switcher
-        try {
-            XposedBridge.hookAllMethods(
-                Activity::class.java,
-                "dispatchTouchEvent",
-                object : XC_MethodHook() {
-                    private var downX = 0f
-                    private var downY = 0f
-                    private var isLongPressed = false
-                    private var pendingRunnable: Runnable? = null
-
-                    override fun beforeHookedMethod(param: MethodHookParam) {
-                        val activity = param.thisObject as? Activity ?: return
-                        val actName = activity.javaClass.name
-                        if (!actName.contains("HomeActivity") && !actName.contains("Main")) return
-                        val ev = param.args.getOrNull(0) as? MotionEvent ?: return
-
-                        when (ev.actionMasked) {
-                            MotionEvent.ACTION_DOWN -> {
-                                downX = ev.rawX
-                                downY = ev.rawY
-                                isLongPressed = false
-                                pendingRunnable?.let { mainHandler.removeCallbacks(it) }
-
-                                val decor = activity.window?.decorView ?: return
-                                val leaf = findLeafViewUnder(decor, downX, downY)
-                                val bar = decor.findViewById<View>(bottomNavId)
-
-                                var isMatched = false
-                                if (leaf != null && isAndaTabLeaf(leaf, bottomNavId)) {
-                                    isMatched = true
-                                } else if (bar != null && bar.visibility == View.VISIBLE) {
-                                    val barLoc = IntArray(2)
-                                    bar.getLocationOnScreen(barLoc)
-                                    val barLeft = barLoc[0]
-                                    val barTop = barLoc[1]
-                                    val barRight = barLeft + bar.width
-                                    val barBottom = barTop + bar.height
-                                    if (downX >= (barLeft + bar.width * 0.68f) && downX <= barRight + 60 && downY >= barTop - 40 && downY <= barBottom + 60) {
-                                        isMatched = true
-                                        XposedBridge.log("[WaEnhancer] FloatingBottomBar: [Touch DOWN] Anda tab matched via Bar Bounding Box!")
-                                    }
-                                }
-
-                                if (isMatched) {
-                                    XposedBridge.log("[WaEnhancer] FloatingBottomBar: [Touch DOWN] Anda tab recognized! Scheduling long-press (260ms)")
-                                    val r = Runnable {
-                                        isLongPressed = true
-                                        XposedBridge.log("[WaEnhancer] FloatingBottomBar: [Long-Press FIRED] Opening Account Switcher for act=${activity.javaClass.name}")
-                                        try {
-                                            (leaf ?: bar)?.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
-                                        } catch (_: Throwable) {}
-                                        openAccountSwitcher(activity)
-                                    }
-                                    pendingRunnable = r
-                                    mainHandler.postDelayed(r, 260L)
-                                }
-                            }
-                            MotionEvent.ACTION_MOVE -> {
-                                val dx = ev.rawX - downX
-                                val dy = ev.rawY - downY
-                                if (dx * dx + dy * dy > 3600f) {
-                                    pendingRunnable?.let { mainHandler.removeCallbacks(it) }
-                                    pendingRunnable = null
-                                }
-                            }
-                            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                                pendingRunnable?.let { mainHandler.removeCallbacks(it) }
-                                pendingRunnable = null
-                                if (isLongPressed) {
-                                    isLongPressed = false
-                                    param.result = true
-                                    return
-                                }
-                            }
-                        }
-                    }
-                }
-            )
-        } catch (e: Throwable) {
-            logDebug("FloatingBottomBar: Failed to hook Activity.dispatchTouchEvent for account switcher: ${e.message}")
-        }
 
         XposedHelpers.findAndHookMethod(
             ViewGroup::class.java,
@@ -1596,7 +1514,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             if (parent != null) {
                 val pName = parent.javaClass.name
                 val pSimple = parent.javaClass.simpleName
-                if (pName.contains("BottomBar") || pSimple.contains("Bottom") || parent.id == bottomNavId || (parent.childCount in 4..5 && parent.height in 80..500)) {
+                if (parent.id == bottomNavId || pName.contains("BottomBar") || pName.contains("BottomNavigationView")) {
                     tabChild = curr
                     containerGroup = parent
                     break
@@ -1608,7 +1526,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             val idx = containerGroup.indexOfChild(tabChild)
             val count = containerGroup.childCount
             val rank = getTabRank(tabChild)
-            logDebug("FloatingBottomBar: isAndaTabLeaf tabChild=${tabChild.javaClass.simpleName} idx=$idx/$count rank=$rank")
             return idx == count - 1 || rank == 5
         }
         return false
@@ -1765,49 +1682,32 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         activity.runOnUiThread {
             XposedBridge.log("[WaEnhancer] FloatingBottomBar: openAccountSwitcher called with act=${activity.javaClass.name}")
             try {
-                // 1. Try launching Meta Accounts Center directly via SettingsFragment in HomeActivity
-                val fm = try {
-                    (activity as? androidx.fragment.app.FragmentActivity)?.supportFragmentManager
-                        ?: (XposedHelpers.callMethod(activity, "getSupportFragmentManager") as? androidx.fragment.app.FragmentManager)
-                } catch (_: Throwable) { null }
-
-                if (fm != null) {
-                    val settingsFrag = fm.fragments.firstOrNull { it.javaClass.name.contains("SettingsFragment") }
-                    if (settingsFrag != null) {
-                        for (m in settingsFrag.javaClass.declaredMethods) {
-                            // Static method: A0N(SettingsFragment, String, int, boolean)
-                            if (java.lang.reflect.Modifier.isStatic(m.modifiers) && m.parameterTypes.size == 4) {
-                                if (m.parameterTypes[0].isAssignableFrom(settingsFrag.javaClass) &&
-                                    m.parameterTypes[1] == String::class.java &&
-                                    m.parameterTypes[2] == Int::class.javaPrimitiveType &&
-                                    m.parameterTypes[3] == Boolean::class.javaPrimitiveType) {
-                                    m.isAccessible = true
-                                    m.invoke(null, settingsFrag, "wa_account_switcher_multi_account_discoverability_upsell", 7, false)
-                                    XposedBridge.log("[WaEnhancer] Meta switcher launched directly via static method ${m.name} on SettingsFragment!")
-                                    return@runOnUiThread
-                                }
-                            }
-                            // Member method: A0N(String, int, boolean)
-                            if (!java.lang.reflect.Modifier.isStatic(m.modifiers) && m.parameterTypes.size == 3) {
-                                if (m.parameterTypes[0] == String::class.java &&
-                                    m.parameterTypes[1] == Int::class.javaPrimitiveType &&
-                                    m.parameterTypes[2] == Boolean::class.javaPrimitiveType) {
-                                    m.isAccessible = true
-                                    m.invoke(settingsFrag, "wa_account_switcher_multi_account_discoverability_upsell", 7, false)
-                                    XposedBridge.log("[WaEnhancer] Meta switcher launched directly via member method ${m.name} on SettingsFragment!")
-                                    return@runOnUiThread
-                                }
-                            }
-                        }
+                val fxClasses = listOf(
+                    "com.whatsapp.accountlinking.fx.FxAccountsCenterActivity",
+                    "com.whatsapp.fx.ui.FxAccountsCenterActivity",
+                    "com.whatsapp.accountlinking.fx.FxLauncher",
+                    "com.whatsapp.settings.ui.SettingsNavigationFragment",
+                    "com.whatsapp.settings.SettingsAccountCenterFragment",
+                    "com.whatsapp.bloks.WaBloksBottomSheet",
+                    "com.whatsapp.wabloks.ui.WaBloksBottomSheet"
+                )
+                for (c in fxClasses) {
+                    val found = runCatching { Class.forName(c, true, activity.classLoader) }.getOrNull()
+                    if (found != null) {
+                        logDebug("[FloatingBottomBar] Found FX class: $c")
                     }
                 }
 
-                // 2. Fallback: WhatsApp native AccountSwitchingBottomSheet
+                // 3. WhatsApp native AccountSwitchingBottomSheet inspection
                 val clazz = try {
                     Class.forName("com.whatsapp.accountswitching.ui.AccountSwitchingBottomSheet", true, activity.classLoader)
                 } catch (_: Throwable) { null }
 
                 if (clazz != null) {
+                    for (f in clazz.declaredFields) {
+                        f.isAccessible = true
+                        logDebug("[FloatingBottomBar] AccountSwitchingBottomSheet field: ${f.name} (${f.type.name})")
+                    }
                     val fragment = clazz.getDeclaredConstructor().newInstance()
                     val args = android.os.Bundle().apply {
                         putInt("source", 7)

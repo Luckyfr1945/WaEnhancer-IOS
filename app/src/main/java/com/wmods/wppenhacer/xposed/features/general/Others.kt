@@ -879,9 +879,13 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
 
         XposedBridge.hookMethod(forwardAudioTypeMethod, object : XC_MethodHook() {
             override fun afterHookedMethod(param: MethodHookParam) {
-                val fMessage = param.result
-                originFMessageField.isAccessible = true
-                originFMessageField.setInt(fMessage, selectedAudioType - 1)
+                if (selectedAudioType <= 0) return
+                val fMessage = param.result ?: return
+                val fMessageWpp = FMessageWpp(fMessage)
+                if (fMessageWpp.mediaType == 2 || fMessageWpp.mediaType == 9) {
+                    originFMessageField.isAccessible = true
+                    originFMessageField.setInt(fMessage, selectedAudioType - 1)
+                }
             }
         })
     }

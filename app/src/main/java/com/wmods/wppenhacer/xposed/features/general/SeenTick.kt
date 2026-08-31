@@ -460,14 +460,24 @@ class SeenTick(
             override fun afterHookedMethod(param: MethodHookParam) {
                 if (!Utils.isBlueOnReplyEnabled(prefs)) return
 
+                val obj = param.thisObject ?: return
+
+                // Guard 1: Only trigger for actual outgoing message jobs (SendE2EMessageJob)
+                if (messageSendClass != null && !messageSendClass.isInstance(obj)) return
+
+                // Guard 2: Prevent feedback loop from self-dispatched receipt jobs
+                val isSelfDispatched = try {
+                    XposedHelpers.getAdditionalInstanceField(obj, "blue_on_reply") as? Boolean ?: false
+                } catch (_: Throwable) { false }
+                if (isSelfDispatched) return
+
                 scope.launch(Dispatchers.IO) {
                     runCatching {
                         // Jangan cast langsung — bisa ClassCastException silent kalau obfuscated class berubah
-                        val obj = param.thisObject ?: return@launch
                         val userJid = runCatching { FMessageWpp.UserJid.extractFrom(obj) }.getOrNull()
                             ?: WppCore.getCurrentUserJid() ?: return@launch
 
-                        logDebug("[SeenTick] hookOnSendMessages triggered, userJid=$userJid")
+                        logDebug("[SeenTick] hookOnSendMessages triggered for outgoing message, userJid=$userJid")
 
                         if (userJid.isStatus) {
                             val listStatus = MenuStatusListener.statusData.getCurrentItemList()

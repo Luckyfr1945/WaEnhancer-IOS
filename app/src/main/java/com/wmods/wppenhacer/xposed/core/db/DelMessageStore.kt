@@ -27,13 +27,19 @@ class DelMessageStore private constructor(context: Context) {
         timestampCache[msgid] = timestamp
         jidMessagesCache.getOrPut(jid) { java.util.HashSet() }.add(msgid)
         val message = DelMessage(jid = jid, msgid = msgid, timestamp = timestamp)
-        dao.insertMessage(message)
+        try {
+            dao.insertMessage(message)
+        } catch (_: Throwable) {}
     }
 
     fun getMessagesByJid(jid: String?): java.util.HashSet<String> {
         if (jid == null) return java.util.HashSet()
         jidMessagesCache[jid]?.let { return java.util.HashSet(it) }
-        val set = java.util.HashSet(dao.getMessagesByJid(jid))
+        val set = try {
+            java.util.HashSet(dao.getMessagesByJid(jid))
+        } catch (_: Throwable) {
+            java.util.HashSet()
+        }
         jidMessagesCache[jid] = set
         return set
     }
@@ -53,5 +59,4 @@ class DelMessageStore private constructor(context: Context) {
         }
         return 0L
     }
-
 }
