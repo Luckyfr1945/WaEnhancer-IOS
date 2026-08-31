@@ -85,19 +85,10 @@ class ConversationItemListener(
             object : XC_MethodHook() {
                 @Throws(Throwable::class)
                 override fun beforeHookedMethod(param: MethodHookParam) {
-                    val currentActivity = WppCore.getCurrentActivity()
-                    if (currentActivity == null || currentActivity.javaClass.simpleName != "Conversation") {
-                        return
-                    }
-
-                    val listView = param.thisObject as ListView
-                    if (listView.id != android.R.id.list) {
-                        return
-                    }
-
+                    val listView = param.thisObject as? ListView ?: return
                     listView.selector = ColorDrawable(Color.TRANSPARENT)
 
-                    var currentAdapter = param.args[0] as? ListAdapter
+                    var currentAdapter = param.args?.getOrNull(0) as? ListAdapter
                     if (currentAdapter is HeaderViewListAdapter) {
                         currentAdapter = currentAdapter.wrappedAdapter
                     }
@@ -107,30 +98,31 @@ class ConversationItemListener(
                     }
 
                     adapter = currentAdapter
+                    logDebug("[ConversationItemListener] setAdapter hooked for adapter: ${currentAdapter.javaClass.name}")
 
                     for (listener in conversationListeners) {
                         listener.onAttachAdapter(adapter)
                     }
 
-                    hooked?.unhook()
-
-                    val method = adapter!!.javaClass.getDeclaredMethod(
-                        "getView",
-                        Int::class.javaPrimitiveType,
-                        View::class.java,
-                        ViewGroup::class.java
-                    )
+                    val method = findGetViewMethod(adapter!!.javaClass)
+                    if (method == null) {
+                        logDebug("[ConversationItemListener] getView method not found in hierarchy for: ${adapter!!.javaClass.name}")
+                        return
+                    }
+                    method.isAccessible = true
 
                     hooked = XposedBridge.hookMethod(method, object : XC_MethodHook() {
                         @Throws(Throwable::class)
                         override fun afterHookedMethod(param: MethodHookParam) {
-                            if (param.thisObject !== adapter) return
+                            val activeAdapter = (param.thisObject as? ListAdapter) ?: adapter ?: return
 
-                            val position = param.args[0] as Int
+                            val position = param.args[0] as? Int ?: return
                             val convertView = param.args[1] as? View
                             val viewGroup = param.result as? ViewGroup ?: return
 
-                            val fMessageObj = adapter!!.getItem(position) ?: return
+                            val fMessageObj = try {
+                                activeAdapter.getItem(position)
+                            } catch (_: Throwable) { null } ?: return
 
                             val fMessage = FMessageWpp(fMessageObj)
 
@@ -148,6 +140,23 @@ class ConversationItemListener(
                 }
             }
         )
+    }
+
+    private fun findGetViewMethod(startClass: Class<*>): java.lang.reflect.Method? {
+        var current: Class<*>? = startClass
+        while (current != null && current != Any::class.java) {
+            try {
+                return current.getDeclaredMethod(
+                    "getView",
+                    Int::class.javaPrimitiveType,
+                    View::class.java,
+                    ViewGroup::class.java
+                )
+            } catch (_: NoSuchMethodException) {
+                current = current.superclass
+            }
+        }
+        return null
     }
 
     override fun getPluginName(): String {

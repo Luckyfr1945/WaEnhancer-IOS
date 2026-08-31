@@ -25,6 +25,7 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
         @JvmStatic
         fun generateFMessageKey(protocolTreeNodeWpp: ProtocolTreeNodeWpp): FMessageWpp.Key? {
             try {
+                if (protocolTreeNodeWpp.tag != "receipt") return null
                 val fromKV = protocolTreeNodeWpp.attributes.firstOrNull { it.key == "to" || it.key == "from" } ?: return null
                 val userJid = fromKV.userJid ?: return null
                 val idKV = protocolTreeNodeWpp.attributes.firstOrNull { it.key == "id" } ?: return null
@@ -56,11 +57,13 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
 
     private fun hookSendReadReceiptJob() {
         val sendReadReceiptJobMethod = Unobfuscator.loadHideViewSendReadJob(classLoader)
-        val sendJobClass = Unobfuscator.findFirstClassUsingName(
-            classLoader,
-            StringMatchType.EndsWith,
-            "SendReadReceiptJob"
-        )
+        val sendJobClass = try {
+            Unobfuscator.findFirstClassUsingName(
+                classLoader,
+                StringMatchType.EndsWith,
+                "SendReadReceiptJob"
+            )
+        } catch (_: Throwable) { null }
 
         XposedBridge.hookMethod(sendReadReceiptJobMethod, object : XC_MethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
@@ -70,7 +73,14 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
                         ?: false
 
                 // Job yang dibuat oleh SeenTick sendiri — biarkan lewat
-                if (!sendJobClass.isInstance(job) || hasBlueOnReply) return
+                if (hasBlueOnReply) return
+
+                val jobClassName = job.javaClass.name
+                val isSendJob = sendJobClass?.isInstance(job) == true ||
+                        jobClassName.contains("SendReadReceiptJob") ||
+                        sendReadReceiptJobMethod.declaringClass.isInstance(job)
+
+                if (!isSendJob) return
 
                 val userJid = FMessageWpp.UserJid.extractFrom(job)
                 if (userJid == null || userJid.isNull) return
@@ -80,9 +90,12 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
 
                 if (isInvalidJid) return
 
-                // Jika Blue on Reply aktif: blokir job WA biasa dan catat ke DB
-                // supaya SeenTick bisa kirim ulang dengan flag blue_on_reply
                 val blueOnReply = Utils.isBlueOnReplyEnabled(prefs)
+                val privacy = CustomPrivacy.getJSON(userJid.phoneNumber)
+                val isHide = processReadReceiptByType(param, job, userJid, privacy)
+
+                logDebug("[HideSeen] hookSendReadReceiptJob: job=$jobClassName, userJid=$userJid, isHide=$isHide, blueOnReply=$blueOnReply, hideread=$isHideRead, ghost=$isGhostMode")
+
                 if (blueOnReply) {
                     param.result = null
                     dbExecutor.execute {
@@ -90,9 +103,6 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
                     }
                     return
                 }
-
-                val privacy = CustomPrivacy.getJSON(userJid.phoneNumber)
-                val isHide = processReadReceiptByType(param, job, userJid, privacy)
 
                 if (isHide) {
                     dbExecutor.execute {
@@ -141,15 +151,15 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
 
     private fun recordHiddenMessages(sendReadReceiptJob: Any, userJid: FMessageWpp.UserJid) {
         val messageIds = try {
-            (XposedHelpers.getObjectField(sendReadReceiptJob, "messageIds") as? Array<*>)
-        } catch (_: Throwable) {
             val jobClass = sendReadReceiptJob.javaClass
             val field = cachedMessageIdsFields.getOrPut(jobClass) {
-                ReflectionUtils.findFieldUsingFilter(jobClass) {
-                    it.type == Array<String>::class.java
+                jobClass.declaredFields.firstOrNull {
+                    it.type.isArray && it.type.componentType == String::class.java
                 }?.also { it.isAccessible = true } ?: return
             }
             field.get(sendReadReceiptJob) as? Array<*>
+        } catch (_: Throwable) {
+            null
         } ?: return
 
         val ids = messageIds.mapNotNull { it as? String }
@@ -189,6 +199,9 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
                 runCatching {
                     val protocolTreeNodeWpp = ProtocolTreeNodeWpp(param.result ?: return)
 
+                    // Critical Guard: Only process actual <receipt> stanzas, never <message> or other stanzas!
+                    if (protocolTreeNodeWpp.tag != "receipt") return
+
                     val fmessageKey = generateFMessageKey(protocolTreeNodeWpp) ?: return
                     if (fmessageKey.remoteJid.isStatus) return
 
@@ -209,10 +222,11 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
                         val typeKV = protocolTreeNodeWpp.attributes.firstOrNull { it.key == "type" }
                         if (typeKV == null) {
                             protocolTreeNodeWpp.addKeyValue("type", "inactive")
-                        } else {
+                            protocolTreeNodeWpp.removeAllKeyValuesByKey("sts")
+                        } else if (typeKV.value == "delivery") {
                             typeKV.value = "inactive"
+                            protocolTreeNodeWpp.removeAllKeyValuesByKey("sts")
                         }
-                        protocolTreeNodeWpp.removeAllKeyValuesByKey("sts")
                     } else if (hideSeenActive) {
                         val typeKV = protocolTreeNodeWpp.attributes.firstOrNull { it.key == "type" }
                         if (typeKV?.value == "read") {

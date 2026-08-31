@@ -25,3 +25,13 @@
 * Fixed False-Positive Read Receipts (SeenTick): Replaced fuzzy substring matching with normalized exact-match JID validation to prevent misdirected blue ticks and played receipts
 * Fixed Profile Avatar Lookup: Added multi-package directory support for both WhatsApp Standard and WhatsApp Business profile avatars
 * Fixed Account Switcher Double-Popup & Crash: Resolved NoSuchMethodError on obfuscated setArguments methods and prevented redundant synthetic touch dispatching
+* Fixed Outgoing Message Pending Stall (🕒): Added strict stanza tag validation (`tag != "receipt"`) in HideSeen, preventing outgoing `<message>` stanzas from being corrupted with `type="inactive"`, and reinforced `extractIsFromMe` with resilient `Key.toString()` parsing
+* Fixed SeenTick Job Queue Feedback Loop: Added `blue_on_reply` self-dispatch marker and `SendE2EMessageJob` type guards in `hookOnSendMessages` to eliminate recursive read-receipt job loops
+* Fixed Anti-Revoke Native Replacement: Updated `setBlockedResult()` in AntiRevoke to return `false`/`null`, preventing WhatsApp from marking revoked messages as successfully deleted and replacing them with placeholder text
+* Fixed Anti-Revoke Target Message ID Tracking: Captured original target message IDs, `originalKey.messageID`, and candidate target fields from revoke stanzas so deleted messages are accurately identified in the UI
+* Fixed Anti-Revoke Multi-JID & LID Resolution: Unified canonical `MutableSet` mapping across all JID representations (`@lid`, `@s.whatsapp.net`, raw, and normalized phone numbers) to ensure consistent message lookup regardless of timing
+* Fixed Conversation Item UI Rendering: Resolved `NoSuchMethodException` on `getDeclaredMethod("getView", ...)` by searching the full adapter inheritance hierarchy and added recursive `findDateTextView` fallback for message bubbles
+* Fixed MessageStore Transaction Rollback & Data Integrity: Wrapped `db.transaction` with proper exception rethrowing to prevent partial-write commits on failed status deletions, and fixed `getAudioListByMessageList` column selection
+* Fixed Media & Document Upload Stall on Hide Second Tick: Guarded `hookReceiptMethod` in HideSeen to only alter delivery receipt stanzas (`type == null` or `"delivery"`), preventing media/MMS negotiation receipts from being mutated to `"inactive"`
+* Fixed Chat List False Account Switcher Trigger: Removed global `Activity.dispatchTouchEvent` hook and restricted long-press touch scope strictly to the physical bottom navigation bar's "Anda" tab
+* Fixed Forwarded Media Visibility in Sender POV: Restricted `forwardAudioTypeMethod` origin field modification in Others to audio/voice note messages only (`mediaType == 2 || 9`), keeping forwarded photos and videos intact in chat view

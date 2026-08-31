@@ -52,44 +52,67 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
         }
 
 
-        private fun getJidKey(fMessage: FMessageWpp): String? {
+        private fun getJidKeys(fMessage: FMessageWpp): Set<String> {
             val remoteJid = fMessage.key.remoteJid
-            if (remoteJid.isStatus) return "status@broadcast"
-            return remoteJid.phoneRawString ?: remoteJid.userRawString ?: remoteJid.phoneNumber ?: remoteJid.rawJidString
+            if (remoteJid.isStatus) return setOf("status@broadcast")
+
+            val keys = linkedSetOf<String>()
+            remoteJid.phoneRawString?.let { keys.add(it) }
+            remoteJid.userRawString?.let { keys.add(it) }
+            remoteJid.phoneNumber?.let { keys.add(it) }
+            remoteJid.rawJidString?.let { keys.add(it) }
+            val fullUserRaw = runCatching {
+                remoteJid.userJid?.let { XposedHelpers.callMethod(it, "getRawString") as? String }
+            }.getOrNull()
+            if (!fullUserRaw.isNullOrBlank()) keys.add(fullUserRaw)
+            return keys
         }
 
         private fun getRevokedMessagesForJid(fMessage: FMessageWpp): MutableSet<String> {
-            val stripJID = getJidKey(fMessage) ?: return Collections.synchronizedSet(HashSet())
-            val cached = messageRevokedMap[stripJID]
-            if (cached != null) return cached
+            val stripJIDs = getJidKeys(fMessage)
+            if (stripJIDs.isEmpty()) return Collections.synchronizedSet(HashSet())
 
-            val emptySet = Collections.synchronizedSet(HashSet<String>())
-            val existing = messageRevokedMap.putIfAbsent(stripJID, emptySet)
-            val targetSet = existing ?: emptySet
+            for (jid in stripJIDs) {
+                messageRevokedMap[jid]?.let { return it }
+            }
 
-            if (existing == null) {
-                CompletableFuture.runAsync {
-                    try {
-                        val messages = DelMessageStore.getInstance(Utils.application).getMessagesByJid(stripJID)
-                        if (messages.isNotEmpty()) {
-                            targetSet.addAll(messages)
-                            WppCore.getCurrentActivity()?.runOnUiThread {
-                                ConversationItemListener.notifyDataSetChanged()
-                            }
-                        }
-                    } catch (_: Exception) {}
+            val newSet = Collections.synchronizedSet(HashSet<String>())
+            for (jid in stripJIDs) {
+                val existing = messageRevokedMap.putIfAbsent(jid, newSet)
+                if (existing != null) {
+                    return existing
                 }
             }
-            return targetSet
+
+            CompletableFuture.runAsync {
+                try {
+                    for (jid in stripJIDs) {
+                        val messages = DelMessageStore.getInstance(Utils.application).getMessagesByJid(jid)
+                        if (messages.isNotEmpty()) {
+                            newSet.addAll(messages)
+                        }
+                    }
+                    if (newSet.isNotEmpty()) {
+                        WppCore.getCurrentActivity()?.runOnUiThread {
+                            ConversationItemListener.notifyDataSetChanged()
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+            return newSet
         }
 
         private fun persistRevokedMessage(fMessage: FMessageWpp, messageID: String) {
-            val stripJID = getJidKey(fMessage) ?: return
-            DelMessageStore.getInstance(Utils.application).insertMessage(
-                stripJID,
-                messageID,
-                System.currentTimeMillis()
-            )
+            val stripJIDs = getJidKeys(fMessage)
+            val store = DelMessageStore.getInstance(Utils.application)
+            val now = System.currentTimeMillis()
+            for (jid in stripJIDs) {
+                store.insertMessage(
+                    jid,
+                    messageID,
+                    now
+                )
+            }
         }
     }
 
@@ -107,7 +130,7 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
                 val fMessage = fstatus.fMessage ?: return
                 if (!fStatusKey.isFromMe && handleRevocationAttempt(
                         fMessage,
-                        fStatusKey.messageID
+                        setOf(fStatusKey.messageID)
                     ) != 0
                 ) {
                     param.result = 0
@@ -126,6 +149,17 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
                 }
                 val fMessage = FMessageWpp(fMessageObj)
                 val messageKey = fMessage.key
+                if (messageKey.isFromMe) return
+
+                val myNumber = Utils.getMyNumber()
+                if (!myNumber.isNullOrBlank()) {
+                    if (messageKey.remoteJid.phoneNumber == myNumber) return
+                    val senderJid = fMessage.userJid
+                    if (senderJid.phoneNumber == myNumber) return
+                    val senderRaw = senderJid.userRawString ?: ""
+                    if (senderRaw.contains("lid_me") || senderRaw.contains("status_me")) return
+                }
+
                 val deviceJid = fMessage.deviceJid
                 val messageId = try {
                     fMessage.key.messageID.takeIf { it.isNotEmpty() }
@@ -137,9 +171,47 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
                     null
                 } ?: return
 
+                val origMessageId = runCatching { fMessage.originalKey.messageID }.getOrNull()?.takeIf { it.isNotEmpty() }
+
+                val candidateIds = linkedSetOf<String>()
+                candidateIds.add(messageId)
+                origMessageId?.let { candidateIds.add(it) }
+
+                try {
+                    val obj = fMessage.getObject()
+                    val cls = obj.javaClass
+                    for (f in cls.fields + cls.declaredFields) {
+                        f.isAccessible = true
+                        val v = f.get(obj)
+                        if (v != null) {
+                            val vStr = v.toString()
+                            if (vStr.contains("AC") || vStr.contains("3EB") || vStr.contains("Key") || vStr.contains("key")) {
+                                logDebug("[AntiRevoke] Field ${f.name} (${f.type.simpleName}) = $vStr")
+                            }
+                            if (v is String && v.length >= 16) {
+                                candidateIds.add(v)
+                            }
+                        }
+                    }
+                    for (m in cls.methods + cls.declaredMethods) {
+                        if (m.parameterCount == 0 && m.name.startsWith("get") || m.name.startsWith("A0")) {
+                            val res = runCatching { m.invoke(obj) }.getOrNull()
+                            if (res != null) {
+                                val rStr = res.toString()
+                                if (rStr.contains("AC") || rStr.contains("3EB") || rStr.contains("Key") || rStr.contains("key")) {
+                                    logDebug("[AntiRevoke] Method ${m.name}() = $rStr")
+                                }
+                            }
+                        }
+                    }
+                } catch (_: Throwable) {}
+
+                logDebug("[AntiRevoke] Revoke attempt detected for candidateIds=$candidateIds from JID=${messageKey.remoteJid}, sender=${fMessage.userJid}, method=${param.method.name}")
+
 
                 val method = param.method as? Method
                 val returnType = method?.returnType
+                logDebug("[AntiRevoke] antiRevokeMessageMethod: class=${method?.declaringClass?.name}, name=${method?.name}, returnType=$returnType")
 
                 fun setBlockedResult() {
                     if (returnType == null || returnType == java.lang.Void.TYPE || returnType == java.lang.Void::class.java) {
@@ -147,7 +219,7 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
                         return
                     }
                     if (returnType == java.lang.Boolean.TYPE || returnType == java.lang.Boolean::class.java) {
-                        param.result = true
+                        param.result = false
                         return
                     }
                     if (returnType == java.lang.Integer.TYPE || returnType == java.lang.Integer::class.java) {
@@ -159,53 +231,17 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
                         return
                     }
 
-                    // For any object return type (e.g. X.9jD, X.6ta, etc.):
-                    // 1. Try constructor first
-                    try {
-                        val constr = returnType.constructors.firstOrNull() ?: returnType.declaredConstructors.firstOrNull()
-                        if (constr != null) {
-                            constr.isAccessible = true
-                            val paramTypes = constr.parameterTypes
-                            val defaultArgs = arrayOfNulls<Any?>(paramTypes.size)
-                            for (i in paramTypes.indices) {
-                                val p = paramTypes[i]
-                                defaultArgs[i] = when {
-                                    p == java.lang.Boolean.TYPE || p == java.lang.Boolean::class.java -> false
-                                    p == java.lang.Integer.TYPE || p == java.lang.Integer::class.java -> 0
-                                    p == java.lang.Long.TYPE || p == java.lang.Long::class.java -> 0L
-                                    p == java.lang.Float.TYPE || p == java.lang.Float::class.java -> 0f
-                                    p == java.lang.Double.TYPE || p == java.lang.Double::class.java -> 0.0
-                                    p == java.lang.Byte.TYPE || p == java.lang.Byte::class.java -> 0.toByte()
-                                    p == java.lang.Short.TYPE || p == java.lang.Short::class.java -> 0.toShort()
-                                    p == java.lang.Character.TYPE || p == java.lang.Character::class.java -> ' '
-                                    else -> null
-                                }
-                            }
-                            param.result = constr.newInstance(*defaultArgs)
-                            return
-                        }
-                    } catch (_: Throwable) {}
-
-                    // 2. Fallback to Unsafe.allocateInstance for 100% reliable instantiation of any object
-                    try {
-                        val unsafeClass = Class.forName("sun.misc.Unsafe")
-                        val theUnsafeField = unsafeClass.getDeclaredField("theUnsafe")
-                        theUnsafeField.isAccessible = true
-                        val unsafe = theUnsafeField.get(null)
-                        val allocateMethod = unsafeClass.getMethod("allocateInstance", Class::class.java)
-                        param.result = allocateMethod.invoke(unsafe, returnType)
-                        return
-                    } catch (_: Throwable) {}
-
+                    // For any object return type, return null to signify no-op / failed update
                     param.result = null
                 }
 
                 if (!messageKey.isFromMe && handleRevocationAttempt(
                         fMessage,
-                        messageId
+                        candidateIds
                     ) != 0
                 ) {
                     setBlockedResult()
+                    logDebug("[AntiRevoke] Blocked revocation of candidateIds=$candidateIds, param.result=${param.result}")
                 }
             }
         })
@@ -218,7 +254,7 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
                 position: Int,
                 convertView: View?
             ) {
-                val dateTextView = view.findViewById<TextView>(Utils.getID("date", "id"))
+                val dateTextView = findDateTextView(view)
                 bindRevokedMessageUI(fMessage, dateTextView, "antirevoke", view)
             }
         })
@@ -256,6 +292,42 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
         })
     }
 
+    private fun findDateTextView(view: ViewGroup): TextView? {
+        val dateId = Utils.getID("date", "id")
+        if (dateId != 0) {
+            val tv = view.findViewById<TextView>(dateId)
+            if (tv != null) return tv
+        }
+        return findTextViewByEntryName(view, "date") ?: findTextViewByEntryName(view, "time")
+    }
+
+    private fun findTextViewByEntryName(view: ViewGroup, target: String): TextView? {
+        val count = view.childCount
+        for (i in 0 until count) {
+            val child = view.getChildAt(i)
+            if (child is TextView) {
+                val entryName = runCatching { child.resources.getResourceEntryName(child.id) }.getOrNull()
+                if (entryName?.contains(target, ignoreCase = true) == true) {
+                    return child
+                }
+            } else if (child is ViewGroup) {
+                val found = findTextViewByEntryName(child, target)
+                if (found != null) return found
+            }
+        }
+        return null
+    }
+
+    private fun getAntirevokeValue(type: String): Int {
+        val raw = runCatching { prefs.getString(type, null) }.getOrNull()
+            ?: runCatching { if (prefs.getBoolean(type, false)) "1" else null }.getOrNull()
+        if (raw != null) {
+            return raw.toIntOrNull() ?: 0
+        }
+        // If not explicitly disabled in settings, default to 1 (Show text)
+        return 1
+    }
+
     private fun bindRevokedMessageUI(
         fMessage: FMessageWpp,
         dateTextView: TextView?,
@@ -263,7 +335,7 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
         boundView: View? = null
     ) {
         if (dateTextView == null) return
-        val antirevokeValue = prefs.getString(antirevokeType, "0")?.toIntOrNull() ?: 0
+        val antirevokeValue = getAntirevokeValue(antirevokeType)
         if (antirevokeValue == 0) return
 
         val key = fMessage.key
@@ -276,12 +348,23 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
         dateTextView.setOnClickListener(null)
         dateTextView.setCompoundDrawables(null, null, null, null)
 
-        val messageID = if (messageRevokedList.contains(key.messageID)) {
-            key.messageID
-        } else if (messageRevokedList.isNotEmpty() && fMessage.rowId > 0) {
-            MessageStore.getInstance().getOriginalMessageKey(fMessage.rowId)
-                .takeIf { messageRevokedList.contains(it) }
-        } else null
+        val origKey = runCatching { fMessage.originalKey.messageID }.getOrNull()
+
+        val messageID = when {
+            messageRevokedList.contains(boundMessageId) -> boundMessageId
+            !origKey.isNullOrEmpty() && messageRevokedList.contains(origKey) -> origKey
+            messageRevokedList.isNotEmpty() && fMessage.rowId > 0 -> {
+                val orig = MessageStore.getInstance().getOriginalMessageKey(fMessage.rowId)
+                if (messageRevokedList.contains(orig)) orig else null
+            }
+            else -> null
+        } ?: run {
+            if (DelMessageStore.getInstance(Utils.application).getTimestampByMessageId(boundMessageId) > 0) {
+                boundMessageId
+            } else null
+        }
+
+        logDebug("[AntiRevoke] bindRevokedMessageUI: msgId=$boundMessageId, isRevoked=${messageID != null}, antirevokeValue=$antirevokeValue, revokedCount=${messageRevokedList.size}")
 
         if (messageID != null) {
             val appInstance = Utils.application
@@ -315,7 +398,7 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
                             Utils.application.getString(R.string.message_deleted_tag)
                         } catch (_: Throwable) { "Dihapus" }
                     }
-                    val newTextData = "$deletedLabel | $messageText"
+                    val newTextData = if (messageText.contains(deletedLabel)) messageText.toString() else "$deletedLabel | $messageText"
                     dateTextView.text = newTextData
                     XposedHelpers.setAdditionalInstanceField(
                         dateTextView,
@@ -340,36 +423,50 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
         }
     }
 
-    private fun handleRevocationAttempt(fMessage: FMessageWpp, messageId: String): Int {
+    private fun handleRevocationAttempt(fMessage: FMessageWpp, candidateIds: Set<String>): Int {
         try {
             handleRevocationAlert(fMessage)
         } catch (e: Exception) {
             log(e)
         }
 
-        val revokeBoolean = prefs.getString(
-            if (fMessage.key.remoteJid.isStatus) "antirevokestatus" else "antirevoke",
-            "0"
-        )?.toIntOrNull() ?: 0
+        val revokeBoolean = getAntirevokeValue(
+            if (fMessage.key.remoteJid.isStatus) "antirevokestatus" else "antirevoke"
+        )
 
         if (revokeBoolean == 0) return 0
 
         val messageRevokedList = getRevokedMessagesForJid(fMessage)
-        if (messageRevokedList.add(messageId)) {
-            CompletableFuture.runAsync {
-                try {
-                    persistRevokedMessage(fMessage, messageId)
-                    val mConversation = WppCore.getCurrentConversation()
-                    val currentChatJid = WppCore.getCurrentUserJid()
-                    val currentKey = currentChatJid?.phoneRawString ?: currentChatJid?.userRawString ?: currentChatJid?.phoneNumber
-                    val msgKey = getJidKey(fMessage)
-                    if (mConversation != null && msgKey != null && (msgKey == currentKey || msgKey == currentChatJid?.rawJidString)) {
-                        mConversation.runOnUiThread {
-                            ConversationItemListener.notifyDataSetChanged()
-                        }
+        var addedAny = false
+        for (id in candidateIds) {
+            if (messageRevokedList.add(id)) {
+                addedAny = true
+                CompletableFuture.runAsync {
+                    try {
+                        persistRevokedMessage(fMessage, id)
+                    } catch (e: Exception) {
+                        logDebug(e)
                     }
-                } catch (e: Exception) {
-                    logDebug(e)
+                }
+            }
+        }
+
+        if (addedAny) {
+            val mConversation = WppCore.getCurrentConversation()
+            val currentChatJid = WppCore.getCurrentUserJid()
+            val currentKeys = currentChatJid?.let {
+                val set = linkedSetOf<String>()
+                it.phoneRawString?.let { s -> set.add(s) }
+                it.userRawString?.let { s -> set.add(s) }
+                it.phoneNumber?.let { s -> set.add(s) }
+                it.rawJidString?.let { s -> set.add(s) }
+                set
+            } ?: emptySet()
+            val msgKeys = getJidKeys(fMessage)
+            val isCurrentChat = msgKeys.any { it in currentKeys }
+            if (mConversation != null && isCurrentChat) {
+                mConversation.runOnUiThread {
+                    ConversationItemListener.notifyDataSetChanged()
                 }
             }
         }
