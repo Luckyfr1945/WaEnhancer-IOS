@@ -38,10 +38,5 @@ public class MediaFragment extends BasePreferenceFragment {
                 return true;
             });
         }
-
-        var videoCallScreenRec = findPreference("video_call_screen_rec");
-        if (videoCallScreenRec != null) {
-            videoCallScreenRec.setEnabled(false);
-        }
     }
 }

@@ -39,7 +39,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="match_parent">
 
-                    <!-- 1. Anime Artwork positioned on Right side (with smooth alpha feathering on left/bottom/top) -->
+                    <!-- Anime Artwork positioned on Right side (with natural alpha gradient feathering) -->
                     <ImageView
                         android:id="@+id/hero_bg_image"
                         android:layout_width="wrap_content"
@@ -50,7 +50,7 @@
                         android:src="@drawable/hero_active"
                         tools:ignore="ContentDescription" />
 
-                    <!-- 2. Top-Right Radial Green Glow -->
+                    <!-- Top-Right Radial Green Glow -->
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
@@ -179,6 +179,7 @@
 
                         <!-- Bottom LSPosed Hook Pill Badge -->
                         <TextView
+                            android:id="@+id/hero_lsposed_badge"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_alignParentEnd="true"

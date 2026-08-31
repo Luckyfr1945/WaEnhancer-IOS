@@ -16,7 +16,7 @@ class UpdateChecker(private val mActivity: Activity) : Runnable {
 
     companion object {
         private const val LATEST_RELEASE_API = "https://api.github.com/repos/Luckyfr1945/WaEnhancer-IOS/releases/latest"
-        private const val TELEGRAM_UPDATE_URL = "https://t.me/waenhancer"
+        private const val DEFAULT_RELEASE_URL = "https://github.com/Luckyfr1945/WaEnhancer-IOS/releases/latest"
 
         private val httpClient: OkHttpClient by lazy {
             OkHttpClient.Builder()
@@ -33,7 +33,8 @@ class UpdateChecker(private val mActivity: Activity) : Runnable {
                 .url(LATEST_RELEASE_API)
                 .build()
 
-            val hash: String
+            val tagName: String
+            val releaseUrl: String
             val changelog: String
             val publishedAt: String
 
@@ -42,16 +43,17 @@ class UpdateChecker(private val mActivity: Activity) : Runnable {
 
                 val content = response.body.string()
                 val release = JSONObject(content)
-                val tagName = release.optString("tag_name", "")
+                tagName = release.optString("tag_name", "").trim()
 
                 if (tagName.isBlank()) return
 
-                hash = tagName.split("-")[1].trim()
-                changelog = release.optString("body", "No changelog available.").trim()
+                val htmlUrl = release.optString("html_url", DEFAULT_RELEASE_URL)
+                releaseUrl = htmlUrl
+                changelog = release.optString("body", "Pembaruan versi baru telah tersedia.").trim()
                 publishedAt = release.optString("published_at", "")
             }
 
-            if (hash.isBlank()) return
+            if (tagName.isBlank()) return
 
             val packageInfo = try {
                 mActivity.packageManager.getPackageInfo(BuildConfig.APPLICATION_ID, 0)
@@ -60,12 +62,20 @@ class UpdateChecker(private val mActivity: Activity) : Runnable {
                 return
             }
 
-            val isNewVersion = !packageInfo.versionName!!.lowercase().contains(hash.lowercase().trim())
-            val isIgnored = WppCore.getPrivString("ignored_version", "") == hash
+            val currentVersion = packageInfo.versionName?.lowercase() ?: ""
+            val hash = if (tagName.contains("-")) tagName.split("-")[1].trim() else tagName
+            val isNewVersion = !currentVersion.contains(hash.lowercase().trim())
 
-            if (isNewVersion && !isIgnored) {
+            // Check if user has already been notified ONCE for this release version
+            val lastNotifiedVersion = WppCore.getPrivString("last_notified_release_version", "")
+            if (isNewVersion && lastNotifiedVersion != tagName) {
+                // Mark as notified so it NEVER pops up again for this version
+                WppCore.setPrivString("last_notified_release_version", tagName)
+
                 mActivity.runOnUiThread {
-                    showUpdateDialog(hash, changelog, publishedAt)
+                    if (!mActivity.isFinishing && !mActivity.isDestroyed) {
+                        showUpdateDialog(tagName, changelog, publishedAt, releaseUrl)
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -73,31 +83,30 @@ class UpdateChecker(private val mActivity: Activity) : Runnable {
         }
     }
 
-    private fun showUpdateDialog(hash: String, changelog: String, publishedAt: String) {
+    private fun showUpdateDialog(tagName: String, changelog: String, publishedAt: String, releaseUrl: String) {
         try {
             val markwon = Markwon.create(mActivity)
-            val dialog = AlertDialogWpp(mActivity)
-
             val formattedDate = formatPublishedDate(publishedAt)
 
             val message = buildString {
-                append("📦 **Version:** `").append(hash).append("`\n")
+                append("📦 **Versi Baru:** `").append(tagName).append("`\n")
                 if (formattedDate.isNotEmpty()) {
-                    append("📅 **Released:** ").append(formattedDate).append("\n")
+                    append("📅 **Rilis:** ").append(formattedDate).append("\n")
                 }
-                append("\n### What's New\n\n").append(changelog)
+                append("\n### Rincian Pembaruan:\n\n").append(changelog)
             }
 
-            dialog.setTitle("🎉 New Update Available!")
-            dialog.setMessage(markwon.toMarkdown(message))
-            dialog.setNegativeButton("Ignore") { dialog, _ ->
-                WppCore.setPrivString("ignored_version", hash)
-                dialog.dismiss()
+            val builder = android.app.AlertDialog.Builder(mActivity)
+            builder.setTitle("🎉 Pembaruan WaEnhancer Tersedia!")
+            builder.setMessage(markwon.toMarkdown(message))
+            builder.setNegativeButton("Nanti") { d, _ ->
+                d.dismiss()
             }
-            dialog.setPositiveButton("Update Now") { dialog, _ ->
-                Utils.openLink(mActivity, TELEGRAM_UPDATE_URL)
-                dialog.dismiss()
+            builder.setPositiveButton("Unduh Sekarang") { d, _ ->
+                Utils.openLink(mActivity, releaseUrl)
+                d.dismiss()
             }
+            val dialog = builder.create()
             dialog.show()
         } catch (e: Exception) {
             e.printStackTrace()
@@ -109,9 +118,10 @@ class UpdateChecker(private val mActivity: Activity) : Runnable {
 
         return try {
             val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
+            isoFormat.timeZone = java.util.TimeZone.getTimeZone("UTC")
             val date = isoFormat.parse(isoDate)
             if (date != null) {
-                val displayFormat = SimpleDateFormat("MMM dd, yyyy", Locale.US)
+                val displayFormat = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
                 displayFormat.format(date)
             } else ""
         } catch (e: Exception) {

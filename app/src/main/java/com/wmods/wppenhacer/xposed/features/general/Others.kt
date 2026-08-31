@@ -91,12 +91,49 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
         val audioTranscription = prefs.getBoolean("audio_transcription", false)
         val oldStatus = prefs.getBoolean("oldstatus", false)
         val igstatus = prefs.getBoolean("igstatus", false)
+        val hideChannels = prefs.getBoolean("channels", false)
+        val removeChannelRec = prefs.getBoolean("removechannel_rec", false)
         val animationEmojis = prefs.getBoolean("animation_emojis", false)
         val disableProfileStatus = prefs.getBoolean("disable_profile_status", false)
         val disableExpiration = prefs.getBoolean("disable_expiration", false)
         val disableAd = prefs.getBoolean("disable_ads", false)
 
-        propsInteger[3877] = if (oldStatus) (if (igstatus) 2 else 0) else 2
+        if (hideChannels || oldStatus) {
+            propsInteger[3877] = if (igstatus) 2 else 0
+            propsBoolean[4205] = false
+            propsBoolean[5666] = false
+            propsBoolean[5834] = false
+            propsBoolean[5835] = false
+            propsBoolean[6589] = false
+            propsBoolean[6590] = false
+            propsBoolean[8067] = false
+            propsBoolean[9071] = false
+            propsBoolean[10147] = false
+            propsBoolean[10825] = false
+            propsBoolean[12117] = false
+            propsBoolean[12543] = false
+            propsBoolean[13098] = false
+            propsBoolean[13110] = false
+            propsBoolean[14541] = false
+            propsBoolean[15678] = false
+            propsBoolean[16142] = false
+            propsBoolean[17024] = false
+            propsBoolean[17420] = false
+            propsBoolean[18055] = false
+            propsBoolean[18128] = false
+        } else {
+            propsInteger[3877] = 2
+        }
+
+        if (removeChannelRec) {
+            propsBoolean[5666] = false
+            propsBoolean[5834] = false
+            propsBoolean[9071] = false
+            propsBoolean[17024] = false
+            propsBoolean[17420] = false
+            propsBoolean[18055] = false
+            propsBoolean[18128] = false
+        }
 
         propsBoolean[18250] = false
         propsBoolean[11528] = false
@@ -888,20 +925,21 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
     }
 
     private fun showOnline(showOnline: Boolean) {
-        val checkOnlineMethod = Unobfuscator.loadCheckOnlineMethod(classLoader)
+        val checkOnlineMethod = runCatching { Unobfuscator.loadCheckOnlineMethod(classLoader) }.getOrNull() ?: return
         XposedBridge.hookMethod(checkOnlineMethod, object : XC_MethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
-                val message = param.args[0] as Message
+                val message = param.args.firstOrNull() as? Message ?: return
                 if (message.arg1 != 5) return
-                val baseBundle = message.obj as BaseBundle
+                val baseBundle = message.obj as? BaseBundle ?: return
                 val jid = baseBundle.getString("jid")
                 if (TextUtils.isEmpty(jid)) return
                 val userjid = FMessageWpp.UserJid(jid)
                 if (userjid.isGroup) return
                 val waContact = WaContactWpp.getWaContactFromJid(userjid)
                 val name = waContact?.displayName ?: "Unknown"
-                if (showOnline)
+                if (prefs.getBoolean("showonline", false)) {
                     Utils.showToast(String.format(Utils.application.getString(R.string.toast_online), name), Toast.LENGTH_SHORT)
+                }
                 Tasker.sendTaskerEvent(name, WppCore.stripJID(jid), "contact_online")
             }
         })

@@ -1,16 +1,27 @@
 [ADDED]
+* Video Call Screen Recording: Added automatic screen recording for WhatsApp video calls with background root capture and clean MP4 output
 * Jump to First Message: Added menu option in conversation chats to instantly jump and navigate to the very first message
 * WhatsApp ConversationScrollApi Hook: Hooked WhatsApp's internal ConversationScrollApi for smooth message list scrolling and dynamic history loading
+* Sticker Sync & Backup: Added full backup (.zip) and restore/merge tools for WhatsApp & WhatsApp Business stickers
+* Long-Press "Anda" Tab for Account Switcher: Long-pressing the "Anda"/Settings tab in the floating bottom navigation bar opens WhatsApp's native Account Switching bottom sheet
 
 [IMPROVED]
-* Hero Status Card Visual Blending: Upgraded hero artwork with seamless 2D alpha feathering, completely eliminating rectangular borders and seams across all device resolutions
+* Adaptive Navigation Bar: Floating bottom nav bar automatically adapts width and hides unavailable tabs based on LSPosed and Root activation state
+* Extended Video Size Limit: Increased maximum video size limit slider from 90MB up to 120MB in Media settings
+* Account Switcher Gesture Recognition: Integrated low-latency (260ms) touch gesture recognition on the "Anda" tab with 1500ms debounce cooldown to prevent double popup triggers
+* Obfuscation-Resilient Fragment & Dialog Invocation: Dynamic reflection fallback calling A4P/supportFragmentManager and safe bundle argument injection across WhatsApp updates
+* Dynamic Status Badges: Real-time red/green indicator badges for LSPosed and Root status on the Hero Control Center
+* Direct GitHub Update Redirection: Update dialog directly opens the latest GitHub APK release download in browser
 * Native Voice Note & Send Buttons: Preserved native WhatsApp floating action button styling, colors, and animations for voice note and send buttons
 * About & Contributors UI: Standardized all contributor pill buttons with consistent styling and uniform theme colors
 * Performance & Clean Logging: Streamlined diagnostic logs across modules with zero-overhead logDebug
 
 [FIXED]
 * Fixed Jump to First Message Navigation: Replaced fragile reflection with direct ConversationScrollApi navigation, resolving issues where message scrolling did not trigger or caused unintended reply quotes
+* Fixed Search Filtering: Filtered search catalog to hide unavailable hook-dependent preferences when LSPosed is not active
+* Fixed Intermediate Tab Flickering: Created dynamic ViewPager adapter modes so transitions switch directly without passing through hidden tabs
 * Fixed Per-Contact Privacy Overrides (HideSeen): Removed global toggle early-returns in hookReceiptMethod so individual contact privacy overrides are always respected even when global toggles are off
 * Fixed Multi-Job Architecture Crash: Keyed cachedMessageIdsFields by Class in ConcurrentHashMap to prevent IllegalArgumentException across WhatsApp and WhatsApp Business
 * Fixed False-Positive Read Receipts (SeenTick): Replaced fuzzy substring matching with normalized exact-match JID validation to prevent misdirected blue ticks and played receipts
 * Fixed Profile Avatar Lookup: Added multi-package directory support for both WhatsApp Standard and WhatsApp Business profile avatars
+* Fixed Account Switcher Double-Popup & Crash: Resolved NoSuchMethodError on obfuscated setArguments methods and prevented redundant synthetic touch dispatching

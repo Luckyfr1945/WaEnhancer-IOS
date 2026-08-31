@@ -293,6 +293,93 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                 }
             })
 
+        var longPressRunnable: Runnable? = null
+        val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+        var isLongPressHandled = false
+
+        // Global touch hook for Anda/Settings tab long press to open WhatsApp Account Switcher
+        try {
+            XposedBridge.hookAllMethods(
+                Activity::class.java,
+                "dispatchTouchEvent",
+                object : XC_MethodHook() {
+                    private var downX = 0f
+                    private var downY = 0f
+                    private var isLongPressed = false
+                    private var pendingRunnable: Runnable? = null
+
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        val activity = param.thisObject as? Activity ?: return
+                        val actName = activity.javaClass.name
+                        if (!actName.contains("HomeActivity") && !actName.contains("Main")) return
+                        val ev = param.args.getOrNull(0) as? MotionEvent ?: return
+
+                        when (ev.actionMasked) {
+                            MotionEvent.ACTION_DOWN -> {
+                                downX = ev.rawX
+                                downY = ev.rawY
+                                isLongPressed = false
+                                pendingRunnable?.let { mainHandler.removeCallbacks(it) }
+
+                                val decor = activity.window?.decorView ?: return
+                                val leaf = findLeafViewUnder(decor, downX, downY)
+                                val bar = decor.findViewById<View>(bottomNavId)
+
+                                var isMatched = false
+                                if (leaf != null && isAndaTabLeaf(leaf, bottomNavId)) {
+                                    isMatched = true
+                                } else if (bar != null && bar.visibility == View.VISIBLE) {
+                                    val barLoc = IntArray(2)
+                                    bar.getLocationOnScreen(barLoc)
+                                    val barLeft = barLoc[0]
+                                    val barTop = barLoc[1]
+                                    val barRight = barLeft + bar.width
+                                    val barBottom = barTop + bar.height
+                                    if (downX >= (barLeft + bar.width * 0.68f) && downX <= barRight + 60 && downY >= barTop - 40 && downY <= barBottom + 60) {
+                                        isMatched = true
+                                        XposedBridge.log("[WaEnhancer] FloatingBottomBar: [Touch DOWN] Anda tab matched via Bar Bounding Box!")
+                                    }
+                                }
+
+                                if (isMatched) {
+                                    XposedBridge.log("[WaEnhancer] FloatingBottomBar: [Touch DOWN] Anda tab recognized! Scheduling long-press (260ms)")
+                                    val r = Runnable {
+                                        isLongPressed = true
+                                        XposedBridge.log("[WaEnhancer] FloatingBottomBar: [Long-Press FIRED] Opening Account Switcher for act=${activity.javaClass.name}")
+                                        try {
+                                            (leaf ?: bar)?.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                                        } catch (_: Throwable) {}
+                                        openAccountSwitcher(activity)
+                                    }
+                                    pendingRunnable = r
+                                    mainHandler.postDelayed(r, 260L)
+                                }
+                            }
+                            MotionEvent.ACTION_MOVE -> {
+                                val dx = ev.rawX - downX
+                                val dy = ev.rawY - downY
+                                if (dx * dx + dy * dy > 3600f) {
+                                    pendingRunnable?.let { mainHandler.removeCallbacks(it) }
+                                    pendingRunnable = null
+                                }
+                            }
+                            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                                pendingRunnable?.let { mainHandler.removeCallbacks(it) }
+                                pendingRunnable = null
+                                if (isLongPressed) {
+                                    isLongPressed = false
+                                    param.result = true
+                                    return
+                                }
+                            }
+                        }
+                    }
+                }
+            )
+        } catch (e: Throwable) {
+            logDebug("FloatingBottomBar: Failed to hook Activity.dispatchTouchEvent for account switcher: ${e.message}")
+        }
+
         XposedHelpers.findAndHookMethod(
             ViewGroup::class.java,
             "dispatchTouchEvent",
@@ -313,14 +400,51 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             state.lastDragX = ev.x
                             state.pillStartCenterX = indicator.centerX
                             state.isDragging = false
+                            isLongPressHandled = false
                             state.targetPressProgress = 1f
                             startPillPhysics(bar, state)
                             bar.parent?.requestDisallowInterceptTouchEvent(true)
+
+                            // Detect long press on Anda / Settings tab (rank 5 or last item)
+                            val pressedIndex = items.indices.minByOrNull { idx ->
+                                val center = offsetInBar(bar, items[idx]).first + items[idx].width / 2f
+                                abs(center - ev.x)
+                            }
+                            if (pressedIndex != null && (getTabRank(items[pressedIndex]) == 5 || pressedIndex == items.lastIndex)) {
+                                val touchedTab = items[pressedIndex]
+                                longPressRunnable?.let { mainHandler.removeCallbacks(it) }
+                                val runnable = Runnable {
+                                    isLongPressHandled = true
+                                    state.isDragging = false
+                                    state.isScrubbing = false
+                                    state.targetPressProgress = 0f
+                                    startPillPhysics(bar, state)
+
+                                    try {
+                                        touchedTab.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                                    } catch (_: Throwable) {}
+
+                                    val act = (bar.context as? Activity)
+                                        ?: ((bar.context as? android.content.ContextWrapper)?.baseContext as? Activity)
+                                        ?: (bar.rootView?.context as? Activity)
+                                        ?: WppCore.getCurrentActivity()
+                                    if (act is androidx.fragment.app.FragmentActivity) {
+                                        openAccountSwitcher(act)
+                                    }
+                                }
+                                longPressRunnable = runnable
+                                mainHandler.postDelayed(runnable, 400L)
+                            }
                         }
                         MotionEvent.ACTION_MOVE -> {
                             val dx = ev.x - state.dragStartX
                             val stepDx = ev.x - state.lastDragX
                             state.lastDragX = ev.x
+
+                            if (abs(dx) > Utils.dipToPixels(8f)) {
+                                longPressRunnable?.let { mainHandler.removeCallbacks(it) }
+                                longPressRunnable = null
+                            }
 
                             if (!state.isDragging && abs(dx) > Utils.dipToPixels(12f)) {
                                 state.isDragging = true
@@ -401,6 +525,17 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             }
                         }
                         MotionEvent.ACTION_UP -> {
+                            longPressRunnable?.let { mainHandler.removeCallbacks(it) }
+                            longPressRunnable = null
+
+                            if (isLongPressHandled) {
+                                isLongPressHandled = false
+                                state.targetPressProgress = 0f
+                                startPillPhysics(bar, state)
+                                param.result = true
+                                return
+                            }
+
                             state.targetPressProgress = 0f
                             if (state.isDragging) {
                                 state.isDragging = false
@@ -425,6 +560,17 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             }
                         }
                         MotionEvent.ACTION_CANCEL -> {
+                            longPressRunnable?.let { mainHandler.removeCallbacks(it) }
+                            longPressRunnable = null
+
+                            if (isLongPressHandled) {
+                                isLongPressHandled = false
+                                state.targetPressProgress = 0f
+                                startPillPhysics(bar, state)
+                                param.result = true
+                                return
+                            }
+
                             state.targetPressProgress = 0f
                             if (state.isDragging) {
                                 state.isDragging = false
@@ -1441,8 +1587,247 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         }
     }
 
+    private fun isAndaTabLeaf(leaf: View, bottomNavId: Int): Boolean {
+        var curr: View? = leaf
+        var tabChild: View? = null
+        var containerGroup: ViewGroup? = null
+        while (curr != null && curr.parent is View) {
+            val parent = curr.parent as? ViewGroup
+            if (parent != null) {
+                val pName = parent.javaClass.name
+                val pSimple = parent.javaClass.simpleName
+                if (pName.contains("BottomBar") || pSimple.contains("Bottom") || parent.id == bottomNavId || (parent.childCount in 4..5 && parent.height in 80..500)) {
+                    tabChild = curr
+                    containerGroup = parent
+                    break
+                }
+            }
+            curr = curr.parent as? View
+        }
+        if (tabChild != null && containerGroup != null) {
+            val idx = containerGroup.indexOfChild(tabChild)
+            val count = containerGroup.childCount
+            val rank = getTabRank(tabChild)
+            logDebug("FloatingBottomBar: isAndaTabLeaf tabChild=${tabChild.javaClass.simpleName} idx=$idx/$count rank=$rank")
+            return idx == count - 1 || rank == 5
+        }
+        return false
+    }
+
+    private fun findLeafViewUnder(root: View, rawX: Float, rawY: Float): View? {
+        val loc = IntArray(2)
+        root.getLocationOnScreen(loc)
+        val left = loc[0]
+        val top = loc[1]
+        val right = left + root.width
+        val bottom = top + root.height
+        if (rawX < left || rawX > right || rawY < top || rawY > bottom || root.visibility != View.VISIBLE) {
+            return null
+        }
+        if (root is ViewGroup) {
+            for (i in root.childCount - 1 downTo 0) {
+                val child = root.getChildAt(i)
+                val found = findLeafViewUnder(child, rawX, rawY)
+                if (found != null) return found
+            }
+        }
+        return root
+    }
+
+    private fun attachAccountSwitcherOnLongClick(item: View) {
+        if (getTabRank(item) != 5) return
+        val longClickListener = View.OnLongClickListener { v ->
+            val act = (v.context as? Activity)
+                ?: ((v.context as? android.content.ContextWrapper)?.baseContext as? Activity)
+                ?: (v.rootView?.context as? Activity)
+                ?: WppCore.getCurrentActivity()
+            if (act != null) {
+                openAccountSwitcher(act)
+                try {
+                    v.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                } catch (_: Throwable) {}
+                true
+            } else {
+                false
+            }
+        }
+        item.setOnLongClickListener(longClickListener)
+    }
+
+    private var lastAccountSwitcherTime = 0L
+
+    private fun setFragmentArgsSafely(fragment: Any, args: android.os.Bundle) {
+        var methodFound = false
+        var c: Class<*>? = fragment.javaClass
+        while (c != null && c != Any::class.java) {
+            for (m in c.declaredMethods) {
+                if (m.parameterTypes.size == 1 && m.parameterTypes[0] == android.os.Bundle::class.java) {
+                    try {
+                        m.isAccessible = true
+                        m.invoke(fragment, args)
+                        methodFound = true
+                        XposedBridge.log("[WaEnhancer] Set args using method ${m.name} on ${c.simpleName}")
+                        break
+                    } catch (_: Throwable) {}
+                }
+            }
+            if (methodFound) break
+            c = c.superclass
+        }
+
+        c = fragment.javaClass
+        while (c != null && c != Any::class.java) {
+            for (f in c.declaredFields) {
+                if (f.type == android.os.Bundle::class.java) {
+                    try {
+                        f.isAccessible = true
+                        f.set(fragment, args)
+                        XposedBridge.log("[WaEnhancer] Set args on field ${f.name} on ${c.simpleName}")
+                    } catch (_: Throwable) {}
+                }
+            }
+            c = c.superclass
+        }
+    }
+
+    private fun showDialogFragmentSafely(activity: Activity, fragment: Any, tag: String): Boolean {
+        // 1. Try activity's native DialogFragment show method (A4P, etc.)
+        var actClass: Class<*>? = activity.javaClass
+        while (actClass != null && actClass != Any::class.java) {
+            for (m in actClass.declaredMethods) {
+                if (m.parameterTypes.size == 2 && m.parameterTypes[1] == String::class.java) {
+                    val param0 = m.parameterTypes[0]
+                    if (param0.isAssignableFrom(fragment.javaClass) || param0.name.contains("DialogFragment") || param0.name.contains("Fragment")) {
+                        try {
+                            m.isAccessible = true
+                            m.invoke(activity, fragment, tag)
+                            XposedBridge.log("[WaEnhancer] Showed dialog via activity method ${m.name} on ${actClass.simpleName}!")
+                            return true
+                        } catch (e: Throwable) {
+                            XposedBridge.log("[WaEnhancer] Activity show method ${m.name} failed: ${e.message}")
+                        }
+                    }
+                }
+            }
+            actClass = actClass.superclass
+        }
+
+        // 2. Try fragment.show(fm, tag)
+        val fm = try {
+            (activity as? androidx.fragment.app.FragmentActivity)?.supportFragmentManager
+                ?: (XposedHelpers.callMethod(activity, "getSupportFragmentManager") as? androidx.fragment.app.FragmentManager)
+        } catch (_: Throwable) { null }
+
+        if (fm != null) {
+            var fragClass: Class<*>? = fragment.javaClass
+            while (fragClass != null && fragClass != Any::class.java) {
+                for (m in fragClass.declaredMethods) {
+                    if (m.parameterTypes.size == 2 && m.parameterTypes[1] == String::class.java) {
+                        try {
+                            m.isAccessible = true
+                            m.invoke(fragment, fm, tag)
+                            XposedBridge.log("[WaEnhancer] Showed dialog via fragment method ${m.name} on ${fragClass.simpleName}!")
+                            return true
+                        } catch (e: Throwable) {
+                            XposedBridge.log("[WaEnhancer] Fragment show method ${m.name} failed: ${e.message}")
+                        }
+                    }
+                }
+                fragClass = fragClass.superclass
+            }
+        }
+        return false
+    }
+
+    private fun findSwitcherButtonRecursively(view: View): View? {
+        val resName = try {
+            if (view.id != 0 && view.id != -1) view.resources.getResourceEntryName(view.id) else ""
+        } catch (_: Throwable) { "" }
+        if (resName.contains("account_switcher") || resName == "me_tab_account_switcher_chevron") {
+            return view
+        }
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                val found = findSwitcherButtonRecursively(view.getChildAt(i))
+                if (found != null) return found
+            }
+        }
+        return null
+    }
+
+    private fun openAccountSwitcher(activity: Activity) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastAccountSwitcherTime < 1500L) {
+            return
+        }
+        lastAccountSwitcherTime = now
+
+        activity.runOnUiThread {
+            XposedBridge.log("[WaEnhancer] FloatingBottomBar: openAccountSwitcher called with act=${activity.javaClass.name}")
+            try {
+                // 1. Try launching Meta Accounts Center directly via SettingsFragment in HomeActivity
+                val fm = try {
+                    (activity as? androidx.fragment.app.FragmentActivity)?.supportFragmentManager
+                        ?: (XposedHelpers.callMethod(activity, "getSupportFragmentManager") as? androidx.fragment.app.FragmentManager)
+                } catch (_: Throwable) { null }
+
+                if (fm != null) {
+                    val settingsFrag = fm.fragments.firstOrNull { it.javaClass.name.contains("SettingsFragment") }
+                    if (settingsFrag != null) {
+                        for (m in settingsFrag.javaClass.declaredMethods) {
+                            // Static method: A0N(SettingsFragment, String, int, boolean)
+                            if (java.lang.reflect.Modifier.isStatic(m.modifiers) && m.parameterTypes.size == 4) {
+                                if (m.parameterTypes[0].isAssignableFrom(settingsFrag.javaClass) &&
+                                    m.parameterTypes[1] == String::class.java &&
+                                    m.parameterTypes[2] == Int::class.javaPrimitiveType &&
+                                    m.parameterTypes[3] == Boolean::class.javaPrimitiveType) {
+                                    m.isAccessible = true
+                                    m.invoke(null, settingsFrag, "wa_account_switcher_multi_account_discoverability_upsell", 7, false)
+                                    XposedBridge.log("[WaEnhancer] Meta switcher launched directly via static method ${m.name} on SettingsFragment!")
+                                    return@runOnUiThread
+                                }
+                            }
+                            // Member method: A0N(String, int, boolean)
+                            if (!java.lang.reflect.Modifier.isStatic(m.modifiers) && m.parameterTypes.size == 3) {
+                                if (m.parameterTypes[0] == String::class.java &&
+                                    m.parameterTypes[1] == Int::class.javaPrimitiveType &&
+                                    m.parameterTypes[2] == Boolean::class.javaPrimitiveType) {
+                                    m.isAccessible = true
+                                    m.invoke(settingsFrag, "wa_account_switcher_multi_account_discoverability_upsell", 7, false)
+                                    XposedBridge.log("[WaEnhancer] Meta switcher launched directly via member method ${m.name} on SettingsFragment!")
+                                    return@runOnUiThread
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 2. Fallback: WhatsApp native AccountSwitchingBottomSheet
+                val clazz = try {
+                    Class.forName("com.whatsapp.accountswitching.ui.AccountSwitchingBottomSheet", true, activity.classLoader)
+                } catch (_: Throwable) { null }
+
+                if (clazz != null) {
+                    val fragment = clazz.getDeclaredConstructor().newInstance()
+                    val args = android.os.Bundle().apply {
+                        putInt("source", 7)
+                        putString("landing_screen", "home")
+                        putString("switcher_entry_point", "navigation_bar")
+                        putString("account_switcher_entry_point", "wa_account_switcher_multi_account_discoverability_upsell")
+                    }
+                    setFragmentArgsSafely(fragment, args)
+                    showDialogFragmentSafely(activity, fragment, "account_switch_bottom_sheet_fragment")
+                }
+            } catch (e: Throwable) {
+                XposedBridge.log("[WaEnhancer] FloatingBottomBar: openAccountSwitcher uncaught error: ${e.message}")
+                XposedBridge.log(e)
+            }
+        }
+    }
+
     private fun morphAndaToSettings(item: View) {
         if (getTabRank(item) != 5) return
+        attachAccountSwitcherOnLongClick(item)
         try {
             val queue = ArrayDeque<View>()
             queue.add(item)

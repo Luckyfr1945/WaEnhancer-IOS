@@ -45,6 +45,17 @@ public class GeneralFragment extends BaseFragment {
         public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
             super.onCreatePreferences(savedInstanceState, rootKey);
             setPreferencesFromResource(R.xml.fragment_general, rootKey);
+
+            if (!com.wmods.wppenhacer.activities.MainActivity.isXposedEnabled()) {
+                // When LSPosed is not active (Root-only mode), show ONLY the Sticker Sync feature
+                for (int i = getPreferenceScreen().getPreferenceCount() - 1; i >= 0; i--) {
+                    var pref = getPreferenceScreen().getPreference(i);
+                    if (pref.getFragment() != null && pref.getFragment().equals("com.wmods.wppenhacer.ui.fragments.StickerSyncFragment")) {
+                        continue;
+                    }
+                    getPreferenceScreen().removePreference(pref);
+                }
+            }
         }
 
         @Override

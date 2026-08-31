@@ -476,6 +476,7 @@
     <string name="call_recording_enable_sum">Record incoming and outgoing calls (Voice &amp; Video) as audio.</string>
     <string name="call_recording_path">Recordings Output Folder</string>
     <string name="video_call_screen_rec">Record Video Calls (Screen)</string>
+    <string name="video_call_screen_rec_sum">Automatically record screen video during WhatsApp video calls</string>
     <string name="video_call_screen_rec_locked">Coming soon!</string>
     <string name="coming_soon">Coming soon!</string>
     <string name="recording_mode">Recording Mode</string>

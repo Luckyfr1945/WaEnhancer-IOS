@@ -44,6 +44,8 @@ class CallRecording(
 
     private val isRecording = AtomicBoolean(false)
     private val isCallConnected = AtomicBoolean(false)
+    private val isCurrentCallVideo = AtomicBoolean(false)
+    private val screenRecordProcess = AtomicReference<Process?>()
     private val mediaRecorderRef = AtomicReference<MediaRecorder?>()
     private val outputPfdRef = AtomicReference<ParcelFileDescriptor?>()
     private val outputStreamRef = AtomicReference<FileOutputStream?>()
@@ -60,12 +62,15 @@ class CallRecording(
 
     @Throws(Throwable::class)
     override fun doHook() {
-        if (!prefs.getBoolean("call_recording_enable", false)) {
+        val audioEnabled = prefs.getBoolean("call_recording_enable", false)
+        val videoScreenRecEnabled = prefs.getBoolean("video_call_screen_rec", false)
+
+        if (!audioEnabled && !videoScreenRecEnabled) {
             logDebug("WaEnhancer: Call Recording is disabled")
             return
         }
 
-        logDebug("WaEnhancer: Call Recording feature initializing...")
+        logDebug("WaEnhancer: Call Recording feature initializing (audio=$audioEnabled, videoScreenRec=$videoScreenRecEnabled)...")
         hookCallStateChanges()
     }
 
@@ -207,6 +212,16 @@ class CallRecording(
                     }
                 }
             }
+            val isVideo = runCatching {
+                val isAudioOnly = XposedHelpers.getBooleanField(callInfo, "isAudioOnlyLightweight")
+                !isAudioOnly
+            }.getOrDefault(false) || runCatching {
+                XposedHelpers.callMethod(callInfo, "isVideoCall") as? Boolean ?: false
+            }.getOrDefault(false) || runCatching {
+                XposedHelpers.getBooleanField(callInfo, "videoEnabled")
+            }.getOrDefault(false)
+            isCurrentCallVideo.set(isVideo)
+            logDebug("WaEnhancer: Call isVideo: $isVideo")
         } catch (e: Throwable) {
             logDebug("WaEnhancer: extractUserJid error: ${e.message}")
         }
@@ -253,6 +268,46 @@ class CallRecording(
         }
     }
 
+    private fun startScreenRecording(appDir: File, userJid: FMessageWpp.UserJid?, timestamp: String) {
+        if (screenRecordProcess.get() != null) return
+        try {
+            val videoDir = File(appDir, "Video Calls")
+            if (!videoDir.exists()) videoDir.mkdirs()
+
+            val identifier = if (userJid != null) {
+                val name = runCatching { WppCore.getContactName(userJid) }.getOrNull()
+                if (name.isNullOrEmpty()) userJid.phoneNumber else name
+            } else "Unknown"
+            val videoFileName = "VideoCall_${sanitizeFileNamePart(identifier)}_$timestamp.mp4"
+            val videoFile = File(videoDir, videoFileName)
+
+            val cmd = arrayOf("su", "-c", "exec /system/bin/screenrecord --bit-rate 6000000 --time-limit 3600 \"${videoFile.absolutePath}\"")
+            val process = Runtime.getRuntime().exec(cmd)
+            screenRecordProcess.set(process)
+            logDebug("WaEnhancer: Video Call Screen Recording started: ${videoFile.absolutePath}")
+            if (prefs.getBoolean("call_recording_toast", false)) {
+                Utils.showToast("Video screen recording started", Toast.LENGTH_SHORT)
+            }
+        } catch (e: Throwable) {
+            logDebug("WaEnhancer: startScreenRecording error: ${e.message}")
+        }
+    }
+
+    private fun stopScreenRecording() {
+        screenRecordProcess.getAndSet(null)?.let { process ->
+            try {
+                Runtime.getRuntime().exec(arrayOf("su", "-c", "pkill -2 screenrecord"))
+                process.destroy()
+                logDebug("WaEnhancer: Video Call Screen Recording stopped")
+                if (prefs.getBoolean("call_recording_toast", false)) {
+                    Utils.showToast("Video screen recording saved!", Toast.LENGTH_SHORT)
+                }
+            } catch (e: Throwable) {
+                logDebug("WaEnhancer: stopScreenRecording error: ${e.message}")
+            }
+        }
+    }
+
     @Synchronized
     private fun startRecording() {
         if (isRecording.get()) {
@@ -277,11 +332,6 @@ class CallRecording(
                 return
             }
 
-            if (ContextCompat.checkSelfPermission(app, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                logDebug("WaEnhancer: No RECORD_AUDIO permission")
-                return
-            }
-
             val bridge = runCatching {
                 WppCore.getClientBridge()
             }.onFailure {
@@ -300,54 +350,63 @@ class CallRecording(
             ensureOutputDirectory(appDir, bridge)
 
             val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-            val fileName = buildFileName(cUserJid, timestamp)
-            val outputTarget = openOutputTarget(bridge, appDir, fileName)
 
-            outputFileRef.set(outputTarget.file)
-            outputPfdRef.set(outputTarget.parcelFileDescriptor)
-            outputStreamRef.set(outputTarget.outputStream)
-
-            if (prefs.getBoolean("call_recording_use_root", false)) {
-                grantVoiceCallPermission()
+            // 1. Start Screen Recording if it's a Video Call and feature enabled
+            val videoScreenRecEnabled = prefs.getBoolean("video_call_screen_rec", false)
+            if (isCurrentCallVideo.get() && videoScreenRecEnabled) {
+                startScreenRecording(appDir, cUserJid, timestamp)
             }
 
-            val audioSources = intArrayOf(
-                MediaRecorder.AudioSource.VOICE_CALL,
-                MediaRecorder.AudioSource.VOICE_UPLINK,
-                MediaRecorder.AudioSource.VOICE_DOWNLINK,
-                6,
-                MediaRecorder.AudioSource.VOICE_COMMUNICATION,
-                MediaRecorder.AudioSource.MIC
-            )
-            val sourceNames = arrayOf(
-                "VOICE_CALL",
-                "VOICE_UPLINK",
-                "VOICE_DOWNLINK",
-                "VOICE_RECOGNITION",
-                "VOICE_COMMUNICATION",
-                "MIC"
-            )
+            // 2. Start Audio Recording if audio call recording enabled
+            val audioEnabled = prefs.getBoolean("call_recording_enable", false)
+            if (audioEnabled) {
+                if (ContextCompat.checkSelfPermission(app, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                    logDebug("WaEnhancer: No RECORD_AUDIO permission")
+                    if (!videoScreenRecEnabled) return
+                } else {
+                    val fileName = buildFileName(cUserJid, timestamp)
+                    val outputTarget = openOutputTarget(bridge, appDir, fileName)
 
-            val recorderSelection = createStartedRecorder(audioSources, sourceNames, outputTarget.fd)
-            if (recorderSelection == null) {
-                logDebug("WaEnhancer: All audio sources failed")
-                closeOutputResources(deleteOutputFile = false)
-                return
+                    outputFileRef.set(outputTarget.file)
+                    outputPfdRef.set(outputTarget.parcelFileDescriptor)
+                    outputStreamRef.set(outputTarget.outputStream)
+
+                    if (prefs.getBoolean("call_recording_use_root", false)) {
+                        grantVoiceCallPermission()
+                    }
+
+                    val audioSources = intArrayOf(
+                        MediaRecorder.AudioSource.VOICE_CALL,
+                        MediaRecorder.AudioSource.VOICE_UPLINK,
+                        MediaRecorder.AudioSource.VOICE_DOWNLINK,
+                        6,
+                        MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+                        MediaRecorder.AudioSource.MIC
+                    )
+                    val sourceNames = arrayOf(
+                        "VOICE_CALL",
+                        "VOICE_UPLINK",
+                        "VOICE_DOWNLINK",
+                        "VOICE_RECOGNITION",
+                        "VOICE_COMMUNICATION",
+                        "MIC"
+                    )
+
+                    val recorderSelection = createStartedRecorder(audioSources, sourceNames, outputTarget.fd)
+                    if (recorderSelection != null) {
+                        mediaRecorderRef.set(recorderSelection.recorder)
+                        logDebug("WaEnhancer: Audio Recording started (${recorderSelection.sourceName}): ${outputTarget.file.absolutePath}")
+                        if (prefs.getBoolean("call_recording_toast", false)) {
+                            Utils.showToast("Recording started", Toast.LENGTH_SHORT)
+                        }
+                    } else {
+                        logDebug("WaEnhancer: All audio sources failed")
+                        closeOutputResources(deleteOutputFile = false)
+                    }
+                }
             }
 
-            mediaRecorderRef.set(recorderSelection.recorder)
-            if (!isRecording.compareAndSet(false, true)) {
-                releaseRecorder(recorderSelection.recorder, stopBeforeRelease = true)
-                mediaRecorderRef.set(null)
-                closeOutputResources(deleteOutputFile = false)
-                return
-            }
-
-            logDebug("WaEnhancer: Recording started (${recorderSelection.sourceName}): ${outputTarget.file.absolutePath}")
-
-            if (prefs.getBoolean("call_recording_toast", false)) {
-                Utils.showToast("Recording started", Toast.LENGTH_SHORT)
-            }
+            isRecording.set(true)
         } catch (e: Exception) {
             logDebug("WaEnhancer: startRecording error: ${e.message}")
             isRecording.set(false)
@@ -355,6 +414,7 @@ class CallRecording(
                 releaseRecorder(it, stopBeforeRelease = false)
             }
             closeOutputResources(deleteOutputFile = true)
+            stopScreenRecording()
         }
     }
 
@@ -467,11 +527,13 @@ class CallRecording(
                 Utils.showToast(if (saved) "Recording saved!" else "Recording failed", Toast.LENGTH_SHORT)
             }
 
+            stopScreenRecording()
             currentUserJid.set(null)
         } catch (e: Exception) {
             logDebug("WaEnhancer: stopRecording error: ${e.message}")
             closeOutputResources(deleteOutputFile = false)
             outputFileRef.set(null)
+            stopScreenRecording()
         }
     }
 

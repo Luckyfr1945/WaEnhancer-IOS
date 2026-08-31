@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -147,6 +148,7 @@ public class HomeFragment extends BaseFragment {
 
         binding.heroRootBadge.setText("● ROOT CHECK...");
         binding.heroRootBadge.setTextColor(ContextCompat.getColor(context, R.color.text_secondary));
+        binding.heroRootBadge.setBackgroundResource(R.drawable.category_badge_background);
 
         com.wmods.wppenhacer.utils.StickerSyncManager.INSTANCE.isRootAvailable(hasRoot -> {
             var activity = getActivity();
@@ -155,9 +157,11 @@ public class HomeFragment extends BaseFragment {
                 if (Boolean.TRUE.equals(hasRoot)) {
                     binding.heroRootBadge.setText("● ROOT ACTIVE");
                     binding.heroRootBadge.setTextColor(ContextCompat.getColor(context, R.color.badge_green_text));
+                    binding.heroRootBadge.setBackgroundResource(R.drawable.category_badge_background);
                 } else {
                     binding.heroRootBadge.setText("● NO ROOT");
-                    binding.heroRootBadge.setTextColor(ContextCompat.getColor(context, R.color.log_error));
+                    binding.heroRootBadge.setTextColor(ContextCompat.getColor(context, R.color.badge_red_text));
+                    binding.heroRootBadge.setBackgroundResource(R.drawable.category_badge_error_background);
                 }
             });
             return kotlin.Unit.INSTANCE;
@@ -173,6 +177,9 @@ public class HomeFragment extends BaseFragment {
     public void onResume() {
         super.onResume();
         setDisplayHomeAsUpEnabled(false);
+        if (getActivity() != null) {
+            checkStateWpp(requireActivity());
+        }
         checkRootStatus();
     }
 
@@ -302,22 +309,43 @@ public class HomeFragment extends BaseFragment {
         var formattedVersion = BuildConfig.VERSION_NAME.replace(" (", " · ").replace(")", "");
         binding.heroVersionText.setText(formattedVersion);
 
+        var context = activity;
         if (MainActivity.isXposedEnabled()) {
+            binding.status.setStrokeColor(ContextCompat.getColor(context, R.color.hero_border_active));
+            binding.statusIconBox.setBackgroundResource(R.drawable.bg_badge_category);
             binding.statusIcon.setImageResource(R.drawable.ic_round_check_circle_24);
+            binding.statusIcon.setImageTintList(android.content.res.ColorStateList.valueOf(ContextCompat.getColor(context, R.color.whatsapp_green)));
             binding.statusTitle.setText(R.string.module_enabled);
             binding.statusSummary.setText("Hook LSPosed berhasil dimuat");
             binding.heroBgImage.setImageResource(R.drawable.hero_active);
             binding.heroActiveBadge.setText("● ACTIVE");
+            binding.heroActiveBadge.setTextColor(ContextCompat.getColor(context, R.color.badge_green_text));
+            binding.heroActiveBadge.setBackgroundResource(R.drawable.category_badge_background);
+            binding.heroLsposedBadge.setText("● LSPosed Hook");
+            binding.heroLsposedBadge.setTextColor(ContextCompat.getColor(context, R.color.badge_green_text));
+            binding.heroLsposedBadge.setBackgroundResource(R.drawable.category_badge_background);
             binding.modSubtext.setText("Wa Enhancer " + BuildConfig.VERSION_NAME + " · Aktif");
             binding.modActiveBadge.setText("ACTIVE");
+            binding.modActiveBadge.setBackgroundResource(R.drawable.category_badge_background);
+            binding.modActiveBadge.setTextColor(ContextCompat.getColor(context, R.color.badge_green_text));
         } else {
+            binding.status.setStrokeColor(ContextCompat.getColor(context, R.color.hero_border_inactive));
+            binding.statusIconBox.setBackgroundResource(R.drawable.bg_badge_error_category);
             binding.statusIcon.setImageResource(R.drawable.ic_round_error_outline_24);
+            binding.statusIcon.setImageTintList(android.content.res.ColorStateList.valueOf(ContextCompat.getColor(context, R.color.badge_red_text)));
             binding.statusTitle.setText(R.string.module_disabled);
             binding.statusSummary.setText("Modul belum diaktifkan di LSPosed");
             binding.heroBgImage.setImageResource(R.drawable.hero_inactive);
             binding.heroActiveBadge.setText("● INACTIVE");
+            binding.heroActiveBadge.setTextColor(ContextCompat.getColor(context, R.color.badge_red_text));
+            binding.heroActiveBadge.setBackgroundResource(R.drawable.category_badge_error_background);
+            binding.heroLsposedBadge.setText("● LSPosed Inactive");
+            binding.heroLsposedBadge.setTextColor(ContextCompat.getColor(context, R.color.badge_red_text));
+            binding.heroLsposedBadge.setBackgroundResource(R.drawable.category_badge_error_background);
             binding.modSubtext.setText("Wa Enhancer " + BuildConfig.VERSION_NAME + " · Tidak Aktif");
             binding.modActiveBadge.setText("INACTIVE");
+            binding.modActiveBadge.setBackgroundResource(R.drawable.category_badge_error_background);
+            binding.modActiveBadge.setTextColor(ContextCompat.getColor(context, R.color.badge_red_text));
         }
 
         if (isInstalled(FeatureLoader.PACKAGE_WPP) && App.isOriginalPackage()) {
@@ -379,6 +407,13 @@ public class HomeFragment extends BaseFragment {
         activity.sendBroadcast(checkWpp);
     }
 
+    private boolean isUpdateAvailable = false;
+    private String latestVersionName = null;
+    private String latestReleaseUrl = null;
+    private String latestApkUrl = null;
+    private String latestChangelog = null;
+    private String latestReleaseDate = null;
+
     private void checkForUpdates() {
         var context = getContext();
         if (context == null) return;
@@ -412,8 +447,50 @@ public class HomeFragment extends BaseFragment {
                         return;
                     }
 
-                    var hash = tagName.split("-")[1].trim();
+                    String htmlUrl = release.optString("html_url", "https://github.com/Luckyfr1945/WaEnhancer-IOS/releases/latest");
+                    String releaseBody = release.optString("body", "");
+                    String publishedAt = release.optString("published_at", "");
+
+                    String apkUrl = null;
+                    if (release.has("assets")) {
+                        var assets = release.optJSONArray("assets");
+                        if (assets != null) {
+                            for (int i = 0; i < assets.length(); i++) {
+                                var asset = assets.optJSONObject(i);
+                                if (asset != null) {
+                                    String downloadUrl = asset.optString("browser_download_url", "");
+                                    if (downloadUrl.endsWith(".apk")) {
+                                        apkUrl = downloadUrl;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    this.latestVersionName = tagName;
+                    this.latestReleaseUrl = htmlUrl;
+                    this.latestApkUrl = apkUrl != null ? apkUrl : htmlUrl;
+                    this.latestChangelog = releaseBody.isBlank() ? null : releaseBody;
+
+                    if (!publishedAt.isBlank()) {
+                        try {
+                            SimpleDateFormat isoFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US);
+                            isoFormat.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+                            Date date = isoFormat.parse(publishedAt);
+                            if (date != null) {
+                                this.latestReleaseDate = new SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(date);
+                            }
+                        } catch (Exception ignored) {
+                        }
+                    }
+                    if (this.latestReleaseDate == null) {
+                        this.latestReleaseDate = new SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(new Date());
+                    }
+
+                    var hash = tagName.contains("-") ? tagName.split("-")[1].trim() : tagName;
                     var isNewVersion = !BuildConfig.VERSION_NAME.toLowerCase().contains(hash.toLowerCase());
+                    this.isUpdateAvailable = isNewVersion;
 
                     updateCardState(true, !isNewVersion, tagName);
                 }
@@ -496,56 +573,91 @@ public class HomeFragment extends BaseFragment {
     }
 
     private void showChangelogDialog() {
-        var context = requireContext();
+        var context = getContext();
+        if (context == null) return;
         var dialogBinding = DialogUpdateAvailableBinding.inflate(LayoutInflater.from(context));
 
-        dialogBinding.tvUpdateTitle.setText("Catatan Rilis");
-        dialogBinding.tvUpdateSubtitle.setText("WaEnhancer iOS Modul");
-        dialogBinding.tvVersionBadge.setText("v" + BuildConfig.VERSION_NAME);
-        dialogBinding.tvReleaseDate.setText(new SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(new Date()));
-
-        String changelogText = """
-                ### 🚀 FITUR BARU [ADDED]
-
-                • **Sinkronisasi & Cadangan Stiker WhatsApp:** Fitur cadangkan stiker (.zip) & pulihkan/gabungkan database antar varian WhatsApp (Standard & Business).
-                • **Manajemen Hasil Cadangan Langsung:** 2-Tab bottom navigation (Cadangkan vs Hasil Cadangan) dengan aksi Pulihkan, Bagikan, dan Hapus file backup.
-                • **iOS Green Plus (+) Header Button:** Tombol aksi hijau iOS pada tab Komunitas, Panggilan, dan Status.
-                • **Pendeteksian Tab Multi-Bahasa:** Deteksi tab numerik WhatsApp independen dari bahasa sistem.
-                • **Query Database SQLite Cepat:** Pengecekan cepat chatsettings.db dan msgstore.db untuk jumlah Disematkan, Dibisukan, dan Belum Dibaca.
-
-                ### ⚡ PENINGKATAN [IMPROVED]
-
-                • **Strict Superuser Root Detection:** Validasi aktif eksekusi UID=0 dengan badge indikator terintegrasi di kartu status Module Beranda.
-                • **Pembaruan Otomatis Terhubung ke Fork:** Sinkronisasi update langsung dari repositori GitHub `Luckyfr1945/WaEnhancer-IOS`.
-                • **Aksi Header Dinamis:** Trigger aksi pembuatan obrolan, status, dan panggilan baru sesuai tab aktif.
-                • **Optimasi PreDraw & Toolbar Lifecycle:** Penggabungan render pass OnPreDrawListener untuk transisi mulus 120Hz tanpa frame jank.
-                • **Perlindungan Tombol Input Kolom Chat iOS:** Menjaga persistensi ikon tombol `+` dan stiker agar tidak hilang setelah membuka panel stiker.
-
-                ### 🐛 PERBAIKAN BUG [FIXED]
-
-                • **Select Chat & Context Menu iOS:** Pemulihan penuh fitur iOS Select Chat, efek blur latar belakang, reaksi emoji, dan menu opsi iOS.
-                • **Perbaikan Duplikasi File Cadangan:** Membersihkan folder staging mentah sehingga hanya tersisa 1 file `.zip` rapi.
-                • **Penyesuaian Posisi Toolbar Floating:** Memperbaiki layout_height parent agar posisi toolbar menempel pas di bawah layar.
-                • **Pembersihan Badge Judul Tab:** Menghapus angka counter unread '(12)' dari judul tab toolbar secara otomatis.""";
-
         var markwon = Markwon.create(context);
-        dialogBinding.tvChangelog.setText(markwon.toMarkdown(changelogText));
 
-        dialogBinding.btnIgnore.setVisibility(View.GONE);
-        dialogBinding.btnUpdate.setText("Tutup");
+        if (isUpdateAvailable && latestVersionName != null) {
+            dialogBinding.tvUpdateTitle.setText(R.string.update_available);
+            dialogBinding.tvUpdateSubtitle.setText("Versi baru siap diunduh");
+            dialogBinding.tvVersionBadge.setText(latestVersionName);
+            dialogBinding.tvReleaseDate.setText(latestReleaseDate != null ? latestReleaseDate : new SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(new Date()));
 
-        var dialog = new MaterialAlertDialogBuilder(context)
-                .setView(dialogBinding.getRoot())
-                .setCancelable(true)
-                .create();
+            String bodyText = (latestChangelog != null && !latestChangelog.isBlank())
+                    ? latestChangelog
+                    : "Pembaruan versi " + latestVersionName + " telah tersedia. Klik tombol di bawah untuk mengunduh rilis terbaru.";
+            dialogBinding.tvChangelog.setText(markwon.toMarkdown(bodyText));
 
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+            dialogBinding.btnIgnore.setVisibility(View.VISIBLE);
+            dialogBinding.btnIgnore.setText("Nanti");
+            dialogBinding.btnUpdate.setText("Unduh Pembaruan");
+
+            var dialog = new MaterialAlertDialogBuilder(context)
+                    .setView(dialogBinding.getRoot())
+                    .setCancelable(true)
+                    .create();
+
+            if (dialog.getWindow() != null) {
+                dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+            }
+
+            dialogBinding.btnIgnore.setOnClickListener(v -> dialog.dismiss());
+            dialogBinding.btnUpdate.setOnClickListener(v -> {
+                dialog.dismiss();
+                String targetUrl = latestReleaseUrl != null ? latestReleaseUrl : "https://github.com/Luckyfr1945/WaEnhancer-IOS/releases/latest";
+                try {
+                    Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl));
+                    startActivity(browserIntent);
+                } catch (Exception e) {
+                    Toast.makeText(context, "Gagal membuka browser: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                }
+            });
+
+            dialog.show();
+        } else {
+            dialogBinding.tvUpdateTitle.setText("Catatan Rilis");
+            dialogBinding.tvUpdateSubtitle.setText("WaEnhancer iOS Modul");
+            dialogBinding.tvVersionBadge.setText("v" + BuildConfig.VERSION_NAME);
+            dialogBinding.tvReleaseDate.setText(new SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(new Date()));
+
+            String changelogText = (latestChangelog != null && !latestChangelog.isBlank())
+                    ? latestChangelog
+                    : """
+                    ### 🚀 FITUR TERBARU [ADDED]
+                    • **Lompat ke Pesan Pertama:** Menu di dalam obrolan chat untuk langsung menuju ke pesan paling awal.
+                    • **Hook ConversationScrollApi WhatsApp:** Navigasi cepat dan pemuatan riwayat pesan dinamis dari database.
+                    • **Sinkronisasi & Cadangan Stiker:** Cadangkan dan pulihkan stiker WhatsApp/WA Business dengan aman.
+
+                    ### ⚡ PENINGKATAN [IMPROVED]
+                    • **Gradasi Halus Hero Card:** Efek transparansi blending menyatu mulus tanpa garis tepi di seluruh ukuran layar.
+                    • **Tombol Mic & Kirim Asli:** Mempertahankan warna, bentuk, dan animasi asli WhatsApp.
+                    • **Pencarian Fitur & Tab Adaptif:** Menyesuaikan visibilitas fitur berdasarkan status aktif LSPosed dan Root.
+                    • **Warna Status Dinamis:** Indikator badge, border, dan icon otomatis hijau saat aktif atau merah saat nonaktif.
+
+                    ### 🐛 PERBAIKAN BUG [FIXED]
+                    • **Perbaikan Navigasi Pesan Pertama:** Memperbaiki scroll pesan agar tidak salah memicu quote reply bar.
+                    • **Perbaikan Override Privasi Kontak:** Memastikan aturan privasi per-kontak selalu diterapkan secara konsisten.
+                    • **Perbaikan Multi-Job Architecture Crash:** Mengatasi kompatibilitas WA Standard dan Business.""";
+
+            dialogBinding.tvChangelog.setText(markwon.toMarkdown(changelogText));
+
+            dialogBinding.btnIgnore.setVisibility(View.GONE);
+            dialogBinding.btnUpdate.setText("Tutup");
+
+            var dialog = new MaterialAlertDialogBuilder(context)
+                    .setView(dialogBinding.getRoot())
+                    .setCancelable(true)
+                    .create();
+
+            if (dialog.getWindow() != null) {
+                dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+            }
+
+            dialogBinding.btnUpdate.setOnClickListener(v -> dialog.dismiss());
+            dialog.show();
         }
-
-        dialog.show();
-
-        dialogBinding.btnUpdate.setOnClickListener(v -> dialog.dismiss());
     }
 
     @Override

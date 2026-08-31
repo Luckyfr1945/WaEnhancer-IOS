@@ -772,6 +772,14 @@ public class FeatureCatalog {
                 null,
                 Arrays.asList("recording", "toast", "notification", "show", "hide")));
 
+        catalog.add(new SearchableFeature("video_call_screen_rec",
+                context.getString(R.string.video_call_screen_rec),
+                context.getString(R.string.video_call_screen_rec_sum),
+                SearchableFeature.Category.MEDIA,
+                SearchableFeature.FragmentType.MEDIA,
+                null,
+                Arrays.asList("video", "call", "screen", "record", "recording", "layar")));
+
         catalog.add(new SearchableFeature("disable_sensor_proximity",
                 context.getString(R.string.disable_the_proximity_sensor),
                 context.getString(R.string.disable_the_proximity_sensor_sum),

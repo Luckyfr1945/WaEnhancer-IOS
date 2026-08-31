@@ -59,14 +59,16 @@
 
     <color name="bg_badge_green">#D4F2E4</color>
     <color name="badge_green_text">#008069</color>
+    <color name="bg_badge_red">#FFEBEE</color>
+    <color name="badge_red_text">#EA0038</color>
     <color name="hero_border_active">#4D00A884</color>
     <color name="hero_border_inactive">#4DEA0038</color>
 
     <!-- Hero Card Specific Tokens (Light Mode - Mint Aesthetic) -->
     <color name="hero_card_bg">#E8F5F1</color>
     <color name="hero_solid_scrim">#E8F5F1</color>
-    <color name="hero_fade_center">#80E8F5F1</color>
-    <color name="hero_bottom_shadow">#E8F5F1</color>
+    <color name="hero_fade_center">#D9E8F5F1</color>
+    <color name="hero_bottom_shadow">#F2E8F5F1</color>
     <color name="hero_glow_start">#3300A884</color>
     <color name="hero_text_title">#111B21</color>
     <color name="hero_text_summary">#54656F</color>
