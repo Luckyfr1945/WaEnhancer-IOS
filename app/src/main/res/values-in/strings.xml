@@ -471,6 +471,7 @@ Harap gunakan versi WhatsApp yang didukung!</string>
     <string name="call_recording_enable_sum">Rekam panggilan masuk dan keluar (Suara &amp; Video) sebagai audio.</string>
     <string name="call_recording_path">Folder Output Rekaman</string>
     <string name="video_call_screen_rec">Rekam Panggilan Video (Layar)</string>
+    <string name="video_call_screen_rec_sum">Rekam layar otomatis saat panggilan video berlangsung</string>
     <string name="video_call_screen_rec_locked">Segera hadir!</string>
     <string name="coming_soon">Segera hadir!</string>
     <string name="recording_mode">Mode Perekaman</string>

@@ -32,6 +32,7 @@ public class MainActivity extends BaseActivity {
 
     private ActivityMainBinding binding;
     private BatteryPermissionHelper batteryPermissionHelper = BatteryPermissionHelper.Companion.getInstance();
+    private MainPagerAdapter pagerAdapter;
     private String pendingScrollToPreference = null;
     private int pendingScrollToFragment = -1;
     private String pendingParentKey = null;
@@ -49,21 +50,37 @@ public class MainActivity extends BaseActivity {
             getSupportActionBar().setDisplayShowTitleEnabled(false);
         }
 
-        MainPagerAdapter pagerAdapter = new MainPagerAdapter(this);
+        pagerAdapter = new MainPagerAdapter(this);
         binding.viewPager.setAdapter(pagerAdapter);
 
         binding.viewPager.setPageTransformer(new DepthPageTransformer());
 
-        var prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(this);
-        if (!prefs.getBoolean("call_recording_enable", false)) {
-            binding.navView.getMenu().findItem(R.id.navigation_recordings).setVisible(false);
-        }
+        updateNavMenuVisibility();
 
         binding.navView.setOnItemSelectedListener(new NavigationBarView.OnItemSelectedListener() {
             @SuppressLint("NonConstantResourceId")
             @Override
             public boolean onNavigationItemSelected(@NonNull MenuItem item) {
                 int itemId = item.getItemId();
+                MainPagerAdapter.Mode mode = pagerAdapter != null ? pagerAdapter.getMode() : MainPagerAdapter.Mode.FULL;
+
+                if (mode == MainPagerAdapter.Mode.ROOT_ONLY) {
+                    if (itemId == R.id.navigation_chat) {
+                        binding.viewPager.setCurrentItem(0, true);
+                        return true;
+                    } else if (itemId == R.id.navigation_home) {
+                        binding.viewPager.setCurrentItem(1, true);
+                        return true;
+                    }
+                    return false;
+                } else if (mode == MainPagerAdapter.Mode.HOME_ONLY) {
+                    if (itemId == R.id.navigation_home) {
+                        binding.viewPager.setCurrentItem(0, true);
+                        return true;
+                    }
+                    return false;
+                }
+
                 if (itemId == R.id.navigation_chat) {
                     binding.viewPager.setCurrentItem(0, true);
                     return true;
@@ -80,7 +97,7 @@ public class MainActivity extends BaseActivity {
                     binding.viewPager.setCurrentItem(4, true);
                     return true;
                 } else if (itemId == R.id.navigation_recordings) {
-                    binding.viewPager.setCurrentItem(5);
+                    binding.viewPager.setCurrentItem(5, true);
                     return true;
                 }
                 return false;
@@ -91,31 +108,46 @@ public class MainActivity extends BaseActivity {
             @Override
             public void onPageSelected(int position) {
                 super.onPageSelected(position);
-                binding.navView.getMenu().getItem(position).setChecked(true);
+                MainPagerAdapter.Mode mode = pagerAdapter != null ? pagerAdapter.getMode() : MainPagerAdapter.Mode.FULL;
 
+                int menuId;
                 String subtitle;
-                switch (position) {
-                    case 0:
-                        subtitle = "Setelan & Kustomisasi";
-                        break;
-                    case 1:
-                        subtitle = "Pengaturan Privasi";
-                        break;
-                    case 2:
+
+                if (mode == MainPagerAdapter.Mode.ROOT_ONLY) {
+                    if (position == 0) {
+                        menuId = R.id.navigation_chat;
+                        subtitle = "Sinkronisasi Stiker";
+                    } else {
+                        menuId = R.id.navigation_home;
                         subtitle = "Module Control Center";
-                        break;
-                    case 3:
-                        subtitle = "Pengaturan Media & Unduhan";
-                        break;
-                    case 4:
-                        subtitle = "Kustomisasi Tampilan";
-                        break;
-                    case 5:
-                        subtitle = "Perekam Panggilan";
-                        break;
-                    default:
-                        subtitle = "Module Control Center";
-                        break;
+                    }
+                } else if (mode == MainPagerAdapter.Mode.HOME_ONLY) {
+                    menuId = R.id.navigation_home;
+                    subtitle = "Module Control Center";
+                } else {
+                    menuId = switch (position) {
+                        case 0 -> R.id.navigation_chat;
+                        case 1 -> R.id.navigation_privacy;
+                        case 2 -> R.id.navigation_home;
+                        case 3 -> R.id.navigation_media;
+                        case 4 -> R.id.navigation_colors;
+                        case 5 -> R.id.navigation_recordings;
+                        default -> R.id.navigation_home;
+                    };
+                    subtitle = switch (position) {
+                        case 0 -> "Setelan & Kustomisasi";
+                        case 1 -> "Pengaturan Privasi";
+                        case 2 -> "Module Control Center";
+                        case 3 -> "Pengaturan Media & Unduhan";
+                        case 4 -> "Kustomisasi Tampilan";
+                        case 5 -> "Perekam Panggilan";
+                        default -> "Module Control Center";
+                    };
+                }
+
+                MenuItem item = binding.navView.getMenu().findItem(menuId);
+                if (item != null) {
+                    item.setChecked(true);
                 }
                 binding.toolbarSubtitle.setText(subtitle);
 
@@ -134,7 +166,7 @@ public class MainActivity extends BaseActivity {
                 }
             }
         });
-        binding.viewPager.setCurrentItem(2, false);
+        binding.viewPager.setCurrentItem(isXposedEnabled() ? 2 : 1, false);
         createMainDir();
         FilePicker.registerFilePicker(this);
 
@@ -301,6 +333,106 @@ public class MainActivity extends BaseActivity {
             }
         }
         return super.onOptionsItemSelected(item);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        updateNavMenuVisibility();
+    }
+
+    public void updateNavMenuVisibility() {
+        if (binding == null || binding.navView == null || pagerAdapter == null) return;
+
+        boolean isLsposed = isXposedEnabled();
+        var menu = binding.navView.getMenu();
+
+        if (isLsposed) {
+            // Case 1: LSPosed is active -> show all navigation tabs
+            pagerAdapter.setMode(MainPagerAdapter.Mode.FULL);
+            var prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(this);
+            boolean isRecording = prefs.getBoolean("call_recording_enable", false);
+
+            menu.findItem(R.id.navigation_chat).setVisible(true);
+            menu.findItem(R.id.navigation_privacy).setVisible(true);
+            menu.findItem(R.id.navigation_home).setVisible(true);
+            menu.findItem(R.id.navigation_media).setVisible(true);
+            menu.findItem(R.id.navigation_colors).setVisible(true);
+            menu.findItem(R.id.navigation_recordings).setVisible(isRecording);
+            binding.viewPager.setUserInputEnabled(true);
+            applyNavViewWidth(isRecording ? 6 : 5);
+        } else {
+            // Case 2 & 3: LSPosed not active -> Check Root status asynchronously
+            com.wmods.wppenhacer.utils.StickerSyncManager.INSTANCE.isRootAvailable(hasRoot -> {
+                runOnUiThread(() -> {
+                    if (binding == null || binding.navView == null || pagerAdapter == null) return;
+                    var currentMenu = binding.navView.getMenu();
+
+                    if (Boolean.TRUE.equals(hasRoot)) {
+                        // Case 2: Root active, LSPosed inactive -> ONLY 2 pages: [0: Gear (Sticker), 1: Home]
+                        pagerAdapter.setMode(MainPagerAdapter.Mode.ROOT_ONLY);
+                        currentMenu.findItem(R.id.navigation_chat).setVisible(true);
+                        currentMenu.findItem(R.id.navigation_privacy).setVisible(false);
+                        currentMenu.findItem(R.id.navigation_home).setVisible(true);
+                        currentMenu.findItem(R.id.navigation_media).setVisible(false);
+                        currentMenu.findItem(R.id.navigation_colors).setVisible(false);
+                        currentMenu.findItem(R.id.navigation_recordings).setVisible(false);
+
+                        // Allow swiping directly between Gear (0) and Home (1) with ZERO intermediate layers!
+                        binding.viewPager.setUserInputEnabled(true);
+                        applyNavViewWidth(2);
+
+                        int cur = binding.viewPager.getCurrentItem();
+                        if (cur != 0 && cur != 1) {
+                            binding.viewPager.setCurrentItem(1, false);
+                        }
+                    } else {
+                        // Case 3: No LSPosed, No Root -> ONLY 1 page: [0: Home]
+                        pagerAdapter.setMode(MainPagerAdapter.Mode.HOME_ONLY);
+                        currentMenu.findItem(R.id.navigation_chat).setVisible(false);
+                        currentMenu.findItem(R.id.navigation_privacy).setVisible(false);
+                        currentMenu.findItem(R.id.navigation_home).setVisible(true);
+                        currentMenu.findItem(R.id.navigation_media).setVisible(false);
+                        currentMenu.findItem(R.id.navigation_colors).setVisible(false);
+                        currentMenu.findItem(R.id.navigation_recordings).setVisible(false);
+
+                        binding.viewPager.setCurrentItem(0, false);
+                        binding.viewPager.setUserInputEnabled(false);
+                        applyNavViewWidth(1);
+                    }
+                });
+                return kotlin.Unit.INSTANCE;
+            });
+        }
+    }
+
+    private void applyNavViewWidth(int visibleItemCount) {
+        if (binding == null || binding.navView == null) return;
+
+        float density = getResources().getDisplayMetrics().density;
+        var lp = (androidx.constraintlayout.widget.ConstraintLayout.LayoutParams) binding.navView.getLayoutParams();
+
+        if (visibleItemCount == 1) {
+            lp.width = (int) (84 * density);
+            lp.leftMargin = 0;
+            lp.rightMargin = 0;
+        } else if (visibleItemCount == 2) {
+            lp.width = (int) (164 * density);
+            lp.leftMargin = 0;
+            lp.rightMargin = 0;
+        } else {
+            lp.width = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.MATCH_PARENT;
+            lp.leftMargin = (int) (20 * density);
+            lp.rightMargin = (int) (20 * density);
+        }
+
+        binding.navView.setLayoutParams(lp);
+        binding.navView.requestLayout();
+
+        android.view.View blurView = findViewById(R.id.blur_view);
+        if (blurView != null) {
+            blurView.requestLayout();
+        }
     }
 
     public static boolean isXposedEnabled() {

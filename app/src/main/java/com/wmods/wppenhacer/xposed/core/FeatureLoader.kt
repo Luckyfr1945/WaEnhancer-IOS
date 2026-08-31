@@ -374,11 +374,19 @@ class FeatureLoader {
             DesignUtils.setPrefs(pref)
             Utils.init()
 
+            var hasCheckedAppUpdate = false
+
             WppCore.addListenerActivity { activity, type ->
                 if (type == WppCore.ActivityChangeState.ChangeType.RESUMED) {
                     val name = activity.javaClass.simpleName
                     if (name == "HomeActivity" || name.contains("Home")) {
                         checkUpdateAsync(activity)
+                        if (!hasCheckedAppUpdate) {
+                            hasCheckedAppUpdate = true
+                            if (mPreferences?.getBoolean("update_check", true) != false) {
+                                Thread(UpdateChecker(activity)).start()
+                            }
+                        }
                     }
                 }
             }

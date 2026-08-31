@@ -36,14 +36,16 @@
 
     <color name="bg_badge_green">#183324</color>
     <color name="badge_green_text">#25D366</color>
+    <color name="bg_badge_red">#332024</color>
+    <color name="badge_red_text">#FF6262</color>
     <color name="hero_border_active">#4D25D366</color>
     <color name="hero_border_inactive">#4DFF6262</color>
 
     <!-- Hero Card Specific Tokens (Dark Mode) -->
     <color name="hero_card_bg">#0D100F</color>
     <color name="hero_solid_scrim">#0D100F</color>
-    <color name="hero_fade_center">#800D100F</color>
-    <color name="hero_bottom_shadow">#0D100F</color>
+    <color name="hero_fade_center">#D90D100F</color>
+    <color name="hero_bottom_shadow">#F20D100F</color>
     <color name="hero_glow_start">#2625D366</color>
     <color name="hero_text_title">#FFFFFF</color>
     <color name="hero_text_summary">#A2A8AE</color>
