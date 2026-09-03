@@ -517,9 +517,9 @@ Saat Anda mengaktifkan bekukan \"terakhir dilihat dan online\", Anda tidak dapat
     <string name="configui_mode_default">Default</string>
     <string name="configui_mode_toolbar_photo">Profile Photo on Toolbar</string>
     <string name="configui_mode_you_tab">Enable You tab on home screen</string>
-    <string name="remove_sticker_white_outline_sum">Remove the white border when creating stickers</string>
-    <string name="remove_sticker_white_outline">Remove sticker white outline</string>
-    <string name="stickers">Stickers</string>
+    <string name="remove_sticker_white_outline_sum">Hapus garis tepi putih saat membuat stiker</string>
+    <string name="remove_sticker_white_outline">Hapus outline putih stiker</string>
+    <string name="stickers">Stiker</string>
 
     <!-- Status Replay Tracker -->
     <string name="status_replay_tracker">Pelacak Putar Ulang Status</string>

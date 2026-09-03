@@ -75,7 +75,13 @@ class UnobfuscatorCache private constructor(private val mApplication: Applicatio
     }
 
     companion object {
+<<<<<<< Updated upstream
         private const val CACHE_SCHEMA_VERSION = 7
+=======
+        private const val CACHE_SCHEMA_VERSION = 9
+        
+        @Volatile
+>>>>>>> Stashed changes
         private var mInstance: UnobfuscatorCache? = null
 
         @JvmStatic
