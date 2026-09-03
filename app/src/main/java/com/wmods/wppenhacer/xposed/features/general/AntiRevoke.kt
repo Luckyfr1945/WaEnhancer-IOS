@@ -76,30 +76,34 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
                 messageRevokedMap[jid]?.let { return it }
             }
 
-            val newSet = Collections.synchronizedSet(HashSet<String>())
+            val targetJid = stripJIDs.firstOrNull() ?: return Collections.synchronizedSet(HashSet())
+            var isNew = false
+            val targetSet = messageRevokedMap.computeIfAbsent(targetJid) {
+                isNew = true
+                Collections.synchronizedSet(HashSet())
+            }
             for (jid in stripJIDs) {
-                val existing = messageRevokedMap.putIfAbsent(jid, newSet)
-                if (existing != null) {
-                    return existing
-                }
+                messageRevokedMap.putIfAbsent(jid, targetSet)
             }
 
-            CompletableFuture.runAsync {
-                try {
-                    for (jid in stripJIDs) {
-                        val messages = DelMessageStore.getInstance(Utils.application).getMessagesByJid(jid)
-                        if (messages.isNotEmpty()) {
-                            newSet.addAll(messages)
+            if (isNew) {
+                CompletableFuture.runAsync {
+                    try {
+                        for (jid in stripJIDs) {
+                            val messages = DelMessageStore.getInstance(Utils.application).getMessagesByJid(jid)
+                            if (messages.isNotEmpty()) {
+                                targetSet.addAll(messages)
+                            }
                         }
-                    }
-                    if (newSet.isNotEmpty()) {
-                        WppCore.getCurrentActivity()?.runOnUiThread {
-                            ConversationItemListener.notifyDataSetChanged()
+                        if (targetSet.isNotEmpty()) {
+                            WppCore.getCurrentActivity()?.runOnUiThread {
+                                ConversationItemListener.notifyDataSetChanged()
+                            }
                         }
-                    }
-                } catch (_: Exception) {}
+                    } catch (_: Exception) {}
+                }
             }
-            return newSet
+            return targetSet
         }
 
         private fun persistRevokedMessage(fMessage: FMessageWpp, messageID: String) {
@@ -231,7 +235,33 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
                         return
                     }
 
-                    // For any object return type, return null to signify no-op / failed update
+                    // Instantiate non-null result object to avoid NPE in callers expecting EwP / result class
+                    try {
+                        val constructor = returnType.constructors.firstOrNull()
+                        if (constructor != null) {
+                            val args = Array(constructor.parameterCount) { idx ->
+                                val pType = constructor.parameterTypes[idx]
+                                when {
+                                    pType == java.lang.Boolean.TYPE -> false
+                                    pType == java.lang.Integer.TYPE -> 0
+                                    pType == java.lang.Long.TYPE -> 0L
+                                    else -> null
+                                }
+                            }
+                            param.result = constructor.newInstance(*args)
+                            return
+                        }
+                    } catch (_: Throwable) {}
+
+                    try {
+                        val unsafeClass = Class.forName("sun.misc.Unsafe")
+                        val theUnsafeField = unsafeClass.getDeclaredField("theUnsafe").apply { isAccessible = true }
+                        val unsafe = theUnsafeField.get(null)
+                        val allocateMethod = unsafeClass.getMethod("allocateInstance", Class::class.java)
+                        param.result = allocateMethod.invoke(unsafe, returnType)
+                        return
+                    } catch (_: Throwable) {}
+
                     param.result = null
                 }
 

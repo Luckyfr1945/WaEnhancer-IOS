@@ -116,13 +116,13 @@ class ToastViewer(classLoader: ClassLoader, preferences:SharedPreferences) :
 
                 if (TextUtils.isEmpty(contactName)) contactName = userJid.phoneNumber
 
-                val sql = getInstance().getDatabase()
+                val sql = getInstance().getDatabase() ?: return@runAsync
 
                 if (fmessage.get() != null) {
                     rowId = FMessageWpp(fmessage.get()).rowId
                 }
                 checkDataBase(
-                    sql!!,
+                    sql,
                     rowId,
                     contactName,
                     userJid.phoneRawString,

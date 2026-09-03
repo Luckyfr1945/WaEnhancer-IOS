@@ -2,6 +2,8 @@ package com.wmods.wppenhacer.xposed.core.db
 
 import android.content.Context
 import com.wmods.wppenhacer.xposed.core.db.entity.DelMessage
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentHashMap
 
 class DelMessageStore private constructor(context: Context) {
 
@@ -20,36 +22,39 @@ class DelMessageStore private constructor(context: Context) {
         }
     }
 
-    private val timestampCache = java.util.concurrent.ConcurrentHashMap<String, Long>()
-    private val jidMessagesCache = java.util.concurrent.ConcurrentHashMap<String, java.util.HashSet<String>>()
+    private val timestampCache = ConcurrentHashMap<String, Long>()
+    private val jidMessagesCache = ConcurrentHashMap<String, MutableSet<String>>()
 
     fun insertMessage(jid: String, msgid: String, timestamp: Long) {
         timestampCache[msgid] = timestamp
-        jidMessagesCache.getOrPut(jid) { java.util.HashSet() }.add(msgid)
+        jidMessagesCache.getOrPut(jid) { ConcurrentHashMap.newKeySet() }.add(msgid)
         val message = DelMessage(jid = jid, msgid = msgid, timestamp = timestamp)
         try {
             dao.insertMessage(message)
         } catch (_: Throwable) {}
     }
 
-    fun getMessagesByJid(jid: String?): java.util.HashSet<String> {
-        if (jid == null) return java.util.HashSet()
-        jidMessagesCache[jid]?.let { return java.util.HashSet(it) }
-        val set = try {
-            java.util.HashSet(dao.getMessagesByJid(jid))
-        } catch (_: Throwable) {
-            java.util.HashSet()
-        }
+    fun getMessagesByJid(jid: String?): Set<String> {
+        if (jid == null) return emptySet()
+        jidMessagesCache[jid]?.let { return HashSet(it) }
+        val set = ConcurrentHashMap.newKeySet<String>()
+        try {
+            val list = dao.getMessagesByJid(jid)
+            if (!list.isNullOrEmpty()) {
+                set.addAll(list)
+            }
+        } catch (_: Throwable) {}
         jidMessagesCache[jid] = set
-        return set
+        return HashSet(set)
     }
 
     fun getTimestampByMessageId(msgid: String): Long {
         timestampCache[msgid]?.let { return it }
-        java.util.concurrent.CompletableFuture.runAsync {
+        timestampCache[msgid] = 0L
+        CompletableFuture.runAsync {
             try {
                 val ts = dao.getTimestampByMessageId(msgid) ?: 0L
-                if (ts > 0) {
+                if (ts > 0L) {
                     timestampCache[msgid] = ts
                     com.wmods.wppenhacer.xposed.core.WppCore.getCurrentActivity()?.runOnUiThread {
                         com.wmods.wppenhacer.xposed.features.listeners.ConversationItemListener.notifyDataSetChanged()

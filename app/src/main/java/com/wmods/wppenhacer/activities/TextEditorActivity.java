@@ -242,9 +242,9 @@ public class TextEditorActivity extends BaseActivity {
         try (InputStream inputStream = getContentResolver().openInputStream(uri)) {
             Bitmap bitmap = BitmapFactory.decodeStream(inputStream);
             var outFile = new File(outFolder, fileName);
-            FileOutputStream out = new FileOutputStream(outFile);
-            bitmap.compress(Bitmap.CompressFormat.PNG, 90, out);
-            out.close();
+            try (FileOutputStream out = new FileOutputStream(outFile)) {
+                bitmap.compress(Bitmap.CompressFormat.PNG, 90, out);
+            }
             Toast.makeText(this, getString(R.string.imported_as) + fileName, Toast.LENGTH_LONG).show();
         } catch (Exception e) {
             Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show();

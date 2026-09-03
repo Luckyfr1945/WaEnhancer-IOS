@@ -253,10 +253,12 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                             logDebug("IosHeader: hook setTitle failed: ${e.message}")
                         }
 
-                        // Sembunyikan logo & title native
-                        val logo = toolbar.findViewById<View>(Utils.getID("toolbar_logo", "id"))
-                        logo?.visibility = View.GONE
-                        val initialTitle = "Chats"
+                // Sembunyikan logo & title native
+                val logo = toolbar.findViewById<View>(Utils.getID("toolbar_logo", "id"))
+                logo?.visibility = View.GONE
+                val logoText = toolbar.findViewById<View>(Utils.getID("toolbar_logo_text", "id"))
+                logoText?.visibility = View.GONE
+                val initialTitle = "Chats"
                         try {
                             val setTitleMethod = toolbar.javaClass.getMethod("setTitle", CharSequence::class.java)
                             setTitleMethod.invoke(toolbar, "")
@@ -766,6 +768,11 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                         if (child.visibility != View.VISIBLE) child.visibility = View.VISIBLE
                         continue
                     }
+                    val childLogo = child.findViewById<View>(Utils.getID("toolbar_logo", "id"))
+                    childLogo?.visibility = View.GONE
+                    val childLogoText = child.findViewById<View>(Utils.getID("toolbar_logo_text", "id"))
+                    childLogoText?.visibility = View.GONE
+                    hideWhatsAppTextInViewGroup(child)
                 }
                 
                 // 6. Sembunyikan TextView native (title ios_settings_title dikelola khusus)
@@ -1374,11 +1381,19 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
                 if (logo != null && logo.visibility != View.GONE) {
                     logo.visibility = View.GONE
                 }
+                val logoText = toolbar.findViewById<View>(Utils.getID("toolbar_logo_text", "id"))
+                if (logoText != null && logoText.visibility != View.GONE) {
+                    logoText.visibility = View.GONE
+                }
+                val isSearchActive = hasSearchViewChild(toolbar)
                 for (i in 0 until toolbar.childCount) {
                     val c = toolbar.getChildAt(i)
                     if (c.tag == "ios_settings_title") continue
-                    if (c is TextView && c.visibility != View.GONE) {
+                    if (c is TextView && !isSearchActive && c.visibility != View.GONE) {
                         c.visibility = View.GONE
+                    }
+                    if (c is ViewGroup && !isSearchActive) {
+                        hideWhatsAppTextInViewGroup(c)
                     }
                 }
 

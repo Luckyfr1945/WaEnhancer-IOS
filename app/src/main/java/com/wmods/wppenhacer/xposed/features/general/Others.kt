@@ -84,7 +84,7 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
         val disableSensorProximity = prefs.getBoolean("disable_sensor_proximity", false)
         val proximityAudios = prefs.getBoolean("proximity_audios", false)
         val showOnline = prefs.getBoolean("showonline", false)
-        val floatingMenu = prefs.getBoolean("floatingmenu", false) || prefs.getBoolean("ios_header", false)
+        val floatingMenu = prefs.getBoolean("floatingmenu", false)
         val filterItems = prefs.getString("filter_items", null)
         val autonextStatus = prefs.getBoolean("autonext_status", false)
         val audioType = prefs.getString("audio_type", "0")?.toInt() ?: 0

@@ -254,7 +254,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
     }
 
     override fun doHook() {
-        if (!prefs.getBoolean("floating_bottom_bar", false) && !prefs.getBoolean("ios_header", false)) return
+        if (!prefs.getBoolean("floating_bottom_bar", false)) return
 
         val bottomNavId = Utils.getID("bottom_nav", "id")
         if (bottomNavId <= 0) return
@@ -520,23 +520,8 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                         if (items.size < 2 || state.isDragging) continue
                         val indicator = state.indicator ?: continue
 
-                        val homeActivity = WppCore.getCurrentActivity()
-                        val tabIndex1 = try {
-                            if (homeActivity != null && homeActivity.javaClass == WppCore.homeActivityClass) {
-                                val m = homeActivity.javaClass.getMethod("A5M", Int::class.javaPrimitiveType)
-                                m.invoke(homeActivity, position) as Int
-                            } else position
-                        } catch (_: Throwable) { position }
-
-                        val tabIndex2 = try {
-                            if (homeActivity != null && homeActivity.javaClass == WppCore.homeActivityClass) {
-                                val m = homeActivity.javaClass.getMethod("A5M", Int::class.javaPrimitiveType)
-                                m.invoke(homeActivity, position + 1) as Int
-                            } else position + 1
-                        } catch (_: Throwable) { position + 1 }
-
-                        val item1 = items.getOrNull(tabIndex1)
-                        val item2 = items.getOrNull(tabIndex2)
+                        val item1 = items.getOrNull(position)
+                        val item2 = items.getOrNull(position + 1)
 
                         if (item1 != null) {
                             val (offX1, _) = offsetInBar(bar, item1)
@@ -1505,52 +1490,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         }
     }
 
-    private fun isAndaTabLeaf(leaf: View, bottomNavId: Int): Boolean {
-        var curr: View? = leaf
-        var tabChild: View? = null
-        var containerGroup: ViewGroup? = null
-        while (curr != null && curr.parent is View) {
-            val parent = curr.parent as? ViewGroup
-            if (parent != null) {
-                val pName = parent.javaClass.name
-                val pSimple = parent.javaClass.simpleName
-                if (parent.id == bottomNavId || pName.contains("BottomBar") || pName.contains("BottomNavigationView")) {
-                    tabChild = curr
-                    containerGroup = parent
-                    break
-                }
-            }
-            curr = curr.parent as? View
-        }
-        if (tabChild != null && containerGroup != null) {
-            val idx = containerGroup.indexOfChild(tabChild)
-            val count = containerGroup.childCount
-            val rank = getTabRank(tabChild)
-            return idx == count - 1 || rank == 5
-        }
-        return false
-    }
-
-    private fun findLeafViewUnder(root: View, rawX: Float, rawY: Float): View? {
-        val loc = IntArray(2)
-        root.getLocationOnScreen(loc)
-        val left = loc[0]
-        val top = loc[1]
-        val right = left + root.width
-        val bottom = top + root.height
-        if (rawX < left || rawX > right || rawY < top || rawY > bottom || root.visibility != View.VISIBLE) {
-            return null
-        }
-        if (root is ViewGroup) {
-            for (i in root.childCount - 1 downTo 0) {
-                val child = root.getChildAt(i)
-                val found = findLeafViewUnder(child, rawX, rawY)
-                if (found != null) return found
-            }
-        }
-        return root
-    }
-
     private fun attachAccountSwitcherOnLongClick(item: View) {
         if (getTabRank(item) != 5) return
         val longClickListener = View.OnLongClickListener { v ->
@@ -1654,22 +1593,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             }
         }
         return false
-    }
-
-    private fun findSwitcherButtonRecursively(view: View): View? {
-        val resName = try {
-            if (view.id != 0 && view.id != -1) view.resources.getResourceEntryName(view.id) else ""
-        } catch (_: Throwable) { "" }
-        if (resName.contains("account_switcher") || resName == "me_tab_account_switcher_chevron") {
-            return view
-        }
-        if (view is ViewGroup) {
-            for (i in 0 until view.childCount) {
-                val found = findSwitcherButtonRecursively(view.getChildAt(i))
-                if (found != null) return found
-            }
-        }
-        return null
     }
 
     private fun openAccountSwitcher(activity: Activity) {
@@ -2095,19 +2018,19 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         val additionalMargin = getFabAdditionalMargin()
         findAndPositionAllFabs(rootView, additionalMargin)
 
-        // One-shot: nunggu container beneran punya ukuran (bukan nebak lewat delay 150ms),
-        // lalu posisikan ulang & lepas listener-nya sendiri.
-        container.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
-            override fun onLayoutChange(
-                v: View, left: Int, top: Int, right: Int, bottom: Int,
-                oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int
-            ) {
-                if (bottom - top > 0) {
-                    findAndPositionAllFabs(rootView, additionalMargin)
-                    v.removeOnLayoutChangeListener(this)
+        if (container.height <= 0) {
+            container.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
+                override fun onLayoutChange(
+                    v: View, left: Int, top: Int, right: Int, bottom: Int,
+                    oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int
+                ) {
+                    if (bottom - top > 0) {
+                        findAndPositionAllFabs(rootView, additionalMargin)
+                        v.removeOnLayoutChangeListener(this)
+                    }
                 }
-            }
-        })
+            })
+        }
     }
 
     private fun positionFabAboveCurrentBar(fab: View, bottomNavId: Int) {
