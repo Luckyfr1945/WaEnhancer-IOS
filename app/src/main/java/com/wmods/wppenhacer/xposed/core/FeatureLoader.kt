@@ -638,7 +638,10 @@ class FeatureLoader {
             }
 
             executorService.shutdown()
-            executorService.awaitTermination(15, TimeUnit.SECONDS)
+            val terminated = executorService.awaitTermination(30, TimeUnit.SECONDS)
+            if (!terminated && Feature.DEBUG) {
+                XposedBridge.log("FeatureLoader: Some plugins took longer than 30s to initialize, waiting before bridge release")
+            }
 
             if (Feature.DEBUG) {
                 times.forEach { XposedBridge.log(it) }

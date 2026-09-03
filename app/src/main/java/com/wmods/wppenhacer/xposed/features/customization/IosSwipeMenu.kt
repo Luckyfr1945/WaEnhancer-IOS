@@ -74,7 +74,12 @@ class IosSwipeMenu(loader: ClassLoader, preferences: SharedPreferences) : Featur
     }
     private val reflectedFieldsCache = java.util.concurrent.ConcurrentHashMap<Class<*>, List<java.lang.reflect.Field>>()
 
-    private var openRow: View? = null
+    private var openRowRef: java.lang.ref.WeakReference<View>? = null
+    private var openRow: View?
+        get() = openRowRef?.get()
+        set(value) {
+            openRowRef = if (value != null) java.lang.ref.WeakReference(value) else null
+        }
     private val listSwipeStates = java.util.WeakHashMap<ViewGroup, SwipeState>()
     private fun stateFor(vg: ViewGroup) = listSwipeStates.getOrPut(vg) { SwipeState() }
 

@@ -34,7 +34,7 @@ class CopySelectionMessage(classLoader: ClassLoader, prefs: SharedPreferences) :
 
     override fun doHook() {
         if (!prefs.getBoolean("copy_selection_message", false)) return
-        if (prefs.getBoolean("floatingmenu", false) || prefs.getBoolean("ios_header", false)) return
+        if (prefs.getBoolean("floatingmenu", false)) return
 
         val popupWindowMessage = Unobfuscator.loadPopupWindowMessageClass(classLoader)
         XposedBridge.hookAllConstructors(popupWindowMessage, object : XC_MethodHook() {

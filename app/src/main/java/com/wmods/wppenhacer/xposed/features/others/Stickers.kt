@@ -20,6 +20,9 @@ import de.robv.android.xposed.XposedHelpers
 class Stickers(classLoader: ClassLoader, preferences:SharedPreferences) :
     Feature(classLoader, preferences) {
 
+    private val stickerContainerId by lazy { Utils.getID("stickerContainer", "id") }
+    private val stickerId by lazy { Utils.getID("sticker", "id") }
+
     override fun doHook() {
 
         if (!prefs.getBoolean("alertsticker", false)) return
@@ -29,7 +32,8 @@ class Stickers(classLoader: ClassLoader, preferences:SharedPreferences) :
             object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
                     val view = param.thisObject as View
-                    if (view.id != Utils.getID("stickerContainer", "id")) return
+                    val targetId = stickerContainerId
+                    if (targetId == 0 || view.id != targetId) return
                     if (view.tag == "wae_hooked") return
                     view.tag = "wae_hooked"
                     view.setTouchClickAndLongClickListener(
@@ -46,7 +50,7 @@ class Stickers(classLoader: ClassLoader, preferences:SharedPreferences) :
             val stickerColoredOutline = Unobfuscator.loadStickerColoredOutline(classLoader)
             XposedBridge.hookMethod(stickerColoredOutline, object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
-                    val source = param.args[0] as Bitmap
+                    val source = param.args.getOrNull(0) as? Bitmap ?: return
                     val safeConfig = source.config ?: Bitmap.Config.ARGB_8888
                     param.result = source.copy(safeConfig, true)
                 }
@@ -57,9 +61,9 @@ class Stickers(classLoader: ClassLoader, preferences:SharedPreferences) :
 
     private fun showAlertDialog(view: View) {
         val context = view.context
-        val stickerView = view.findViewById<ImageView?>(
-            Utils.getID("sticker", "id")
-        ) ?: return
+        val sId = stickerId
+        val stickerView = if (sId != 0) view.findViewById<ImageView?>(sId) else null
+        if (stickerView == null) return
 
         val dialog = AlertDialogWpp(context)
         dialog.setTitle(context.getString(R.string.send_sticker))

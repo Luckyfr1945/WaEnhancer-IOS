@@ -800,7 +800,10 @@ class SeenTick(
 
                 val sendJob2 = constr.newInstance(*args)
                 XposedHelpers.setAdditionalInstanceField(sendJob2, "blue_on_reply", true)
-                waJobManagerMethod?.invoke(mWaJobManager, sendJob2)
+                val jobMgr = getJobManager()
+                if (jobMgr != null) {
+                    waJobManagerMethod?.invoke(jobMgr, sendJob2)
+                }
             } catch (e: Exception) {
                 logDebug(e)
             }
@@ -827,7 +830,10 @@ class SeenTick(
                 )
                 val sendJob = XposedHelpers.newInstance(sPlayedClass, participantInfo, false)
 
-                waJobManagerMethod?.invoke(mWaJobManager, sendJob)
+                val jobMgr = getJobManager()
+                if (jobMgr != null) {
+                    waJobManagerMethod?.invoke(jobMgr, sendJob)
+                }
             } catch (e: Throwable) {
                 logDebug(e)
             }

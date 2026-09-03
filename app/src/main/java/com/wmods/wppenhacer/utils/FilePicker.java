@@ -8,11 +8,12 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 
 import java.io.File;
+import java.lang.ref.WeakReference;
 
 public class FilePicker {
 
     private static OnFilePickedListener mOnFilePickedListener;
-    private static AppCompatActivity mActivity;
+    private static WeakReference<AppCompatActivity> mActivityRef;
     public static ActivityResultLauncher<String> fileSalve;
     private static OnUriPickedListener mOnUriPickedListener;
     public static ActivityResultLauncher<String[]> fileCapture;
@@ -20,7 +21,7 @@ public class FilePicker {
     public static ActivityResultLauncher<PickVisualMediaRequest> imageCapture;
 
     public static void registerFilePicker(AppCompatActivity activity) {
-        mActivity = activity;
+        mActivityRef = new WeakReference<>(activity);
         fileCapture = activity.registerForActivityResult(new ActivityResultContracts.OpenDocument(), FilePicker::setFile);
         imageCapture = activity.registerForActivityResult(new ActivityResultContracts.PickVisualMedia(), FilePicker::setFile);
         directoryCapture = activity.registerForActivityResult(new ActivityResultContracts.OpenDocumentTree(), FilePicker::setDirectory);
@@ -38,8 +39,11 @@ public class FilePicker {
         if (mOnFilePickedListener != null) {
             String realPath = null;
             try {
-                realPath = RealPathUtil.getRealFilePath(mActivity, uri);
-            }catch (Exception ignored) {
+                AppCompatActivity act = mActivityRef != null ? mActivityRef.get() : null;
+                if (act != null) {
+                    realPath = RealPathUtil.getRealFilePath(act, uri);
+                }
+            } catch (Exception ignored) {
             }
             if (realPath == null) return;
             mOnFilePickedListener.onFilePicked(new File(realPath));
@@ -58,7 +62,10 @@ public class FilePicker {
         if (mOnFilePickedListener != null) {
             String realPath = null;
             try {
-                realPath = RealPathUtil.getRealFolderPath(mActivity, uri);
+                AppCompatActivity act = mActivityRef != null ? mActivityRef.get() : null;
+                if (act != null) {
+                    realPath = RealPathUtil.getRealFolderPath(act, uri);
+                }
             } catch (Exception ignored) {
             }
             if (realPath == null) return;

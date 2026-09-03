@@ -653,7 +653,8 @@ object StickerSyncManager {
                 SQLiteDatabase.OPEN_READWRITE
             )
 
-            val attachSql = "ATTACH DATABASE '${backupDbFile.absolutePath}' AS backup_db"
+            val escapedPath = backupDbFile.absolutePath.replace("'", "''")
+            val attachSql = "ATTACH DATABASE '$escapedPath' AS backup_db"
             localDb.execSQL(attachSql)
 
             // Get initial count for starred_stickers if exists
@@ -791,10 +792,15 @@ object StickerSyncManager {
     }
 
     private fun extractZip(zipFile: File, targetDir: File) {
+        val targetCanonicalDir = targetDir.canonicalFile
         ZipInputStream(FileInputStream(zipFile)).use { zis ->
             var entry: ZipEntry? = zis.nextEntry
             while (entry != null) {
                 val outFile = File(targetDir, entry.name)
+                val outCanonical = outFile.canonicalFile
+                if (!outCanonical.path.startsWith(targetCanonicalDir.path + File.separator) && outCanonical != targetCanonicalDir) {
+                    throw SecurityException("Zip entry is outside target directory: ${entry.name}")
+                }
                 if (entry.isDirectory) {
                     outFile.mkdirs()
                 } else {

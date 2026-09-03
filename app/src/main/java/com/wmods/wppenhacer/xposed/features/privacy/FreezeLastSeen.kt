@@ -34,7 +34,14 @@ class FreezeLastSeen(loader: ClassLoader, preferences: SharedPreferences) :
                     XposedBridge.log("[WaEnhancer] FreezeLastSeen: isFrozen=$isFrozen (main=$freezeLastSeenMain, priv=$freezeLastSeenPriv, ghost=$ghostmode)")
 
                     if (isFrozen) {
-                        param.result = null
+                        val returnType = (param.method as? java.lang.reflect.Method)?.returnType
+                        param.result = when (returnType) {
+                            java.lang.Boolean.TYPE -> false
+                            java.lang.Integer.TYPE -> 0
+                            java.lang.Long.TYPE -> 0L
+                            java.lang.Void.TYPE -> null
+                            else -> null
+                        }
                     }
                 }
             })

@@ -75,9 +75,12 @@ class IosContextMenu(loader: ClassLoader, prefs: SharedPreferences) : Feature(lo
         private val viewIdCache = java.util.concurrent.ConcurrentHashMap<String, Int>()
     }
 
+    private data class ViewBgState(val bg: Drawable?, val elevation: Float)
+
     private data class PopupState(
         var fMessage: FMessageWpp? = null,
-        var previewBitmap: Bitmap? = null
+        var previewBitmap: Bitmap? = null,
+        val bgStates: MutableMap<View, ViewBgState> = mutableMapOf()
     )
 
     enum class ActionType {
@@ -91,7 +94,7 @@ class IosContextMenu(loader: ClassLoader, prefs: SharedPreferences) : Feature(lo
     }
 
     override fun doHook() {
-        val enabled = prefs.getBoolean("floatingmenu", false) || prefs.getBoolean("ios_header", false)
+        val enabled = prefs.getBoolean("floatingmenu", false)
         if (!enabled) return
 
         logDebug("IosContextMenu Feature Enabled")
@@ -253,6 +256,9 @@ class IosContextMenu(loader: ClassLoader, prefs: SharedPreferences) : Feature(lo
 
         // 1. Transparent background & dismiss on outside tap
         popupWindow.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        if (!state.bgStates.containsKey(root)) {
+            state.bgStates[root] = ViewBgState(root.background, root.elevation)
+        }
         root.background = null
         root.elevation = 0f
         if (root !is android.widget.AdapterView<*>) {
@@ -278,6 +284,13 @@ class IosContextMenu(loader: ClassLoader, prefs: SharedPreferences) : Feature(lo
                 // Let GC collect safely; clear reference
                 currentState.previewBitmap = null
             }
+            currentState?.bgStates?.forEach { (view, bgState) ->
+                try {
+                    view.background = bgState.bg
+                    view.elevation = bgState.elevation
+                } catch (_: Throwable) {}
+            }
+            currentState?.bgStates?.clear()
         }
 
         // 2. Locate the Reaction Tray (keep native WhatsApp background & styling intact)
@@ -297,6 +310,9 @@ class IosContextMenu(loader: ClassLoader, prefs: SharedPreferences) : Feature(lo
         fun clearAllIntermediateBackgrounds(v: View) {
             if (v === reactionTray || v.tag == TAG_MENU_CARD || v.tag == TAG_WRAP_CONTAINER) {
                 return
+            }
+            if (!state.bgStates.containsKey(v)) {
+                state.bgStates[v] = ViewBgState(v.background, v.elevation)
             }
             v.background = null
             v.elevation = 0f
@@ -478,10 +494,10 @@ class IosContextMenu(loader: ClassLoader, prefs: SharedPreferences) : Feature(lo
                 val statusBarHeight = getStatusBarHeight(activity)
                 val navBarHeight = getNavigationBarHeight(activity)
                 val safeTop = (statusBarHeight + Utils.dipToPixels(12f)).coerceAtLeast(Utils.dipToPixels(48f))
-                val safeBottom = (screenHeight - navBarHeight - Utils.dipToPixels(16f)).coerceAtLeast(safeTop + Utils.dipToPixels(100f))
+                val safeBottom = (screenHeight - navBarHeight - Utils.dipToPixels(90f)).coerceAtLeast(safeTop + Utils.dipToPixels(100f))
 
                 val clusterH = wrapContainer.height
-                val idealY = msgLocY - Utils.dipToPixels(50f)
+                val idealY = msgLocY - Utils.dipToPixels(80f)
                 val clampedY = idealY.coerceIn(safeTop, (safeBottom - clusterH).coerceAtLeast(safeTop))
 
                 wrapContainer.y = clampedY.toFloat()
@@ -496,8 +512,6 @@ class IosContextMenu(loader: ClassLoader, prefs: SharedPreferences) : Feature(lo
                 logDebug("IosContextMenu: layout positioning error: ${e.message}", e)
             }
         }
-
-        clearAllIntermediateBackgrounds(root)
 
         try {
             popupWindow.width = ViewGroup.LayoutParams.MATCH_PARENT

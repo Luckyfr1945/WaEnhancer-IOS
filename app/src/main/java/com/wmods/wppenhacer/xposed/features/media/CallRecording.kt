@@ -255,8 +255,14 @@ class CallRecording(
             for (cmd in commands) {
                 try {
                     val process = Runtime.getRuntime().exec(arrayOf("su", "-c", cmd))
-                    val exitCode = process.waitFor()
-                    logDebug("WaEnhancer: $cmd exit: $exitCode")
+                    val exited = process.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
+                    if (exited) {
+                        val exitCode = process.exitValue()
+                        logDebug("WaEnhancer: $cmd exit: $exitCode")
+                    } else {
+                        process.destroyForcibly()
+                        logDebug("WaEnhancer: $cmd timed out")
+                    }
                 } catch (e: Exception) {
                     logDebug("WaEnhancer: Root failed: ${e.message}")
                 }
@@ -296,8 +302,12 @@ class CallRecording(
     private fun stopScreenRecording() {
         screenRecordProcess.getAndSet(null)?.let { process ->
             try {
-                Runtime.getRuntime().exec(arrayOf("su", "-c", "pkill -2 screenrecord"))
-                process.destroy()
+                val pkillProcess = Runtime.getRuntime().exec(arrayOf("su", "-c", "pkill -2 screenrecord"))
+                pkillProcess.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)
+                process.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
+                if (process.isAlive) {
+                    process.destroy()
+                }
                 logDebug("WaEnhancer: Video Call Screen Recording stopped")
                 if (prefs.getBoolean("call_recording_toast", false)) {
                     Utils.showToast("Video screen recording saved!", Toast.LENGTH_SHORT)
@@ -401,12 +411,18 @@ class CallRecording(
                         }
                     } else {
                         logDebug("WaEnhancer: All audio sources failed")
-                        closeOutputResources(deleteOutputFile = false)
+                        closeOutputResources(deleteOutputFile = true)
                     }
                 }
             }
 
-            isRecording.set(true)
+            val hasAudio = mediaRecorderRef.get() != null
+            val hasVideo = screenRecordProcess.get() != null
+            if (hasAudio || hasVideo) {
+                isRecording.set(true)
+            } else {
+                isRecording.set(false)
+            }
         } catch (e: Exception) {
             logDebug("WaEnhancer: startRecording error: ${e.message}")
             isRecording.set(false)

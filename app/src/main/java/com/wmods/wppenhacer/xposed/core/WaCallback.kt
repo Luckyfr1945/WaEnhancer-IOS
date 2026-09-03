@@ -39,6 +39,9 @@ class WaCallback : ActivityLifecycleCallbacks {
     }
 
     override fun onActivityDestroyed(activity: Activity) {
+        if (WppCore.mCurrentActivity === activity) {
+            WppCore.mCurrentActivity = null
+        }
         updateState(activity, ActivityChangeState.ChangeType.DESTROYED)
         triggerActivityState(activity, ActivityChangeState.ChangeType.DESTROYED)
         cleanup()

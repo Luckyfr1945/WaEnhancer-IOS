@@ -59,17 +59,18 @@ class IosTextEntry(loader: ClassLoader, prefs: SharedPreferences) : Feature(load
         // Jarak antara pill dan tombol mic/send di sebelah kanan.
         private const val MIC_GAP_DP = -11f
 
-        private const val PILL_DARK = "#2C2C2E"
+        private const val PILL_DARK = "#1F2C34"
         private const val PILL_LIGHT = "#FFFFFF"
-        private const val PILL_BORDER_LIGHT = "#C7C7CC"
-        private const val PLUS_DARK = "#A0A0A5"
-        private const val PLUS_LIGHT = "#8E8E93"
-        private const val BAR_DARK = "#1C1C1E"
-        private const val BAR_LIGHT = "#F2F2F7"
+        private const val PILL_BORDER_DARK = "#2A3942"
+        private const val PILL_BORDER_LIGHT = "#E9EDEF"
+        private const val PLUS_DARK = "#8696A0"
+        private const val PLUS_LIGHT = "#54656F"
+        private const val BAR_DARK = "#0B141B"
+        private const val BAR_LIGHT = "#F0F2F5"
     }
 
     override fun doHook() {
-        if (!prefs.getBoolean("ios_text_entry", false) && !prefs.getBoolean("ios_header", false)) return
+        if (!prefs.getBoolean("ios_text_entry", false)) return
 
         logDebug("IosTextEntry Feature Enabled")
 
@@ -183,12 +184,11 @@ class IosTextEntry(loader: ClassLoader, prefs: SharedPreferences) : Feature(load
     /** Satu-satunya tempat pembuatan pill drawable, dipakai baik saat restructure maupun update dinamis. */
     private fun buildPillDrawable(isDark: Boolean): GradientDrawable {
         val pillColor = if (isDark) Color.parseColor(PILL_DARK) else Color.parseColor(PILL_LIGHT)
+        val strokeColor = if (isDark) Color.parseColor(PILL_BORDER_DARK) else Color.parseColor(PILL_BORDER_LIGHT)
         return GradientDrawable().apply {
             setColor(pillColor)
             cornerRadius = Utils.dipToPixels(PILL_RADIUS_DP).toFloat()
-            if (!isDark) {
-                setStroke(Utils.dipToPixels(PILL_STROKE_DP), Color.parseColor(PILL_BORDER_LIGHT))
-            }
+            setStroke(Utils.dipToPixels(PILL_STROKE_DP), strokeColor)
         }
     }
 
