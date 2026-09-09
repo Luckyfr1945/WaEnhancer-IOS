@@ -24,8 +24,23 @@ class Stickers(classLoader: ClassLoader, preferences:SharedPreferences) :
     private val stickerId by lazy { Utils.getID("sticker", "id") }
 
     override fun doHook() {
+        if (prefs.getBoolean("alertsticker", false)) {
+            try {
+                hookAlertSticker()
+            } catch (t: Throwable) {
+                XposedBridge.log(t)
+            }
+        }
+        if (prefs.getBoolean("remove_sticker_white_outline", false)) {
+            try {
+                hookRemoveStickerOutline()
+            } catch (t: Throwable) {
+                XposedBridge.log(t)
+            }
+        }
+    }
 
-        if (!prefs.getBoolean("alertsticker", false)) return
+    private fun hookAlertSticker() {
         XposedHelpers.findAndHookMethod(
             View::class.java,
             "onAttachedToWindow",
@@ -46,6 +61,7 @@ class Stickers(classLoader: ClassLoader, preferences:SharedPreferences) :
                     )
                 }
             })
+<<<<<<< Updated upstream
         if (prefs.getBoolean("remove_sticker_white_outline", false)) {
             val stickerColoredOutline = Unobfuscator.loadStickerColoredOutline(classLoader)
             XposedBridge.hookMethod(stickerColoredOutline, object : XC_MethodHook() {
@@ -56,6 +72,19 @@ class Stickers(classLoader: ClassLoader, preferences:SharedPreferences) :
                 }
             })
         }
+=======
+    }
+
+    private fun hookRemoveStickerOutline() {
+        val stickerColoredOutline = Unobfuscator.loadStickerColoredOutline(classLoader)
+        XposedBridge.hookMethod(stickerColoredOutline, object : XC_MethodHook() {
+            override fun beforeHookedMethod(param: MethodHookParam) {
+                val source = param.args.getOrNull(0) as? Bitmap ?: return
+                val safeConfig = source.config ?: Bitmap.Config.ARGB_8888
+                param.result = source.copy(safeConfig, true)
+            }
+        })
+>>>>>>> Stashed changes
     }
 
 

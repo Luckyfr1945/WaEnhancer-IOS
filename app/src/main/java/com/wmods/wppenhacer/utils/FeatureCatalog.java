@@ -384,6 +384,14 @@ public class FeatureCatalog {
                 "conversation",
                 Arrays.asList("sticker", "confirmation", "alert")));
 
+        catalog.add(new SearchableFeature("remove_sticker_white_outline",
+                context.getString(R.string.remove_sticker_white_outline),
+                context.getString(R.string.remove_sticker_white_outline_sum),
+                SearchableFeature.Category.GENERAL_CONVERSATION,
+                SearchableFeature.FragmentType.GENERAL,
+                "conversation",
+                Arrays.asList("sticker", "outline", "white", "border", "garis", "tepi", "hapus", "stiker")));
+
         catalog.add(new SearchableFeature("calltype",
                 context.getString(R.string.selection_of_call_type),
                 context.getString(R.string.selection_of_call_type_sum),

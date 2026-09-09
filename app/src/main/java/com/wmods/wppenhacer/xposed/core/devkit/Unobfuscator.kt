@@ -1807,91 +1807,76 @@
         @JvmStatic
         fun loadGroupCheckAdminMethod(loader: ClassLoader): Method {
             return UnobfuscatorCache.getInstance().getMethod(loader) {
-                // Strategy 1: Search invokes in ConversationRow setupUserNameInGroupView
+                val groupJidClass = findFirstClassUsingName(loader, StringMatchType.EndsWith, "jid.GroupJid")
+                val userJidClass = findFirstClassUsingName(loader, StringMatchType.EndsWith, "jid.UserJid")
+                val jidClass = findFirstClassUsingName(loader, StringMatchType.EndsWith, "jid.Jid")
+                val groupSuperClass = groupJidClass?.superclass
+
                 try {
-                    val convRowMethods = bridge.findMethod {
+                    val allMethods = bridge.findMethod {
                         matcher {
-                            addUsingString("ConversationRow/setupUserNameInGroupView/")
+                            paramCount(2)
+                            returnType(Boolean::class.javaPrimitiveType!!)
                         }
                     }
-                    for (m in convRowMethods) {
-                        for (invoke in m.invokes) {
-                            val invokeMethod = try { invoke.getMethodInstance(loader) } catch (_: Throwable) { null } ?: continue
-                            if (invokeMethod.parameterCount == 2 && invokeMethod.returnType == Boolean::class.javaPrimitiveType) {
-                                val p0 = invokeMethod.parameterTypes[0].name
-                                val p1 = invokeMethod.parameterTypes[1].name
-                                if ((p0.contains("Jid", ignoreCase = true) || p0.contains("Group", ignoreCase = true)) &&
-                                    (p1.contains("Jid", ignoreCase = true) || p1.contains("User", ignoreCase = true))) {
-                                    return@getMethod invokeMethod
-                                }
-                            }
-                        }
-                    }
-                } catch (_: Throwable) {}
 
-                // Strategy 2: Search in GroupChatInfoActivity
-                try {
-                    val groupChatClasses = bridge.findClass {
-                        matcher {
-                            className("GroupChatInfoActivity", StringMatchType.EndsWith)
-                        }
-                    }
-                    for (cData in groupChatClasses) {
-                        val cls = try { cData.getInstance(loader) } catch (_: Throwable) { null } ?: continue
-                        for (method in cls.declaredMethods) {
-                            val methodData = try { bridge.getMethodData(method) } catch (_: Throwable) { null } ?: continue
-                            for (invoke in methodData.invokes) {
-                                val invokeMethod = try { invoke.getMethodInstance(loader) } catch (_: Throwable) { null } ?: continue
-                                if (invokeMethod.parameterCount == 2 && invokeMethod.returnType == Boolean::class.javaPrimitiveType) {
-                                    val p0 = invokeMethod.parameterTypes[0].name
-                                    val p1 = invokeMethod.parameterTypes[1].name
-                                    if ((p0.contains("Jid", ignoreCase = true) || p0.contains("Group", ignoreCase = true)) &&
-                                        (p1.contains("Jid", ignoreCase = true) || p1.contains("User", ignoreCase = true))) {
-                                        return@getMethod invokeMethod
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } catch (_: Throwable) {}
+                    // Candidate methods on group managers taking (GroupJid/subclass/superclass, UserJid) -> Boolean
+                    val candidates = allMethods.mapNotNull { m ->
+                        val mInst = try { m.getMethodInstance(loader) } catch (_: Throwable) { null } ?: return@mapNotNull null
+                        val p0 = mInst.parameterTypes[0]
+                        val p1 = mInst.parameterTypes[1]
 
-                // Strategy 3: Search all methods matching (GroupJid, UserJid) -> Boolean
-                try {
-                    val groupJidClass = findFirstClassUsingName(loader, StringMatchType.EndsWith, "jid.GroupJid")
-                    val userJidClass = findFirstClassUsingName(loader, StringMatchType.EndsWith, "jid.UserJid")
-                    if (groupJidClass != null && userJidClass != null) {
-                        val methods = bridge.findMethod {
-                            matcher {
-                                paramCount(2)
-                                returnType(Boolean::class.javaPrimitiveType!!)
-                                addParamType(groupJidClass.name)
-                                addParamType(userJidClass.name)
-                            }
+                        val p0Matches = (groupJidClass != null && (p0 == groupJidClass || groupJidClass.isAssignableFrom(p0) || p0.isAssignableFrom(groupJidClass))) ||
+                                (groupSuperClass != null && (p0 == groupSuperClass || p0.isAssignableFrom(groupSuperClass))) ||
+                                (jidClass != null && jidClass.isAssignableFrom(p0) && (p0.name.contains("Group", ignoreCase = true) || p0 == groupSuperClass))
+
+                        val p1Matches = userJidClass != null && (p1 == userJidClass || userJidClass.isAssignableFrom(p1) || p1.isAssignableFrom(userJidClass))
+
+                        if (p0Matches && p1Matches) m to mInst else null
+                    }
+
+                    // Strategy 1: The true isAdmin method takes a concrete GroupJid subclass (e.g. LX/1RP)
+                    // and does NOT invoke contains(UserJid)->Boolean (which only checks membership).
+                    // In WhatsApp, A0s:(LX/1RP;UserJid;)Z directly checks participant.A00 != 0 (admin rank).
+                    for ((m, mInst) in candidates) {
+                        val p0 = mInst.parameterTypes[0]
+                        val isConcreteGroupSubclass = groupJidClass != null && groupJidClass.isAssignableFrom(p0) && p0 != groupJidClass
+
+                        val invokesBooleanUserJid = m.invokes.any { inv ->
+                            val invM = try { inv.getMethodInstance(loader) } catch (_: Throwable) { null }
+                            invM != null && invM.parameterCount == 1 &&
+                                    invM.returnType == Boolean::class.javaPrimitiveType &&
+                                    userJidClass != null && userJidClass.isAssignableFrom(invM.parameterTypes[0])
                         }
-                        if (methods.isNotEmpty()) {
-                            return@getMethod methods[0].getMethodInstance(loader)
+
+                        if (isConcreteGroupSubclass && !invokesBooleanUserJid) {
+                            return@getMethod mInst
                         }
                     }
-                } catch (_: Throwable) {}
 
-                // Strategy 4: Fallback find method taking 2 Jid parameters returning boolean
-                try {
-                    val jidClass = findFirstClassUsingName(loader, StringMatchType.EndsWith, "jid.Jid")
-                    if (jidClass != null) {
-                        val methods = bridge.findMethod {
-                            matcher {
-                                paramCount(2)
-                                returnType(Boolean::class.javaPrimitiveType!!)
-                            }
+                    // Strategy 2: Any candidate where p0 is a concrete GroupJid subclass
+                    for ((_, mInst) in candidates) {
+                        val p0 = mInst.parameterTypes[0]
+                        if (groupJidClass != null && groupJidClass.isAssignableFrom(p0) && p0 != groupJidClass) {
+                            return@getMethod mInst
                         }
-                        for (m in methods) {
-                            val invokeMethod = try { m.getMethodInstance(loader) } catch (_: Throwable) { null } ?: continue
-                            val p0 = invokeMethod.parameterTypes[0]
-                            val p1 = invokeMethod.parameterTypes[1]
-                            if (jidClass.isAssignableFrom(p0) && jidClass.isAssignableFrom(p1)) {
-                                return@getMethod invokeMethod
-                            }
+                    }
+
+                    // Strategy 3: Any candidate that does not invoke contains(UserJid)->Boolean
+                    for ((m, mInst) in candidates) {
+                        val invokesBooleanUserJid = m.invokes.any { inv ->
+                            val invM = try { inv.getMethodInstance(loader) } catch (_: Throwable) { null }
+                            invM != null && invM.parameterCount == 1 &&
+                                    invM.returnType == Boolean::class.javaPrimitiveType &&
+                                    userJidClass != null && userJidClass.isAssignableFrom(invM.parameterTypes[0])
                         }
+                        if (!invokesBooleanUserJid) {
+                            return@getMethod mInst
+                        }
+                    }
+
+                    if (candidates.isNotEmpty()) {
+                        return@getMethod candidates.last().second
                     }
                 } catch (_: Throwable) {}
 
@@ -3600,7 +3585,7 @@
                         )
                         returnType(Bitmap::class.java)
                     }
-                }.single().getMethodInstance(classLoader)
+                }.first().getMethodInstance(classLoader)
             }
         }
 

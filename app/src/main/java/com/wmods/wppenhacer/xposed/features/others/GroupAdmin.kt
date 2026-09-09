@@ -89,8 +89,17 @@ class GroupAdmin(classLoader: ClassLoader, preferences: SharedPreferences) : Fea
                     return
                 }
 
-                val result = runCatching { grpcheckAdmin.invoke(grpParticipants, jidGrp, participantJid) as? Boolean }.getOrNull()
+                var result = runCatching { grpcheckAdmin.invoke(grpParticipants, jidGrp, participantJid) as? Boolean }.getOrNull()
+                if (result != true && fMessage.userJid?.phoneJid != null && fMessage.userJid?.phoneJid != participantJid) {
+                    val phoneResult = runCatching { grpcheckAdmin.invoke(grpParticipants, jidGrp, fMessage.userJid?.phoneJid) as? Boolean }.getOrNull()
+                    if (phoneResult == true) result = true
+                }
+                if (result != true && fMessage.userJid?.userJid != null && fMessage.userJid?.userJid != participantJid) {
+                    val userResult = runCatching { grpcheckAdmin.invoke(grpParticipants, jidGrp, fMessage.userJid?.userJid) as? Boolean }.getOrNull()
+                    if (userResult == true) result = true
+                }
                 iconAdmin.visibility = if (result == true) View.VISIBLE else View.GONE
+                logDebug("GroupAdmin: user=$participantJid isAdmin=$result method=${grpcheckAdmin.name}")
             }
         })
         } catch (e: Throwable) {
