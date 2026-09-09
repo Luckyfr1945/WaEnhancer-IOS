@@ -22,14 +22,17 @@ import com.wmods.wppenhacer.xposed.core.devkit.Unobfuscator;
 import com.wmods.wppenhacer.xposed.utils.ReflectionUtils;
 import com.wmods.wppenhacer.xposed.utils.Utils;
 
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.Map;
+import java.util.WeakHashMap;
 
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 
 public class DrawableColors {
 
-    private static final HashMap<Bitmap, Integer> ninePatchs = new HashMap<>();
+    private static final Map<Bitmap, Integer> ninePatchs = Collections.synchronizedMap(new WeakHashMap<>());
     private static Class<?> mMaterialShapeDrawableClass;
 
     public static void replaceColor(Drawable drawable, HashMap<String, String> colors) {

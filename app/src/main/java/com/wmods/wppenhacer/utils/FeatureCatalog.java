@@ -448,6 +448,15 @@ public class FeatureCatalog {
                 "conversation",
                 Arrays.asList("added", "contact", "verify")));
 
+        // GENERAL FRAGMENT - Sticker Sync
+        catalog.add(new SearchableFeature("sticker_sync",
+                context.getString(R.string.sticker_sync),
+                context.getString(R.string.sticker_sync_sum),
+                SearchableFeature.Category.GENERAL,
+                SearchableFeature.FragmentType.GENERAL,
+                null,
+                Arrays.asList("sticker", "sync", "backup", "restore", "favorite", "bintang", "stiker", "root")));
+
         // GENERAL FRAGMENT - Status
         catalog.add(new SearchableFeature("autonext_status",
                 context.getString(R.string.disable_auto_status),
@@ -771,6 +780,14 @@ public class FeatureCatalog {
                 null,
                 Arrays.asList("recording", "toast", "notification", "show", "hide")));
 
+        catalog.add(new SearchableFeature("video_call_screen_rec",
+                context.getString(R.string.video_call_screen_rec),
+                context.getString(R.string.video_call_screen_rec_sum),
+                SearchableFeature.Category.MEDIA,
+                SearchableFeature.FragmentType.MEDIA,
+                null,
+                Arrays.asList("video", "call", "screen", "record", "recording", "layar")));
+
         catalog.add(new SearchableFeature("disable_sensor_proximity",
                 context.getString(R.string.disable_the_proximity_sensor),
                 context.getString(R.string.disable_the_proximity_sensor_sum),
@@ -916,6 +933,14 @@ public class FeatureCatalog {
                 SearchableFeature.FragmentType.CUSTOMIZATION,
                 null,
                 Arrays.asList("floating", "menu", "context", "ios")));
+
+        catalog.add(new SearchableFeature("ios_text_entry",
+                "iOS Text Entry Bar",
+                "Enables iOS-style pill chat text input and attachment buttons",
+                SearchableFeature.Category.CUSTOMIZATION,
+                SearchableFeature.FragmentType.CUSTOMIZATION,
+                null,
+                Arrays.asList("ios", "text", "entry", "input", "chat", "pill")));
 
         catalog.add(new SearchableFeature("animation_emojis",
                 context.getString(R.string.animation_emojis),

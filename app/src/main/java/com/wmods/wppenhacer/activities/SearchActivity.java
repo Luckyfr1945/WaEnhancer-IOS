@@ -27,6 +27,8 @@ public class SearchActivity extends BaseActivity implements SearchAdapter.OnFeat
     private ActivitySearchBinding binding;
     private SearchAdapter adapter;
 
+    private boolean isRootAvailable = false;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -49,7 +51,21 @@ public class SearchActivity extends BaseActivity implements SearchAdapter.OnFeat
         // Setup search input
         setupSearchInput();
 
-        // Show all features by default (grouped by category)
+        // Check Root status to filter features accurately
+        com.wmods.wppenhacer.utils.StickerSyncManager.INSTANCE.isRootAvailable(hasRoot -> {
+            runOnUiThread(() -> {
+                this.isRootAvailable = Boolean.TRUE.equals(hasRoot);
+                CharSequence currentText = binding.searchInput.getText();
+                if (currentText != null && currentText.length() > 0) {
+                    performSearch(currentText.toString());
+                } else {
+                    loadAllFeatures();
+                }
+            });
+            return kotlin.Unit.INSTANCE;
+        });
+
+        // Show all features by default (filtered by LSPosed/Root availability)
         loadAllFeatures();
 
         // Focus on search input
@@ -73,29 +89,50 @@ public class SearchActivity extends BaseActivity implements SearchAdapter.OnFeat
         });
     }
 
+    private List<SearchableFeature> filterAvailableFeatures(List<SearchableFeature> list, boolean hasRoot) {
+        if (MainActivity.isXposedEnabled()) {
+            return list;
+        }
+
+        if (hasRoot) {
+            // When LSPosed is not active but Root is available, only Sticker features can be used
+            return list.stream()
+                    .filter(f -> "sticker_sync".equals(f.getKey()) || "sticker_sync".equals(f.getParentKey()))
+                    .collect(java.util.stream.Collectors.toList());
+        }
+
+        // Neither LSPosed nor Root is active
+        return new ArrayList<>();
+    }
+
     private void loadAllFeatures() {
         List<SearchableFeature> allFeatures = FeatureCatalog.getAllFeatures(this);
-        adapter.setFeatures(allFeatures);
+        List<SearchableFeature> available = filterAvailableFeatures(allFeatures, isRootAvailable);
+        adapter.setFeatures(available);
         adapter.setSearchQuery("");
-        updateEmptyState(false, "");
+        if (available.isEmpty()) {
+            updateEmptyState(true, !MainActivity.isXposedEnabled() ? "Modul LSPosed belum diaktifkan" : getString(R.string.search_no_results));
+        } else {
+            updateEmptyState(false, "");
+        }
     }
 
     private void performSearch(String query) {
         if (query.trim().isEmpty()) {
-            // Show all features when search is empty
             loadAllFeatures();
             return;
         }
 
-        // Search features
+        // Search features and filter by current availability
         List<SearchableFeature> results = FeatureCatalog.search(this, query);
+        List<SearchableFeature> available = filterAvailableFeatures(results, isRootAvailable);
 
         // Update adapter
-        adapter.setFeatures(results);
+        adapter.setFeatures(available);
         adapter.setSearchQuery(query);
 
         // Update empty state
-        if (results.isEmpty()) {
+        if (available.isEmpty()) {
             updateEmptyState(true, getString(R.string.search_no_results));
         } else {
             updateEmptyState(false, "");

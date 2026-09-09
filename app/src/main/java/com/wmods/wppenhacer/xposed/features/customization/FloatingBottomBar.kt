@@ -254,7 +254,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
     }
 
     override fun doHook() {
-        if (!prefs.getBoolean("floating_bottom_bar", false) && !prefs.getBoolean("ios_header", false)) return
+        if (!prefs.getBoolean("floating_bottom_bar", false)) return
 
         val bottomNavId = Utils.getID("bottom_nav", "id")
         if (bottomNavId <= 0) return
@@ -293,6 +293,11 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                 }
             })
 
+        var longPressRunnable: Runnable? = null
+        val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+        var isLongPressHandled = false
+
+
         XposedHelpers.findAndHookMethod(
             ViewGroup::class.java,
             "dispatchTouchEvent",
@@ -313,16 +318,53 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             state.lastDragX = ev.x
                             state.pillStartCenterX = indicator.centerX
                             state.isDragging = false
+                            isLongPressHandled = false
                             state.targetPressProgress = 1f
                             startPillPhysics(bar, state)
                             bar.parent?.requestDisallowInterceptTouchEvent(true)
+
+                            // Detect long press on Anda / Settings tab (rank 5 or last item)
+                            val pressedIndex = items.indices.minByOrNull { idx ->
+                                val center = offsetInBar(bar, items[idx]).first + items[idx].width / 2f
+                                abs(center - ev.x)
+                            }
+                            if (pressedIndex != null && (getTabRank(items[pressedIndex]) == 5 || pressedIndex == items.lastIndex)) {
+                                val touchedTab = items[pressedIndex]
+                                longPressRunnable?.let { mainHandler.removeCallbacks(it) }
+                                val runnable = Runnable {
+                                    isLongPressHandled = true
+                                    state.isDragging = false
+                                    state.isScrubbing = false
+                                    state.targetPressProgress = 0f
+                                    startPillPhysics(bar, state)
+
+                                    try {
+                                        touchedTab.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                                    } catch (_: Throwable) {}
+
+                                    val act = (bar.context as? Activity)
+                                        ?: ((bar.context as? android.content.ContextWrapper)?.baseContext as? Activity)
+                                        ?: (bar.rootView?.context as? Activity)
+                                        ?: WppCore.getCurrentActivity()
+                                    if (act is androidx.fragment.app.FragmentActivity) {
+                                        openAccountSwitcher(act)
+                                    }
+                                }
+                                longPressRunnable = runnable
+                                mainHandler.postDelayed(runnable, 400L)
+                            }
                         }
                         MotionEvent.ACTION_MOVE -> {
                             val dx = ev.x - state.dragStartX
                             val stepDx = ev.x - state.lastDragX
                             state.lastDragX = ev.x
 
-                            if (!state.isDragging && abs(dx) > Utils.dipToPixels(4f)) {
+                            if (abs(dx) > Utils.dipToPixels(8f)) {
+                                longPressRunnable?.let { mainHandler.removeCallbacks(it) }
+                                longPressRunnable = null
+                            }
+
+                            if (!state.isDragging && abs(dx) > Utils.dipToPixels(12f)) {
                                 state.isDragging = true
                                 state.isScrubbing = true
                                 try {
@@ -401,6 +443,17 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             }
                         }
                         MotionEvent.ACTION_UP -> {
+                            longPressRunnable?.let { mainHandler.removeCallbacks(it) }
+                            longPressRunnable = null
+
+                            if (isLongPressHandled) {
+                                isLongPressHandled = false
+                                state.targetPressProgress = 0f
+                                startPillPhysics(bar, state)
+                                param.result = true
+                                return
+                            }
+
                             state.targetPressProgress = 0f
                             if (state.isDragging) {
                                 state.isDragging = false
@@ -425,6 +478,17 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             }
                         }
                         MotionEvent.ACTION_CANCEL -> {
+                            longPressRunnable?.let { mainHandler.removeCallbacks(it) }
+                            longPressRunnable = null
+
+                            if (isLongPressHandled) {
+                                isLongPressHandled = false
+                                state.targetPressProgress = 0f
+                                startPillPhysics(bar, state)
+                                param.result = true
+                                return
+                            }
+
                             state.targetPressProgress = 0f
                             if (state.isDragging) {
                                 state.isDragging = false
@@ -456,23 +520,8 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                         if (items.size < 2 || state.isDragging) continue
                         val indicator = state.indicator ?: continue
 
-                        val homeActivity = WppCore.getCurrentActivity()
-                        val tabIndex1 = try {
-                            if (homeActivity != null && homeActivity.javaClass == WppCore.homeActivityClass) {
-                                val m = homeActivity.javaClass.getMethod("A5M", Int::class.javaPrimitiveType)
-                                m.invoke(homeActivity, position) as Int
-                            } else position
-                        } catch (_: Throwable) { position }
-
-                        val tabIndex2 = try {
-                            if (homeActivity != null && homeActivity.javaClass == WppCore.homeActivityClass) {
-                                val m = homeActivity.javaClass.getMethod("A5M", Int::class.javaPrimitiveType)
-                                m.invoke(homeActivity, position + 1) as Int
-                            } else position + 1
-                        } catch (_: Throwable) { position + 1 }
-
-                        val item1 = items.getOrNull(tabIndex1)
-                        val item2 = items.getOrNull(tabIndex2)
+                        val item1 = items.getOrNull(position)
+                        val item2 = items.getOrNull(position + 1)
 
                         if (item1 != null) {
                             val (offX1, _) = offsetInBar(bar, item1)
@@ -526,11 +575,21 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                         override fun afterHookedMethod(param: MethodHookParam) {
                             val view = param.thisObject as? View ?: return
                             if (!isBarOrChild(view)) return
-                            // Always suppress native indicator, regardless of argument type
                             disableNativeActiveIndicator(view)
-                            cancelNativeAnimatorsOnly(view)
                             val isNowSelected = param.args.getOrNull(0) as? Boolean ?: return
                             if (isNowSelected) {
+                                val rank = getTabRank(view)
+                                val tabTitle = when (rank) {
+                                    1 -> "Updates"
+                                    2 -> "Calls"
+                                    3 -> "Communities"
+                                    4 -> "Chats"
+                                    5 -> "Settings"
+                                    else -> null
+                                }
+                                if (tabTitle != null) {
+                                    IosHeader.updateTabFromBottomBar(tabTitle)
+                                }
                                 for ((bar, state) in barStates) {
                                     val items = state.items
                                     val idx = items.indexOf(view)
@@ -538,20 +597,12 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                                         state.checkedViewRef = java.lang.ref.WeakReference(view)
                                         if (idx != state.selectedIndex) {
                                             state.selectedIndex = idx
-                                            view.post { animateToItem(bar, state, items, idx) }
+                                            animateToItem(bar, state, items, idx)
                                         }
                                         break
                                     }
                                 }
                             }
-                        }
-                    })
-                    XposedBridge.hookAllMethods(itemClass, "refreshDrawableState", object : XC_MethodHook() {
-                        override fun afterHookedMethod(param: MethodHookParam) {
-                            val view = param.thisObject as? View ?: return
-                            if (!isBarOrChild(view)) return
-                            disableNativeActiveIndicator(view)
-                            cancelNativeAnimatorsOnly(view)
                         }
                     })
                     XposedBridge.hookAllMethods(itemClass, "getActiveIndicatorDrawable", object : XC_MethodHook() {
@@ -566,7 +617,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             val view = param.thisObject as? View ?: return
                             if (!isBarOrChild(view)) return
                             disableNativeActiveIndicator(view)
-                            cancelNativeAnimatorsOnly(view)
                             param.result = null
                         }
                     })
@@ -1285,6 +1335,21 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
 
         val selected = getTrueSelectedIndex(items, state)
         if (selected < 0) return
+
+        if (selected in items.indices) {
+            val rank = getTabRank(items[selected])
+            val tabTitle = when (rank) {
+                1 -> "Updates"
+                2 -> "Calls"
+                3 -> "Communities"
+                4 -> "Chats"
+                5 -> "Settings"
+                else -> null
+            }
+            if (tabTitle != null) {
+                IosHeader.updateTabFromBottomBar(tabTitle)
+            }
+        }
         
         if (items[selected].width <= 0) return
 
@@ -1368,6 +1433,10 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
 
     /** Disables native Material 3 / WhatsApp active indicator on item. */
     private fun disableNativeActiveIndicator(item: View) {
+        val TAG_DISABLED = 0x7E110099
+        if (item.getTag(TAG_DISABLED) == true) return
+        item.setTag(TAG_DISABLED, true)
+
         try {
             val indView = XposedHelpers.getObjectField(item, "A0P") as? View
             indView?.let { v ->
@@ -1421,8 +1490,167 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         }
     }
 
+    private fun attachAccountSwitcherOnLongClick(item: View) {
+        if (getTabRank(item) != 5) return
+        val longClickListener = View.OnLongClickListener { v ->
+            val act = (v.context as? Activity)
+                ?: ((v.context as? android.content.ContextWrapper)?.baseContext as? Activity)
+                ?: (v.rootView?.context as? Activity)
+                ?: WppCore.getCurrentActivity()
+            if (act != null) {
+                openAccountSwitcher(act)
+                try {
+                    v.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                } catch (_: Throwable) {}
+                true
+            } else {
+                false
+            }
+        }
+        item.setOnLongClickListener(longClickListener)
+    }
+
+    private var lastAccountSwitcherTime = 0L
+
+    private fun setFragmentArgsSafely(fragment: Any, args: android.os.Bundle) {
+        var methodFound = false
+        var c: Class<*>? = fragment.javaClass
+        while (c != null && c != Any::class.java) {
+            for (m in c.declaredMethods) {
+                if (m.parameterTypes.size == 1 && m.parameterTypes[0] == android.os.Bundle::class.java) {
+                    try {
+                        m.isAccessible = true
+                        m.invoke(fragment, args)
+                        methodFound = true
+                        XposedBridge.log("[WaEnhancer] Set args using method ${m.name} on ${c.simpleName}")
+                        break
+                    } catch (_: Throwable) {}
+                }
+            }
+            if (methodFound) break
+            c = c.superclass
+        }
+
+        c = fragment.javaClass
+        while (c != null && c != Any::class.java) {
+            for (f in c.declaredFields) {
+                if (f.type == android.os.Bundle::class.java) {
+                    try {
+                        f.isAccessible = true
+                        f.set(fragment, args)
+                        XposedBridge.log("[WaEnhancer] Set args on field ${f.name} on ${c.simpleName}")
+                    } catch (_: Throwable) {}
+                }
+            }
+            c = c.superclass
+        }
+    }
+
+    private fun showDialogFragmentSafely(activity: Activity, fragment: Any, tag: String): Boolean {
+        // 1. Try activity's native DialogFragment show method (A4P, etc.)
+        var actClass: Class<*>? = activity.javaClass
+        while (actClass != null && actClass != Any::class.java) {
+            for (m in actClass.declaredMethods) {
+                if (m.parameterTypes.size == 2 && m.parameterTypes[1] == String::class.java) {
+                    val param0 = m.parameterTypes[0]
+                    if (param0.isAssignableFrom(fragment.javaClass) || param0.name.contains("DialogFragment") || param0.name.contains("Fragment")) {
+                        try {
+                            m.isAccessible = true
+                            m.invoke(activity, fragment, tag)
+                            XposedBridge.log("[WaEnhancer] Showed dialog via activity method ${m.name} on ${actClass.simpleName}!")
+                            return true
+                        } catch (e: Throwable) {
+                            XposedBridge.log("[WaEnhancer] Activity show method ${m.name} failed: ${e.message}")
+                        }
+                    }
+                }
+            }
+            actClass = actClass.superclass
+        }
+
+        // 2. Try fragment.show(fm, tag)
+        val fm = try {
+            (activity as? androidx.fragment.app.FragmentActivity)?.supportFragmentManager
+                ?: (XposedHelpers.callMethod(activity, "getSupportFragmentManager") as? androidx.fragment.app.FragmentManager)
+        } catch (_: Throwable) { null }
+
+        if (fm != null) {
+            var fragClass: Class<*>? = fragment.javaClass
+            while (fragClass != null && fragClass != Any::class.java) {
+                for (m in fragClass.declaredMethods) {
+                    if (m.parameterTypes.size == 2 && m.parameterTypes[1] == String::class.java) {
+                        try {
+                            m.isAccessible = true
+                            m.invoke(fragment, fm, tag)
+                            XposedBridge.log("[WaEnhancer] Showed dialog via fragment method ${m.name} on ${fragClass.simpleName}!")
+                            return true
+                        } catch (e: Throwable) {
+                            XposedBridge.log("[WaEnhancer] Fragment show method ${m.name} failed: ${e.message}")
+                        }
+                    }
+                }
+                fragClass = fragClass.superclass
+            }
+        }
+        return false
+    }
+
+    private fun openAccountSwitcher(activity: Activity) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastAccountSwitcherTime < 1500L) {
+            return
+        }
+        lastAccountSwitcherTime = now
+
+        activity.runOnUiThread {
+            XposedBridge.log("[WaEnhancer] FloatingBottomBar: openAccountSwitcher called with act=${activity.javaClass.name}")
+            try {
+                val fxClasses = listOf(
+                    "com.whatsapp.accountlinking.fx.FxAccountsCenterActivity",
+                    "com.whatsapp.fx.ui.FxAccountsCenterActivity",
+                    "com.whatsapp.accountlinking.fx.FxLauncher",
+                    "com.whatsapp.settings.ui.SettingsNavigationFragment",
+                    "com.whatsapp.settings.SettingsAccountCenterFragment",
+                    "com.whatsapp.bloks.WaBloksBottomSheet",
+                    "com.whatsapp.wabloks.ui.WaBloksBottomSheet"
+                )
+                for (c in fxClasses) {
+                    val found = runCatching { Class.forName(c, true, activity.classLoader) }.getOrNull()
+                    if (found != null) {
+                        logDebug("[FloatingBottomBar] Found FX class: $c")
+                    }
+                }
+
+                // 3. WhatsApp native AccountSwitchingBottomSheet inspection
+                val clazz = try {
+                    Class.forName("com.whatsapp.accountswitching.ui.AccountSwitchingBottomSheet", true, activity.classLoader)
+                } catch (_: Throwable) { null }
+
+                if (clazz != null) {
+                    for (f in clazz.declaredFields) {
+                        f.isAccessible = true
+                        logDebug("[FloatingBottomBar] AccountSwitchingBottomSheet field: ${f.name} (${f.type.name})")
+                    }
+                    val fragment = clazz.getDeclaredConstructor().newInstance()
+                    val args = android.os.Bundle().apply {
+                        putInt("source", 7)
+                        putString("landing_screen", "home")
+                        putString("switcher_entry_point", "navigation_bar")
+                        putString("account_switcher_entry_point", "wa_account_switcher_multi_account_discoverability_upsell")
+                    }
+                    setFragmentArgsSafely(fragment, args)
+                    showDialogFragmentSafely(activity, fragment, "account_switch_bottom_sheet_fragment")
+                }
+            } catch (e: Throwable) {
+                XposedBridge.log("[WaEnhancer] FloatingBottomBar: openAccountSwitcher uncaught error: ${e.message}")
+                XposedBridge.log(e)
+            }
+        }
+    }
+
     private fun morphAndaToSettings(item: View) {
         if (getTabRank(item) != 5) return
+        attachAccountSwitcherOnLongClick(item)
         try {
             val queue = ArrayDeque<View>()
             queue.add(item)
@@ -1790,19 +2018,19 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         val additionalMargin = getFabAdditionalMargin()
         findAndPositionAllFabs(rootView, additionalMargin)
 
-        // One-shot: nunggu container beneran punya ukuran (bukan nebak lewat delay 150ms),
-        // lalu posisikan ulang & lepas listener-nya sendiri.
-        container.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
-            override fun onLayoutChange(
-                v: View, left: Int, top: Int, right: Int, bottom: Int,
-                oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int
-            ) {
-                if (bottom - top > 0) {
-                    findAndPositionAllFabs(rootView, additionalMargin)
-                    v.removeOnLayoutChangeListener(this)
+        if (container.height <= 0) {
+            container.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
+                override fun onLayoutChange(
+                    v: View, left: Int, top: Int, right: Int, bottom: Int,
+                    oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int
+                ) {
+                    if (bottom - top > 0) {
+                        findAndPositionAllFabs(rootView, additionalMargin)
+                        v.removeOnLayoutChangeListener(this)
+                    }
                 }
-            }
-        })
+            })
+        }
     }
 
     private fun positionFabAboveCurrentBar(fab: View, bottomNavId: Int) {

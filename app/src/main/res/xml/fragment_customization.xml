@@ -147,6 +147,11 @@
             app:key="floatingmenu"
             app:title="@string/new_context_menu_ui" />
 
+        <rikka.material.preference.MaterialSwitchPreference
+            app:key="ios_text_entry"
+            app:summary="Enables iOS-style pill chat text input and attachment buttons"
+            app:title="iOS Text Entry Bar" />
+
 
         <rikka.material.preference.MaterialSwitchPreference
             android:defaultValue="true"

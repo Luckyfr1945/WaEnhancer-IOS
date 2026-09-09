@@ -22,7 +22,7 @@ class MediaQuality(loader: ClassLoader, preferences: SharedPreferences) :
     override fun doHook() {
         val videoQuality = prefs.getBoolean("videoquality", false)
         val imageQuality = prefs.getBoolean("imagequality", false)
-        val maxSize = kotlin.math.max(prefs.getFloat("video_limit_size", 60f).toInt(), 90)
+        val maxSize = prefs.getFloat("video_limit_size", 60f).toInt().coerceIn(30, 120)
 
         // Disable manual calculation ProcessMediaQuality
         Others.propsBoolean[14447] = false

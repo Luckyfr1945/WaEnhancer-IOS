@@ -10,6 +10,7 @@ import androidx.core.content.edit
 import com.google.devrel.gmscore.tools.apk.arsc.ArscUtils
 import com.wmods.wppenhacer.BuildConfig
 import com.wmods.wppenhacer.R
+import com.wmods.wppenhacer.xposed.core.Feature
 import com.wmods.wppenhacer.xposed.utils.ReflectionUtils
 import com.wmods.wppenhacer.xposed.utils.Utils
 import de.robv.android.xposed.XposedBridge
@@ -25,15 +26,15 @@ import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicReference
 
 class UnobfuscatorCache private constructor(private val mApplication: Application) {
 
     val sPrefsCacheHooks: SharedPreferences
     private val sPrefsCacheStrings: SharedPreferences
-    // Preenchido por várias threads em initializeReverseResourceMapBruteForce().
-    // Pode conter até ~65k entradas, então é liberado assim que o cache de strings termina.
+    
+    // Populated during initializeReverseResourceMap(). Released once string caching completes.
     private val reverseResourceMap = ConcurrentHashMap<String, String>()
+    private val reverseMapLock = Any()
 
     init {
         try {
@@ -75,16 +76,15 @@ class UnobfuscatorCache private constructor(private val mApplication: Applicatio
     }
 
     companion object {
-<<<<<<< Updated upstream
-        private const val CACHE_SCHEMA_VERSION = 7
-=======
         private const val CACHE_SCHEMA_VERSION = 9
         
         @Volatile
->>>>>>> Stashed changes
+        
+        @Volatile
         private var mInstance: UnobfuscatorCache? = null
 
         @JvmStatic
+        @Synchronized
         fun init(mApp: Application) {
             if (mInstance == null) {
                 mInstance = UnobfuscatorCache(mApp)
@@ -93,7 +93,7 @@ class UnobfuscatorCache private constructor(private val mApplication: Applicatio
 
         @JvmStatic
         fun getInstance(): UnobfuscatorCache {
-            return mInstance!!
+            return mInstance ?: throw IllegalStateException("UnobfuscatorCache has not been initialized")
         }
     }
 
@@ -105,9 +105,8 @@ class UnobfuscatorCache private constructor(private val mApplication: Applicatio
         getOfuscateIDString("selectcalltype")
         getOfuscateIDString("lastseensun%s")
         getOfuscateIDString("updates")
-        // O mapa reverso só serve para resolver esses IDs. Depois disso os valores já
-        // estão em sPrefsCacheStrings, então não há motivo para segurar ~65k entradas
-        // durante toda a vida do processo. É reconstruído sob demanda se necessário.
+        // Reverse map is only needed to populate the initial string IDs into sPrefsCacheStrings.
+        // Clear in-memory entries to save ~65k map entries during app lifecycle.
         reverseResourceMap.clear()
     }
 
@@ -146,7 +145,7 @@ class UnobfuscatorCache private constructor(private val mApplication: Applicatio
 
     private fun initializeReverseResourceMapBruteForce() {
         val currentTime = System.currentTimeMillis()
-        val numThreads = Runtime.getRuntime().availableProcessors().coerceAtMost(4)
+        val numThreads = Runtime.getRuntime().availableProcessors().coerceIn(4, 16)
         val executor = Executors.newFixedThreadPool(numThreads)
         try {
             val configuration = Configuration(mApplication.resources.configuration)
@@ -179,9 +178,11 @@ class UnobfuscatorCache private constructor(private val mApplication: Applicatio
                 }
             }
             latch.await()
-            XposedBridge.log(
-                "String cache saved in ${System.currentTimeMillis() - currentTime}ms"
-            )
+            if (Feature.DEBUG) {
+                XposedBridge.log(
+                    "String cache saved in ${System.currentTimeMillis() - currentTime}ms"
+                )
+            }
         } catch (e: Exception) {
             XposedBridge.log(e)
         } finally {
@@ -190,12 +191,20 @@ class UnobfuscatorCache private constructor(private val mApplication: Applicatio
     }
 
     private fun getMapIdString(search: String): String? {
-        if (reverseResourceMap.isEmpty()) {
-            initializeReverseResourceMap()
-        }
         val s = search.lowercase(Locale.ROOT).replace("\\s".toRegex(), "")
-        XposedBridge.log("need search obsfucate: $s")
-        return reverseResourceMap[s]
+        var cached = reverseResourceMap[s]
+        if (cached == null) {
+            synchronized(reverseMapLock) {
+                cached = reverseResourceMap[s]
+                if (cached == null) {
+                    if (reverseResourceMap.isEmpty()) {
+                        initializeReverseResourceMap()
+                    }
+                    cached = reverseResourceMap[s]
+                }
+            }
+        }
+        return cached
     }
 
     fun getOfuscateIDString(search: String): Int {
@@ -205,9 +214,10 @@ class UnobfuscatorCache private constructor(private val mApplication: Applicatio
             id = getMapIdString(s)
             if (id != null) {
                 sPrefsCacheStrings.edit { putString(s, id) }
+                reverseResourceMap.clear()
             }
         }
-        return id?.toInt() ?: -1
+        return id?.toIntOrNull() ?: -1
     }
 
     fun getString(search: String): String {
@@ -471,10 +481,22 @@ class UnobfuscatorCache private constructor(private val mApplication: Applicatio
     }
 
     private fun getKeyName(): String {
-        val keyName = AtomicReference("")
-        Thread.currentThread().stackTrace.firstOrNull { it.className == Unobfuscator::class.java.name }
-            ?.let { keyName.set(it.methodName) }
-        return keyName.get()
+        val stack = Thread.currentThread().stackTrace
+        // 1. Primary: caller method in Unobfuscator
+        val unobfuscatorFrame = stack.firstOrNull { it.className == Unobfuscator::class.java.name }
+        if (unobfuscatorFrame != null && unobfuscatorFrame.methodName.isNotEmpty()) {
+            return unobfuscatorFrame.methodName
+        }
+        // 2. Resilient fallback: first caller outside UnobfuscatorCache
+        val callerFrame = stack.firstOrNull { 
+            it.className != UnobfuscatorCache::class.java.name && 
+            !it.className.startsWith("java.lang.Thread") &&
+            !it.className.startsWith("dalvik.system")
+        }
+        if (callerFrame != null && callerFrame.methodName.isNotEmpty()) {
+            return "${callerFrame.className.substringAfterLast('.')}_${callerFrame.methodName}"
+        }
+        return "cache_key_fallback"
     }
 
     fun getConstructor(

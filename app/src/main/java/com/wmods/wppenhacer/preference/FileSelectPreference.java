@@ -144,6 +144,7 @@ public class FileSelectPreference extends Preference implements Preference.OnPre
     }
 
     public void init(Context context, AttributeSet attrs) {
+        setWidgetLayoutResource(R.layout.preference_widget_chevron);
         setOnPreferenceClickListener(this);
         var typedArray = context.getTheme().obtainStyledAttributes(
                 attrs, R.styleable.FileSelectPreference,

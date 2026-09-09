@@ -208,6 +208,11 @@ public class ThemePreference extends Preference implements FilePicker.OnUriPicke
                     }
                     if (entryName.endsWith("/")) continue;
                     var file = new File(rootDirectory, targetPath);
+                    String canonicalDestPath = file.getCanonicalPath();
+                    String canonicalRootPath = rootDirectory.getCanonicalPath();
+                    if (!canonicalDestPath.startsWith(canonicalRootPath + File.separator) && !canonicalDestPath.equals(canonicalRootPath)) {
+                        continue;
+                    }
                     Files.copy(zipInputStream, file.toPath(), StandardCopyOption.REPLACE_EXISTING);
                 }
                 ((Activity) getContext()).runOnUiThread(() -> {

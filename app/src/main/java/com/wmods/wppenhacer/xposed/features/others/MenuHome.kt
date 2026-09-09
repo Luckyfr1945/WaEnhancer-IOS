@@ -40,8 +40,7 @@ class MenuHome(classLoader: ClassLoader, preferences:SharedPreferences) :
     override fun doHook() {
         hookMenu()
         val iosHeader = prefs.getBoolean("ios_header", false)
-        if (iosHeader) return
-        val action = prefs.getBoolean("buttonaction", true)
+        val action = if (iosHeader) false else prefs.getBoolean("buttonaction", true)
 
         // restart button
         addMenuItem { menu, activity ->

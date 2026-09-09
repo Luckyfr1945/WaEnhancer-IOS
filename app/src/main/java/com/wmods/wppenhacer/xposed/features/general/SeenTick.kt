@@ -460,14 +460,24 @@ class SeenTick(
             override fun afterHookedMethod(param: MethodHookParam) {
                 if (!Utils.isBlueOnReplyEnabled(prefs)) return
 
+                val obj = param.thisObject ?: return
+
+                // Guard 1: Only trigger for actual outgoing message jobs (SendE2EMessageJob)
+                if (messageSendClass != null && !messageSendClass.isInstance(obj)) return
+
+                // Guard 2: Prevent feedback loop from self-dispatched receipt jobs
+                val isSelfDispatched = try {
+                    XposedHelpers.getAdditionalInstanceField(obj, "blue_on_reply") as? Boolean ?: false
+                } catch (_: Throwable) { false }
+                if (isSelfDispatched) return
+
                 scope.launch(Dispatchers.IO) {
                     runCatching {
                         // Jangan cast langsung — bisa ClassCastException silent kalau obfuscated class berubah
-                        val obj = param.thisObject ?: return@launch
                         val userJid = runCatching { FMessageWpp.UserJid.extractFrom(obj) }.getOrNull()
                             ?: WppCore.getCurrentUserJid() ?: return@launch
 
-                        logDebug("[SeenTick] hookOnSendMessages triggered, userJid=$userJid")
+                        logDebug("[SeenTick] hookOnSendMessages triggered for outgoing message, userJid=$userJid")
 
                         if (userJid.isStatus) {
                             val listStatus = MenuStatusListener.statusData.getCurrentItemList()
@@ -558,21 +568,29 @@ class SeenTick(
                 message.fMessage?.let { messages.add(it) }
             }
 
-            // Also check active conversation items if database has no records
+            // Also check active conversation items if database has no records.
+            // Use exact-match on normalized JIDs (strip @domain and :device-id suffixes)
+            // to avoid false positives from substring matching phone numbers that share
+            // common prefixes/suffixes (country codes, operator prefixes, etc.).
             if (messages.isEmpty() && (hiddenMessages == null || hiddenMessages.isEmpty())) {
-                val jidPhone = userJid.phoneNumber ?: ""
+                // Build a set of all normalized forms of the target JID for O(1) lookup
+                val targetNormalized = buildSet<String> {
+                    normalizeJid(primaryJid)?.let { add(it) }
+                    normalizeJid(userRaw)?.let { add(it) }
+                    fullUserRaw?.let { normalizeJid(it)?.let { n -> add(n) } }
+                    userJid.phoneNumber?.let { normalizeJid(it)?.let { n -> add(n) } }
+                }
+
                 val activeItems = com.wmods.wppenhacer.xposed.features.listeners.ConversationItemListener.listItems.values
                     .map { it.message }
                     .filter { m ->
                         if (m.key.isFromMe || m.key.remoteJid.isNull) return@filter false
                         val mJid = m.key.remoteJid
-                        val mPhone = mJid.phoneRawString ?: mJid.userRawString ?: ""
-                        mPhone.isNotBlank() && (
-                            mPhone == primaryJid ||
-                            mPhone == userRaw ||
-                            (jidPhone.isNotBlank() && mPhone.contains(jidPhone)) ||
-                            (mPhone.isNotBlank() && primaryJid.contains(mPhone.substringBefore("@")))
-                        )
+                        val mRaw = mJid.phoneRawString ?: mJid.userRawString ?: ""
+                        if (mRaw.isBlank()) return@filter false
+                        // Only exact match after normalization — no substring/contains
+                        val mNorm = normalizeJid(mRaw) ?: return@filter false
+                        mNorm in targetNormalized
                     }
                     .distinctBy { it.key.messageID }
 
@@ -782,7 +800,10 @@ class SeenTick(
 
                 val sendJob2 = constr.newInstance(*args)
                 XposedHelpers.setAdditionalInstanceField(sendJob2, "blue_on_reply", true)
-                waJobManagerMethod?.invoke(mWaJobManager, sendJob2)
+                val jobMgr = getJobManager()
+                if (jobMgr != null) {
+                    waJobManagerMethod?.invoke(jobMgr, sendJob2)
+                }
             } catch (e: Exception) {
                 logDebug(e)
             }
@@ -809,11 +830,32 @@ class SeenTick(
                 )
                 val sendJob = XposedHelpers.newInstance(sPlayedClass, participantInfo, false)
 
-                waJobManagerMethod?.invoke(mWaJobManager, sendJob)
+                val jobMgr = getJobManager()
+                if (jobMgr != null) {
+                    waJobManagerMethod?.invoke(jobMgr, sendJob)
+                }
             } catch (e: Throwable) {
                 logDebug(e)
             }
         }
+    }
+
+    /**
+     * Normalize a raw JID string to a bare phone/lid string for exact comparison.
+     *
+     * Strips:
+     *   - "@s.whatsapp.net", "@c.us", "@g.us", "@lid", "@broadcast", etc.
+     *   - Device-id suffix ":xx" that appears before "@" (e.g. "6281234:0@lid" → "6281234")
+     *
+     * Returns null if the result would be blank (invalid JID).
+     */
+    private fun normalizeJid(raw: String): String? {
+        if (raw.isBlank()) return null
+        // Strip @domain first
+        val withoutDomain = raw.substringBefore("@").trim()
+        // Strip device-id ":digit(s)" suffix (LID format)
+        val withoutDevice = withoutDomain.substringBefore(":")
+        return withoutDevice.ifBlank { null }
     }
 
     override fun getPluginName(): String {

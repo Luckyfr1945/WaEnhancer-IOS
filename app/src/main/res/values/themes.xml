@@ -1,20 +1,22 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
 
     <style name="Base.AppTheme.Light" parent="Theme.Material3.DynamicColors.Light.Rikka">
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="colorPrimaryVariant">@color/primary_dark_light_light_status_bar</item>
-        <item name="android:statusBarColor">?colorPrimary</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">@color/background_color</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightNavigationBar">true</item>
         <item name="android:textAppearanceListItem">?textAppearanceSubtitle1</item>
-        <item name="android:colorAccent">?colorPrimary</item>
-        <item name="android:colorControlActivated">?colorPrimary</item>
-        <item name="android:windowActivityTransitions">true</item>
-        <item name="android:windowEnterTransition">@android:transition/fade</item>
-        <item name="android:windowExitTransition">@android:transition/fade</item>
+        <item name="android:colorAccent">@color/whatsapp_green</item>
+        <item name="android:colorControlActivated">@color/whatsapp_green</item>
+        <item name="android:listDivider">@android:color/transparent</item>
+        <item name="android:divider">@android:color/transparent</item>
+        <item name="android:dividerHeight">0dp</item>
         <item name="toolbarStyle">@style/ModernToolbarStyle</item>
+        <item name="materialSwitchStyle">@style/ModernSwitchStyle</item>
+        <item name="switchStyle">@style/ModernSwitchStyle</item>
+        <item name="preferenceCategoryStyle">@style/ModernPreferenceCategoryStyle</item>
     </style>
 
     <style name="Theme.Light" parent="Base.AppTheme.Light" />
@@ -22,15 +24,37 @@
     <style name="Base.AppTheme" parent="Theme.Material3.DynamicColors.Dark.Rikka">
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
+        <item name="android:windowLightStatusBar">false</item>
         <item name="android:textAppearanceListItem">?textAppearanceSubtitle1</item>
-        <item name="android:colorAccent">?colorPrimary</item>
-        <item name="android:colorControlActivated">?colorPrimary</item>
-        <item name="android:statusBarColor">?colorPrimaryContainer</item>
+        <item name="android:colorAccent">@color/whatsapp_green</item>
+        <item name="android:colorControlActivated">@color/whatsapp_green</item>
+        <item name="android:statusBarColor">@color/background_color</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowActivityTransitions">true</item>
-        <item name="android:windowEnterTransition">@android:transition/fade</item>
-        <item name="android:windowExitTransition">@android:transition/fade</item>
+        <item name="android:listDivider">@android:color/transparent</item>
+        <item name="android:divider">@android:color/transparent</item>
+        <item name="android:dividerHeight">0dp</item>
         <item name="toolbarStyle">@style/ModernToolbarStyle</item>
+        <item name="materialSwitchStyle">@style/ModernSwitchStyle</item>
+        <item name="switchStyle">@style/ModernSwitchStyle</item>
+        <item name="preferenceCategoryStyle">@style/ModernPreferenceCategoryStyle</item>
+    </style>
+
+    <style name="ModernPreferenceCategoryStyle" parent="@style/Preference.Category">
+        <item name="android:layout_marginTop">0dp</item>
+        <item name="android:layout_marginBottom">0dp</item>
+        <item name="android:paddingTop">2dp</item>
+        <item name="android:paddingBottom">2dp</item>
+        <item name="android:paddingStart">4dp</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:background">@null</item>
+        <item name="allowDividerAbove">false</item>
+        <item name="allowDividerBelow">false</item>
+    </style>
+
+    <style name="ModernSwitchStyle" parent="Widget.Material3.CompoundButton.MaterialSwitch">
+        <item name="thumbTint">@color/switch_thumb_tint</item>
+        <item name="trackTint">@color/switch_track_tint</item>
+        <item name="trackDecorationTint">@android:color/transparent</item>
     </style>
 
     <style name="MyActionBar" parent="@style/Widget.Material3.ActionBar.Solid">

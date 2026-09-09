@@ -50,8 +50,8 @@ android {
         minSdk = 28
         //noinspection OldTargetApi
         targetSdk = 34
-        versionCode = 157
-        versionName = "1.5.7 ($gitHash)"
+        versionCode = 159
+        versionName = "1.5.9 ($gitHash)"
         multiDexEnabled = true
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

@@ -50,6 +50,8 @@ class StatusLongPressPreview(loader: ClassLoader, prefs: SharedPreferences) : Fe
         @Volatile
         private var lastLongPressedCardRef: WeakReference<View>? = null
         @Volatile
+        private var lastLongPressedTimestamp: Long = 0L
+        @Volatile
         private var isShowingCustomPreview = false
     }
 
@@ -83,9 +85,9 @@ class StatusLongPressPreview(loader: ClassLoader, prefs: SharedPreferences) : Fe
                                 val isMy = isMyStatusItem(leaf)
                                 val rootCard = findRootStatusCard(leaf)
                                 val isStatusDim = isStatusCardDimensions(rootCard)
-                                logDebug("StatusLongPressPreview: [Activity DOWN] leaf=${leaf.javaClass.simpleName}, isMy=$isMy, rootCard=${rootCard.javaClass.simpleName}(${rootCard.width}x${rootCard.height}), isStatusDim=$isStatusDim")
                                 if (isStatusDim && !isMy) {
                                     lastLongPressedCardRef = WeakReference(rootCard)
+                                    lastLongPressedTimestamp = System.currentTimeMillis()
                                     logDebug("StatusLongPressPreview: [Activity] Captured valid card ${rootCard.javaClass.simpleName} size=${rootCard.width}x${rootCard.height}")
                                 }
                             }
@@ -112,10 +114,10 @@ class StatusLongPressPreview(loader: ClassLoader, prefs: SharedPreferences) : Fe
                         val isMy = isMyStatusItem(v)
                         val rootCard = findRootStatusCard(v)
                         val isStatusDim = isStatusCardDimensions(rootCard)
-                        logDebug("StatusLongPressPreview: performLongClick fired on ${v.javaClass.simpleName}, isMy=$isMy, rootCard=${rootCard.javaClass.simpleName}(${rootCard.width}x${rootCard.height}), isStatusDim=$isStatusDim")
 
                         if (!isMy && isStatusDim) {
                             lastLongPressedCardRef = WeakReference(rootCard)
+                            lastLongPressedTimestamp = System.currentTimeMillis()
                             logDebug("StatusLongPressPreview: performLongClick saved rootCard=${rootCard.javaClass.simpleName} size=${rootCard.width}x${rootCard.height}")
                         }
                     }
@@ -138,9 +140,11 @@ class StatusLongPressPreview(loader: ClassLoader, prefs: SharedPreferences) : Fe
                         val window = dialog.window ?: return
                         val decor = window.decorView
 
-                        // Sembunyikan window dialog secara SINKRON SEBELUM frame pertama dirender oleh Android
+                        // Sembunyikan window dialog secara SINKRON HANYA JIKA touch terjadi dalam 1000ms terakhir
                         val capturedCard = lastLongPressedCardRef?.get()
-                        val isRecentStatusCardTouch = capturedCard != null && isStatusCardDimensions(capturedCard)
+                        val isRecentStatusCardTouch = capturedCard != null && 
+                            isStatusCardDimensions(capturedCard) && 
+                            (System.currentTimeMillis() - lastLongPressedTimestamp < 1000L)
 
                         if (isRecentStatusCardTouch) {
                             window.setDimAmount(0f)
@@ -155,6 +159,9 @@ class StatusLongPressPreview(loader: ClassLoader, prefs: SharedPreferences) : Fe
                                 logDebug("StatusLongPressPreview: Dialog.show class=${dialog.javaClass.name} fullText='$fullText'")
 
                                 if (isMuteStatusDialog(fullText)) {
+                                    lastLongPressedCardRef = null
+                                    lastLongPressedTimestamp = 0L
+
                                     val activity = WppCore.getCurrentActivity() ?: dialog.context as? Activity ?: return@post
                                     val contactName = extractContactNameFromDialog(fullText)
                                     logDebug("StatusLongPressPreview: Successfully detected Mute Dialog for contact='$contactName'")
@@ -190,15 +197,16 @@ class StatusLongPressPreview(loader: ClassLoader, prefs: SharedPreferences) : Fe
                                         }
                                     )
                                 } else {
-                                    // Jika ternyata bukan dialog mute status, kembalikan visibilitasnya
-                                    if (isRecentStatusCardTouch) {
-                                        decor.visibility = View.VISIBLE
-                                        decor.alpha = 1f
-                                        window.setDimAmount(0.6f)
-                                    }
+                                    // BUKAN dialog mute status WhatsApp -> pulihkan visibilitas dialog asli
+                                    decor.visibility = View.VISIBLE
+                                    decor.alpha = 1f
+                                    window.setDimAmount(0.6f)
                                 }
                             } catch (e: Throwable) {
                                 logDebug("StatusLongPressPreview: Dialog intercept error: ${e.message}")
+                                decor.visibility = View.VISIBLE
+                                decor.alpha = 1f
+                                window.setDimAmount(0.6f)
                             }
                         }
                     }

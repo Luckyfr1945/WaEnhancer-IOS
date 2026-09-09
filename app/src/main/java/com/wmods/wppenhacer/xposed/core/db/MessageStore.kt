@@ -33,11 +33,21 @@ class MessageStore private constructor() {
             )
             for (file in candidateFiles) {
                 if (file.exists() && file.canRead()) {
-                    sqLiteDatabase = SQLiteDatabase.openDatabase(
-                        file.absolutePath,
-                        null,
-                        SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.NO_LOCALIZED_COLLATORS
-                    )
+                    sqLiteDatabase = try {
+                        SQLiteDatabase.openDatabase(
+                            file.absolutePath,
+                            null,
+                            SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.NO_LOCALIZED_COLLATORS
+                        )
+                    } catch (_: Throwable) {
+                        try {
+                            SQLiteDatabase.openDatabase(
+                                file.absolutePath,
+                                null,
+                                SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.NO_LOCALIZED_COLLATORS
+                            )
+                        } catch (_: Throwable) { null }
+                    }
                     if (sqLiteDatabase?.isOpen == true) {
                         break
                     }
@@ -178,12 +188,11 @@ class MessageStore private constructor() {
     fun getOriginalMessageKey(id: Long): String {
         val db = getDatabase() ?: return ""
         var message = ""
-        val sql =
-            "SELECT parent_message_row_id, key_id FROM message_add_on WHERE parent_message_row_id=\"$id\""
+        val sql = "SELECT parent_message_row_id, key_id FROM message_add_on WHERE parent_message_row_id=?"
         try {
-            db.rawQuery(sql, null).use { cursor ->
+            db.rawQuery(sql, arrayOf(id.toString())).use { cursor ->
                 if (cursor.moveToFirst()) {
-                    message = cursor.getString(1)
+                    message = cursor.getString(1) ?: ""
                 }
             }
         } catch (e: Exception) {
@@ -193,22 +202,22 @@ class MessageStore private constructor() {
     }
 
     fun getAudioListByMessageList(messageList: List<String>?): List<String> {
-        val db = sqLiteDatabase
+        val db = getDatabase()
         if (db == null || messageList.isNullOrEmpty()) {
             return ArrayList()
         }
 
         val list = ArrayList<String>()
         val placeholders = messageList.stream().map { "?" }.collect(Collectors.joining(","))
-        val sql = "SELECT message_type FROM message WHERE key_id IN ($placeholders)"
+        val sql = "SELECT key_id, message_type FROM message WHERE key_id IN ($placeholders)"
         try {
             db.rawQuery(sql, messageList.toTypedArray()).use { cursor ->
-                if (cursor.moveToFirst()) {
-                    do {
-                        if (cursor.getInt(0) == 2) {
-                            list.add(cursor.getString(0))
-                        }
-                    } while (cursor.moveToNext())
+                while (cursor.moveToNext()) {
+                    val keyId = cursor.getString(0)
+                    val messageType = cursor.getInt(1)
+                    if (messageType == 2 && !keyId.isNullOrEmpty()) {
+                        list.add(keyId)
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -220,18 +229,20 @@ class MessageStore private constructor() {
 
     @Synchronized
     fun executeSQL(sql: String) {
+        val db = getDatabase() ?: return
         try {
-            sqLiteDatabase?.execSQL(sql)
+            db.execSQL(sql)
         } catch (e: Exception) {
             XposedBridge.log(e)
         }
     }
 
+    @Synchronized
     fun storeMessageRead(messageId: String) {
-        val db = sqLiteDatabase ?: return
+        val db = getDatabase() ?: return
         XposedBridge.log("storeMessageRead: $messageId")
         try {
-            db.execSQL("UPDATE message SET status = 1 WHERE key_id = \"$messageId\"")
+            db.execSQL("UPDATE message SET status = 1 WHERE key_id = ?", arrayOf(messageId))
         } catch (e: Exception) {
             XposedBridge.log(e)
         }
@@ -258,6 +269,7 @@ class MessageStore private constructor() {
         return result
     }
 
+    @Synchronized
     fun getDatabase(): SQLiteDatabase? {
         if (sqLiteDatabase == null || sqLiteDatabase?.isOpen != true) {
             openDb()
@@ -345,7 +357,7 @@ class MessageStore private constructor() {
 
     @Synchronized
     fun deleteStatusByMessageKey(messageKey: String?): Boolean {
-        val db = sqLiteDatabase
+        val db = getDatabase()
         if (db == null || messageKey.isNullOrEmpty()) {
             return false
         }
@@ -356,8 +368,8 @@ class MessageStore private constructor() {
         var mediaFilePath: String? = null
         var deleted = false
 
-        db.transaction {
-            try {
+        try {
+            db.transaction {
                 try {
                     rawQuery(
                         "SELECT _id, sender_jid_row_id, chat_row_id " +
@@ -377,7 +389,7 @@ class MessageStore private constructor() {
                 }
 
                 if (messageRowId == null || senderJidRowId == null || chatRowId == null) {
-                    return false
+                    return@transaction
                 }
 
                 try {
@@ -393,17 +405,17 @@ class MessageStore private constructor() {
                     XposedBridge.log(e)
                 }
 
-                deleted = delete("message", "_id=?", arrayOf(messageRowId.toString())) > 0
-                if (!deleted) {
-                    return false
+                val rowDeleted = delete("message", "_id=?", arrayOf(messageRowId.toString())) > 0
+                if (!rowDeleted) {
+                    return@transaction
                 }
 
                 refreshStatusRow(senderJidRowId!!, chatRowId!!)
-            } catch (e: Exception) {
-                XposedBridge.log(e)
-                deleted = false
-            } finally {
+                deleted = true
             }
+        } catch (e: Exception) {
+            XposedBridge.log(e)
+            deleted = false
         }
 
         if (deleted) {
@@ -414,7 +426,7 @@ class MessageStore private constructor() {
     }
 
     private fun refreshStatusRow(senderJidRowId: Long, chatRowId: Long) {
-        val db = sqLiteDatabase ?: return
+        val db = getDatabase() ?: return
         var latestMessageId: Long = -1
         var latestTimestamp: Long = 0
         var totalCount = 0

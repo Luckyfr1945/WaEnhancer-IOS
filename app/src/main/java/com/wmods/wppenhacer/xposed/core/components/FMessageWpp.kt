@@ -308,12 +308,24 @@ class FMessageWpp(fMessage: Any?) {
 
             fun extractIsFromMe(key: Any?): Boolean {
                 if (key == null) return false
-                return try {
-                    XposedHelpers.getBooleanField(key, "A02")
-                } catch (_: Throwable) {
-                    resolveKeyFields(key.javaClass)
-                    fromMeField?.getBoolean(key) ?: false
+                val str = runCatching { key.toString() }.getOrNull()
+                if (str != null) {
+                    if (str.contains("from_me=true", ignoreCase = true) ||
+                        str.contains("fromMe=true", ignoreCase = true) ||
+                        str.contains("isFromMe=true", ignoreCase = true)
+                    ) return true
+                    if (str.contains("from_me=false", ignoreCase = true) ||
+                        str.contains("fromMe=false", ignoreCase = true) ||
+                        str.contains("isFromMe=false", ignoreCase = true)
+                    ) return false
                 }
+                for (fieldName in listOf("A02", "A03", "A01", "fromMe", "from_me", "isFromMe")) {
+                    try {
+                        return XposedHelpers.getBooleanField(key, fieldName)
+                    } catch (_: Throwable) {}
+                }
+                resolveKeyFields(key.javaClass)
+                return fromMeField?.getBoolean(key) ?: false
             }
         }
 
