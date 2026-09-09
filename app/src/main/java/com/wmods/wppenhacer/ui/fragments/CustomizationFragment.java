@@ -23,11 +23,11 @@ public class CustomizationFragment extends BasePreferenceFragment {
         super.onResume();
         setDisplayHomeAsUpEnabled(false);
     }
-    
+
     @Override
     public void onViewCreated(@NonNull android.view.View view, @Nullable android.os.Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-        
+
         // Handle scroll to preference from search
         if (getActivity() != null && getActivity().getIntent() != null) {
             String scrollToKey = getActivity().getIntent().getStringExtra("scroll_to_preference");
@@ -66,7 +66,8 @@ public class CustomizationFragment extends BasePreferenceFragment {
                         editor.apply();
 
                         if (getContext() != null) {
-                            Toast.makeText(getContext(), "iOS Theme Applied! Restarting settings...", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(getContext(), "iOS Theme Applied! Restarting settings...",
+                                    Toast.LENGTH_SHORT).show();
                         }
                         if (getActivity() != null) {
                             getActivity().recreate();

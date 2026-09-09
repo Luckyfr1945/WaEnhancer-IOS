@@ -33,18 +33,19 @@ public class MainActivity extends BaseActivity {
     private ActivityMainBinding binding;
     private BatteryPermissionHelper batteryPermissionHelper = BatteryPermissionHelper.Companion.getInstance();
     private MainPagerAdapter pagerAdapter;
+    private com.wmods.wppenhacer.ui.navigation.LiquidNavManager liquidNavManager;
     private String pendingScrollToPreference = null;
     private int pendingScrollToFragment = -1;
     private String pendingParentKey = null;
     public static android.graphics.Bitmap customWallpaperBitmap = null;
 
-    private final androidx.activity.result.ActivityResultLauncher<String> wallpaperPickerLauncher =
-            registerForActivityResult(new androidx.activity.result.contract.ActivityResultContracts.GetContent(), uri -> {
+    private final androidx.activity.result.ActivityResultLauncher<String> wallpaperPickerLauncher = registerForActivityResult(
+            new androidx.activity.result.contract.ActivityResultContracts.GetContent(), uri -> {
                 if (uri != null) {
                     try {
                         File destFile = new File(getFilesDir(), "custom_app_wallpaper.png");
                         try (java.io.InputStream in = getContentResolver().openInputStream(uri);
-                             java.io.FileOutputStream out = new java.io.FileOutputStream(destFile)) {
+                                java.io.FileOutputStream out = new java.io.FileOutputStream(destFile)) {
                             byte[] buffer = new byte[4096];
                             int bytesRead;
                             while ((bytesRead = in.read(buffer)) != -1) {
@@ -52,10 +53,12 @@ public class MainActivity extends BaseActivity {
                             }
                         }
                         applyCustomWallpaper();
-                        android.widget.Toast.makeText(this, R.string.wallpaper_applied, android.widget.Toast.LENGTH_SHORT).show();
+                        android.widget.Toast
+                                .makeText(this, R.string.wallpaper_applied, android.widget.Toast.LENGTH_SHORT).show();
                     } catch (Exception e) {
                         e.printStackTrace();
-                        android.widget.Toast.makeText(this, "Gagal memuat wallpaper: " + e.getMessage(), android.widget.Toast.LENGTH_SHORT).show();
+                        android.widget.Toast.makeText(this, "Gagal memuat wallpaper: " + e.getMessage(),
+                                android.widget.Toast.LENGTH_SHORT).show();
                     }
                 }
             });
@@ -80,114 +83,24 @@ public class MainActivity extends BaseActivity {
 
         // binding.viewPager.setPageTransformer(new DepthPageTransformer());
 
+        liquidNavManager = new com.wmods.wppenhacer.ui.navigation.LiquidNavManager(
+                binding.liquidNavView,
+                this,
+                (index, itemId) -> {
+                    binding.viewPager.setCurrentItem(index, true);
+                    updateToolbarSubtitleForPage(index);
+                    return kotlin.Unit.INSTANCE;
+                });
         updateNavMenuVisibility();
-
-        binding.navView.setOnItemSelectedListener(new NavigationBarView.OnItemSelectedListener() {
-            @SuppressLint("NonConstantResourceId")
-            @Override
-            public boolean onNavigationItemSelected(@NonNull MenuItem item) {
-                int itemId = item.getItemId();
-                MainPagerAdapter.Mode mode = pagerAdapter != null ? pagerAdapter.getMode() : MainPagerAdapter.Mode.FULL;
-
-                if (mode == MainPagerAdapter.Mode.ROOT_ONLY) {
-                    if (itemId == R.id.navigation_chat) {
-                        binding.viewPager.setCurrentItem(0, true);
-                        return true;
-                    } else if (itemId == R.id.navigation_home) {
-                        binding.viewPager.setCurrentItem(1, true);
-                        return true;
-                    }
-                    return false;
-                } else if (mode == MainPagerAdapter.Mode.HOME_ONLY) {
-                    if (itemId == R.id.navigation_home) {
-                        binding.viewPager.setCurrentItem(0, true);
-                        return true;
-                    }
-                    return false;
-                }
-
-                if (itemId == R.id.navigation_chat) {
-                    binding.viewPager.setCurrentItem(0, true);
-                    return true;
-                } else if (itemId == R.id.navigation_privacy) {
-                    binding.viewPager.setCurrentItem(1, true);
-                    return true;
-                } else if (itemId == R.id.navigation_home) {
-                    binding.viewPager.setCurrentItem(2, true);
-                    return true;
-                } else if (itemId == R.id.navigation_media) {
-                    binding.viewPager.setCurrentItem(3, true);
-                    return true;
-                } else if (itemId == R.id.navigation_colors) {
-                    binding.viewPager.setCurrentItem(4, true);
-                    return true;
-                } else if (itemId == R.id.navigation_recordings) {
-                    binding.viewPager.setCurrentItem(5, true);
-                    return true;
-                }
-                return false;
-            }
-        });
 
         binding.viewPager.registerOnPageChangeCallback(new ViewPager2.OnPageChangeCallback() {
             @Override
             public void onPageSelected(int position) {
                 super.onPageSelected(position);
-                for (androidx.fragment.app.Fragment f : getSupportFragmentManager().getFragments()) {
-                    if (f instanceof com.wmods.wppenhacer.ui.fragments.base.BaseFragment) {
-                        ((com.wmods.wppenhacer.ui.fragments.base.BaseFragment) f).setupBackdropBlur();
-                    }
-                    if (f instanceof com.wmods.wppenhacer.ui.fragments.base.BasePreferenceFragment) {
-                        ((com.wmods.wppenhacer.ui.fragments.base.BasePreferenceFragment) f).setupBackdropBlur();
-                    }
+                if (liquidNavManager != null) {
+                    liquidNavManager.setSelectedIndex(position);
                 }
-                MainPagerAdapter.Mode mode = pagerAdapter != null ? pagerAdapter.getMode() : MainPagerAdapter.Mode.FULL;
-
-                int menuId;
-                String subtitle;
-
-                if (mode == MainPagerAdapter.Mode.ROOT_ONLY) {
-                    if (position == 0) {
-                        menuId = R.id.navigation_chat;
-                        subtitle = "Sinkronisasi Stiker";
-                    } else {
-                        menuId = R.id.navigation_home;
-                        subtitle = "Module Control Center";
-                    }
-                } else if (mode == MainPagerAdapter.Mode.HOME_ONLY) {
-                    menuId = R.id.navigation_home;
-                    subtitle = "Module Control Center";
-                } else {
-                    menuId = switch (position) {
-                        case 0 -> R.id.navigation_chat;
-                        case 1 -> R.id.navigation_privacy;
-                        case 2 -> R.id.navigation_home;
-                        case 3 -> R.id.navigation_media;
-                        case 4 -> R.id.navigation_colors;
-                        case 5 -> R.id.navigation_recordings;
-                        default -> R.id.navigation_home;
-                    };
-                    subtitle = switch (position) {
-                        case 0 -> "Setelan & Kustomisasi";
-                        case 1 -> "Pengaturan Privasi";
-                        case 2 -> "Module Control Center";
-                        case 3 -> "Pengaturan Media & Unduhan";
-                        case 4 -> "Kustomisasi Tampilan";
-                        case 5 -> "Perekam Panggilan";
-                        default -> "Module Control Center";
-                    };
-                }
-
-                MenuItem item = binding.navView.getMenu().findItem(menuId);
-                if (item != null) {
-                    item.setChecked(true);
-                }
-                binding.toolbarSubtitle.setText(subtitle);
-
-                androidx.fragment.app.Fragment currentFrag = getSupportFragmentManager().findFragmentByTag("f" + position);
-                if (currentFrag instanceof com.wmods.wppenhacer.ui.fragments.base.BaseFragment) {
-                    ((com.wmods.wppenhacer.ui.fragments.base.BaseFragment) currentFrag).setupBackdropBlur();
-                }
+                updateToolbarSubtitleForPage(position);
 
                 // Handle pending scroll after page change
                 if (pendingScrollToFragment == position && pendingScrollToPreference != null) {
@@ -211,17 +124,6 @@ public class MainActivity extends BaseActivity {
         // Handle incoming navigation from search
         handleIncomingIntent(getIntent());
         applyCustomWallpaper();
-
-        eightbitlab.com.blurview.BlurView blurView = findViewById(R.id.blur_view);
-        if (blurView != null) {
-            android.view.ViewGroup decorView = (android.view.ViewGroup) getWindow().getDecorView();
-            android.graphics.drawable.Drawable windowBackground = decorView.getBackground();
-            blurView.setupWith(decorView)
-                    .setFrameClearDrawable(windowBackground)
-                    .setBlurRadius(10f)
-                    .setOverlayColor(android.graphics.Color.TRANSPARENT)
-                    .setBlurAutoUpdate(true);
-        }
     }
 
     private void createMainDir() {
@@ -384,63 +286,39 @@ public class MainActivity extends BaseActivity {
     }
 
     public void updateNavMenuVisibility() {
-        if (binding == null || binding.navView == null || pagerAdapter == null) return;
+        if (binding == null || liquidNavManager == null || pagerAdapter == null)
+            return;
 
         boolean isLsposed = isXposedEnabled();
-        var menu = binding.navView.getMenu();
+        var prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(this);
+        boolean isRecording = prefs.getBoolean("call_recording_enable", false);
 
         if (isLsposed) {
-            // Case 1: LSPosed is active -> show all navigation tabs
             pagerAdapter.setMode(MainPagerAdapter.Mode.FULL);
-            var prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(this);
-            boolean isRecording = prefs.getBoolean("call_recording_enable", false);
-
-            menu.findItem(R.id.navigation_chat).setVisible(true);
-            menu.findItem(R.id.navigation_privacy).setVisible(true);
-            menu.findItem(R.id.navigation_home).setVisible(true);
-            menu.findItem(R.id.navigation_media).setVisible(true);
-            menu.findItem(R.id.navigation_colors).setVisible(true);
-            menu.findItem(R.id.navigation_recordings).setVisible(isRecording);
+            liquidNavManager.setMode(MainPagerAdapter.Mode.FULL, isRecording);
             binding.viewPager.setUserInputEnabled(true);
-            applyNavViewWidth(isRecording ? 6 : 5);
         } else {
-            // Case 2 & 3: LSPosed not active -> Check Root status asynchronously
             com.wmods.wppenhacer.utils.StickerSyncManager.INSTANCE.isRootAvailable(hasRoot -> {
                 runOnUiThread(() -> {
-                    if (binding == null || binding.navView == null || pagerAdapter == null) return;
-                    var currentMenu = binding.navView.getMenu();
+                    if (binding == null || liquidNavManager == null || pagerAdapter == null)
+                        return;
 
                     if (Boolean.TRUE.equals(hasRoot)) {
-                        // Case 2: Root active, LSPosed inactive -> ONLY 2 pages: [0: Gear (Sticker), 1: Home]
                         pagerAdapter.setMode(MainPagerAdapter.Mode.ROOT_ONLY);
-                        currentMenu.findItem(R.id.navigation_chat).setVisible(true);
-                        currentMenu.findItem(R.id.navigation_privacy).setVisible(false);
-                        currentMenu.findItem(R.id.navigation_home).setVisible(true);
-                        currentMenu.findItem(R.id.navigation_media).setVisible(false);
-                        currentMenu.findItem(R.id.navigation_colors).setVisible(false);
-                        currentMenu.findItem(R.id.navigation_recordings).setVisible(false);
-
-                        // Allow swiping directly between Gear (0) and Home (1) with ZERO intermediate layers!
+                        liquidNavManager.setMode(MainPagerAdapter.Mode.ROOT_ONLY, false);
                         binding.viewPager.setUserInputEnabled(true);
-                        applyNavViewWidth(2);
 
                         int cur = binding.viewPager.getCurrentItem();
                         if (cur != 0 && cur != 1) {
                             binding.viewPager.setCurrentItem(1, false);
+                            liquidNavManager.setSelectedIndex(1);
                         }
                     } else {
-                        // Case 3: No LSPosed, No Root -> ONLY 1 page: [0: Home]
                         pagerAdapter.setMode(MainPagerAdapter.Mode.HOME_ONLY);
-                        currentMenu.findItem(R.id.navigation_chat).setVisible(false);
-                        currentMenu.findItem(R.id.navigation_privacy).setVisible(false);
-                        currentMenu.findItem(R.id.navigation_home).setVisible(true);
-                        currentMenu.findItem(R.id.navigation_media).setVisible(false);
-                        currentMenu.findItem(R.id.navigation_colors).setVisible(false);
-                        currentMenu.findItem(R.id.navigation_recordings).setVisible(false);
-
+                        liquidNavManager.setMode(MainPagerAdapter.Mode.HOME_ONLY, false);
                         binding.viewPager.setCurrentItem(0, false);
+                        liquidNavManager.setSelectedIndex(0);
                         binding.viewPager.setUserInputEnabled(false);
-                        applyNavViewWidth(1);
                     }
                 });
                 return kotlin.Unit.INSTANCE;
@@ -448,33 +326,26 @@ public class MainActivity extends BaseActivity {
         }
     }
 
-    private void applyNavViewWidth(int visibleItemCount) {
-        if (binding == null || binding.navView == null) return;
+    private void updateToolbarSubtitleForPage(int position) {
+        MainPagerAdapter.Mode mode = pagerAdapter != null ? pagerAdapter.getMode() : MainPagerAdapter.Mode.FULL;
+        String subtitle;
 
-        float density = getResources().getDisplayMetrics().density;
-        var lp = (androidx.constraintlayout.widget.ConstraintLayout.LayoutParams) binding.navView.getLayoutParams();
-
-        if (visibleItemCount == 1) {
-            lp.width = (int) (84 * density);
-            lp.leftMargin = 0;
-            lp.rightMargin = 0;
-        } else if (visibleItemCount == 2) {
-            lp.width = (int) (164 * density);
-            lp.leftMargin = 0;
-            lp.rightMargin = 0;
+        if (mode == MainPagerAdapter.Mode.ROOT_ONLY) {
+            subtitle = (position == 0) ? "Sinkronisasi Stiker" : "Module Control Center";
+        } else if (mode == MainPagerAdapter.Mode.HOME_ONLY) {
+            subtitle = "Module Control Center";
         } else {
-            lp.width = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.MATCH_PARENT;
-            lp.leftMargin = (int) (20 * density);
-            lp.rightMargin = (int) (20 * density);
+            subtitle = switch (position) {
+                case 0 -> "Setelan & Kustomisasi";
+                case 1 -> "Pengaturan Privasi";
+                case 2 -> "Module Control Center";
+                case 3 -> "Pengaturan Media & Unduhan";
+                case 4 -> "Kustomisasi Tampilan";
+                case 5 -> "Perekam Panggilan";
+                default -> "Module Control Center";
+            };
         }
-
-        binding.navView.setLayoutParams(lp);
-        binding.navView.requestLayout();
-
-        android.view.View blurView = findViewById(R.id.blur_view);
-        if (blurView != null) {
-            blurView.requestLayout();
-        }
+        binding.toolbarSubtitle.setText(subtitle);
     }
 
     public static boolean isXposedEnabled() {
@@ -482,12 +353,8 @@ public class MainActivity extends BaseActivity {
     }
 
     public void setBottomNavVisibility(int visibility) {
-        if (binding != null && binding.navView != null) {
-            binding.navView.setVisibility(visibility);
-        }
-        android.view.View blurView = findViewById(R.id.blur_view);
-        if (blurView != null) {
-            blurView.setVisibility(visibility);
+        if (liquidNavManager != null) {
+            liquidNavManager.setVisibility(visibility);
         }
     }
 
@@ -498,7 +365,8 @@ public class MainActivity extends BaseActivity {
     }
 
     public void applyCustomWallpaper() {
-        if (binding == null) return;
+        if (binding == null)
+            return;
         File wallpaperFile = new File(getFilesDir(), "custom_app_wallpaper.png");
         if (wallpaperFile.exists() && wallpaperFile.length() > 0) {
             android.graphics.Bitmap bitmap = android.graphics.BitmapFactory.decodeFile(wallpaperFile.getAbsolutePath());
@@ -508,22 +376,22 @@ public class MainActivity extends BaseActivity {
                 binding.mainWallpaper.setVisibility(android.view.View.VISIBLE);
                 binding.mainWallpaperScrim.setVisibility(android.view.View.VISIBLE);
 
+                float blurRadius = androidx.preference.PreferenceManager
+                        .getDefaultSharedPreferences(this)
+                        .getInt("app_blur_radius", 20);
+                blurRadius = Math.max(1f, Math.min(blurRadius, 25f));
+
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                    binding.mainWallpaper.setRenderEffect(null);
+                    binding.mainWallpaper.setRenderEffect(
+                            android.graphics.RenderEffect.createBlurEffect(
+                                    blurRadius * 2.5f, blurRadius * 2.5f, android.graphics.Shader.TileMode.CLAMP
+                            )
+                    );
                 }
 
                 binding.container.setBackgroundColor(android.graphics.Color.TRANSPARENT);
                 binding.appBarLayout.setBackgroundColor(android.graphics.Color.argb(120, 14, 18, 24));
                 binding.toolbar.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-
-                for (androidx.fragment.app.Fragment f : getSupportFragmentManager().getFragments()) {
-                    if (f instanceof com.wmods.wppenhacer.ui.fragments.base.BaseFragment) {
-                        ((com.wmods.wppenhacer.ui.fragments.base.BaseFragment) f).setupBackdropBlur();
-                    }
-                    if (f instanceof com.wmods.wppenhacer.ui.fragments.base.BasePreferenceFragment) {
-                        ((com.wmods.wppenhacer.ui.fragments.base.BasePreferenceFragment) f).setupBackdropBlur();
-                    }
-                }
                 return;
             }
         }
@@ -544,8 +412,8 @@ public class MainActivity extends BaseActivity {
         boolean hasWallpaper = wallpaperFile.exists() && wallpaperFile.length() > 0;
 
         String[] options = hasWallpaper
-                ? new String[]{getString(R.string.wallpaper_choose_gallery), getString(R.string.wallpaper_reset)}
-                : new String[]{getString(R.string.wallpaper_choose_gallery)};
+                ? new String[] { getString(R.string.wallpaper_choose_gallery), getString(R.string.wallpaper_reset) }
+                : new String[] { getString(R.string.wallpaper_choose_gallery) };
 
         new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.wallpaper_dialog_title)
@@ -557,7 +425,8 @@ public class MainActivity extends BaseActivity {
                             wallpaperFile.delete();
                         }
                         applyCustomWallpaper();
-                        android.widget.Toast.makeText(this, R.string.wallpaper_removed, android.widget.Toast.LENGTH_SHORT).show();
+                        android.widget.Toast
+                                .makeText(this, R.string.wallpaper_removed, android.widget.Toast.LENGTH_SHORT).show();
                     }
                 })
                 .show();

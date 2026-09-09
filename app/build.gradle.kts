@@ -229,8 +229,8 @@ dependencies {
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.haze)
     implementation(libs.haze.materials)
+    implementation("io.github.kyant0:backdrop:2.0.0-alpha03")
 }
-
 
 configurations.all {
     exclude("androidx.appcompat", "appcompat")
