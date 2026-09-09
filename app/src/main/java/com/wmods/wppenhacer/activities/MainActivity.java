@@ -36,6 +36,29 @@ public class MainActivity extends BaseActivity {
     private String pendingScrollToPreference = null;
     private int pendingScrollToFragment = -1;
     private String pendingParentKey = null;
+    public static android.graphics.Bitmap customWallpaperBitmap = null;
+
+    private final androidx.activity.result.ActivityResultLauncher<String> wallpaperPickerLauncher =
+            registerForActivityResult(new androidx.activity.result.contract.ActivityResultContracts.GetContent(), uri -> {
+                if (uri != null) {
+                    try {
+                        File destFile = new File(getFilesDir(), "custom_app_wallpaper.png");
+                        try (java.io.InputStream in = getContentResolver().openInputStream(uri);
+                             java.io.FileOutputStream out = new java.io.FileOutputStream(destFile)) {
+                            byte[] buffer = new byte[4096];
+                            int bytesRead;
+                            while ((bytesRead = in.read(buffer)) != -1) {
+                                out.write(buffer, 0, bytesRead);
+                            }
+                        }
+                        applyCustomWallpaper();
+                        android.widget.Toast.makeText(this, R.string.wallpaper_applied, android.widget.Toast.LENGTH_SHORT).show();
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        android.widget.Toast.makeText(this, "Gagal memuat wallpaper: " + e.getMessage(), android.widget.Toast.LENGTH_SHORT).show();
+                    }
+                }
+            });
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -172,6 +195,7 @@ public class MainActivity extends BaseActivity {
 
         // Handle incoming navigation from search
         handleIncomingIntent(getIntent());
+        applyCustomWallpaper();
 
         eightbitlab.com.blurview.BlurView blurView = findViewById(R.id.blur_view);
         if (blurView != null) {
@@ -312,7 +336,10 @@ public class MainActivity extends BaseActivity {
     @SuppressLint("BatteryLife")
     @Override
     public boolean onOptionsItemSelected(@NonNull MenuItem item) {
-        if (item.getItemId() == R.id.menu_search) {
+        if (item.getItemId() == R.id.menu_wallpaper) {
+            showWallpaperOptionsDialog();
+            return true;
+        } else if (item.getItemId() == R.id.menu_search) {
             var options = ActivityOptionsCompat.makeCustomAnimation(
                     this, R.anim.slide_in_right, R.anim.slide_out_left);
             startActivity(new Intent(this, SearchActivity.class), options.toBundle());
@@ -453,6 +480,63 @@ public class MainActivity extends BaseActivity {
     public boolean onSupportNavigateUp() {
         onBackPressed();
         return super.onSupportNavigateUp();
+    }
+
+    public void applyCustomWallpaper() {
+        if (binding == null) return;
+        File wallpaperFile = new File(getFilesDir(), "custom_app_wallpaper.png");
+        if (wallpaperFile.exists() && wallpaperFile.length() > 0) {
+            android.graphics.Bitmap bitmap = android.graphics.BitmapFactory.decodeFile(wallpaperFile.getAbsolutePath());
+            if (bitmap != null) {
+                customWallpaperBitmap = bitmap;
+                binding.mainWallpaper.setImageBitmap(bitmap);
+                binding.mainWallpaper.setVisibility(android.view.View.VISIBLE);
+                binding.mainWallpaperScrim.setVisibility(android.view.View.VISIBLE);
+
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                    binding.mainWallpaper.setRenderEffect(null);
+                }
+
+                binding.container.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+                binding.appBarLayout.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+                binding.toolbar.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+                return;
+            }
+        }
+
+        customWallpaperBitmap = null;
+        binding.mainWallpaper.setVisibility(android.view.View.GONE);
+        binding.mainWallpaperScrim.setVisibility(android.view.View.GONE);
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            binding.mainWallpaper.setRenderEffect(null);
+        }
+        binding.container.setBackgroundResource(R.color.background_color);
+        binding.appBarLayout.setBackgroundResource(R.color.background_color);
+        binding.toolbar.setBackgroundResource(R.color.background_color);
+    }
+
+    private void showWallpaperOptionsDialog() {
+        File wallpaperFile = new File(getFilesDir(), "custom_app_wallpaper.png");
+        boolean hasWallpaper = wallpaperFile.exists() && wallpaperFile.length() > 0;
+
+        String[] options = hasWallpaper
+                ? new String[]{getString(R.string.wallpaper_choose_gallery), getString(R.string.wallpaper_reset)}
+                : new String[]{getString(R.string.wallpaper_choose_gallery)};
+
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.wallpaper_dialog_title)
+                .setItems(options, (dialog, which) -> {
+                    if (which == 0) {
+                        wallpaperPickerLauncher.launch("image/*");
+                    } else if (which == 1) {
+                        if (wallpaperFile.exists()) {
+                            wallpaperFile.delete();
+                        }
+                        applyCustomWallpaper();
+                        android.widget.Toast.makeText(this, R.string.wallpaper_removed, android.widget.Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .show();
     }
 
     private static class DepthPageTransformer implements ViewPager2.PageTransformer {

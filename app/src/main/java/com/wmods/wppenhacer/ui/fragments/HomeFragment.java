@@ -85,61 +85,55 @@ public class HomeFragment extends BaseFragment {
 
     public View onCreateView(@NonNull LayoutInflater inflater,
                              ViewGroup container, Bundle savedInstanceState) {
-        binding = FragmentHomeBinding.inflate(inflater, container, false);
+                String wppVer = "";
+        try {
+            var pInfo = App.instance.getPackageManager().getPackageInfo(FeatureLoader.PACKAGE_WPP, 0);
+            wppVer = pInfo.versionName;
+        } catch (Exception ignored) {}
 
-        checkStateWpp(requireActivity());
-        checkRootStatus();
+        String w4bVer = "";
+        try {
+            var pInfoBiz = App.instance.getPackageManager().getPackageInfo(FeatureLoader.PACKAGE_BUSINESS, 0);
+            w4bVer = pInfoBiz.versionName;
+        } catch (Exception ignored) {}
 
-        binding.rebootBtn.setOnClickListener(view -> {
-            animateClick(view);
-            App.instance.restartApp(FeatureLoader.PACKAGE_WPP);
-            disableWpp(requireActivity());
-        });
+        boolean isModuleActive = false;
+        try {
+            var mainActivity = (com.wmods.wppenhacer.activities.MainActivity) getActivity();
+            if (mainActivity != null) {
+                isModuleActive = mainActivity.isXposedEnabled();
+            }
+        } catch (Exception ignored) {}
 
-        binding.scrollDiagBtn.setOnClickListener(view -> {
-            animateClick(view);
-            binding.nestedScrollView.post(() -> binding.nestedScrollView.smoothScrollTo(0, binding.diagCard.getTop()));
-        });
-
-        binding.rebootBtn2.setOnClickListener(view -> {
-            animateClick(view);
-            App.instance.restartApp(FeatureLoader.PACKAGE_BUSINESS);
-            disableBusiness(requireActivity());
-        });
-
-        binding.exportBtn.setOnClickListener(view -> {
-            animateClick(view);
-            saveConfigs(this.getContext());
-        });
-
-        binding.importBtn.setOnClickListener(view -> {
-            animateClick(view);
-            importConfigs(this.getContext());
-        });
-
-        binding.resetBtn.setOnClickListener(view -> {
-            animateClick(view);
-            resetConfigs(this.getContext());
-        });
-
-        binding.diagBtn.setOnClickListener(view -> {
-            animateClick(view);
-            showDiagnosticsDialog();
-        });
-
-        binding.updateCard.setOnClickListener(view -> {
-            animateClick(view);
-            showChangelogDialog();
-        });
-
-        var prefs = PreferenceManager.getDefaultSharedPreferences(requireContext());
-        if (prefs.getBoolean("update_check", true)) {
-            checkForUpdates();
-        } else {
-            binding.updateCard.setVisibility(View.GONE);
-        }
-
-        return binding.getRoot();
+        return com.wmods.wppenhacer.ui.home.compose.HomeComposeRenderer.createHomeView(
+                requireContext(),
+                isModuleActive,
+                Boolean.TRUE.equals(com.topjohnwu.superuser.Shell.isAppGrantedRoot()),
+                wppVer,
+                w4bVer,
+                android.os.Build.MODEL,
+                android.os.Build.VERSION.SDK_INT,
+                () -> {
+                    App.instance.restartApp(FeatureLoader.PACKAGE_WPP);
+                    disableWpp(requireActivity());
+                },
+                () -> {
+                    App.instance.restartApp(FeatureLoader.PACKAGE_BUSINESS);
+                    disableBusiness(requireActivity());
+                },
+                () -> {
+                    showDiagnosticsDialog();
+                },
+                () -> {
+                    saveConfigs(requireContext());
+                },
+                () -> {
+                    importConfigs(requireContext());
+                },
+                () -> {
+                    resetConfigs(requireContext());
+                }
+        );
     }
 
     private void checkRootStatus() {
@@ -305,6 +299,7 @@ public class HomeFragment extends BaseFragment {
 
     @SuppressLint("StringFormatInvalid")
     private void checkStateWpp(FragmentActivity activity) {
+        if (binding == null) return;
         // Automatically format dynamic version string: e.g. "1.5.7 (EFB7AAB0)" -> "1.5.7 · EFB7AAB0"
         var formattedVersion = BuildConfig.VERSION_NAME.replace(" (", " · ").replace(")", "");
         binding.heroVersionText.setText(formattedVersion);
@@ -389,6 +384,7 @@ public class HomeFragment extends BaseFragment {
     }
 
     private void disableBusiness(FragmentActivity activity) {
+        if (binding == null) return;
         binding.statusIcon3.setImageResource(R.drawable.ic_round_error_outline_24);
         binding.statusTitle3.setText("WhatsApp Business (Nonaktif)");
         binding.statusSummary3.setText(R.string.business_is_not_running_or_has_not_been_activated_in_lsposed);
@@ -396,6 +392,7 @@ public class HomeFragment extends BaseFragment {
     }
 
     private void disableWpp(FragmentActivity activity) {
+        if (binding == null) return;
         binding.statusIcon2.setImageResource(R.drawable.ic_round_error_outline_24);
         binding.statusTitle2.setText("WhatsApp (Nonaktif)");
         binding.statusSummary1.setText(R.string.whatsapp_is_not_running_or_has_not_been_activated_in_lsposed);
@@ -416,7 +413,7 @@ public class HomeFragment extends BaseFragment {
 
     private void checkForUpdates() {
         var context = getContext();
-        if (context == null) return;
+        if (context == null || binding == null) return;
 
         binding.updateSummary.setText(getString(R.string.current_version_s, BuildConfig.VERSION_NAME));
 
@@ -574,7 +571,7 @@ public class HomeFragment extends BaseFragment {
 
     private void showChangelogDialog() {
         var context = getContext();
-        if (context == null) return;
+        if (context == null || binding == null) return;
         var dialogBinding = DialogUpdateAvailableBinding.inflate(LayoutInflater.from(context));
 
         var markwon = Markwon.create(context);

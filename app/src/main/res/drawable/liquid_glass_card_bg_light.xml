@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Liquid Glass Translucent Body -->
+    <!-- Liquid Glass Translucent Body (Light) -->
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="#26000000" />
+            <solid android:color="#20FFFFFF" />
             <corners android:radius="20dp" />
         </shape>
     </item>
@@ -13,7 +13,7 @@
             <solid android:color="@android:color/transparent" />
             <stroke
                 android:width="1.2dp"
-                android:color="#40FFFFFF" />
+                android:color="#55FFFFFF" />
             <corners android:radius="20dp" />
         </shape>
     </item>
