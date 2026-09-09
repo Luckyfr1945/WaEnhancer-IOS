@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -18,63 +17,62 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.wmods.wppenhacer.activities.MainActivity
 
 /**
- * Modifier liquid glass serasi dengan Kustomisasi Tampilan & Remielle Kernel Manager.
- * Memadukan latar belakang kristal kaca gelap bergradasi dengan pantulan specular sheen di bagian atas
- * dan border specular putih mengkilap di keliling kartu.
+ * Modifier liquid glass:
+ * Translucent frosted glass card with specular crystal border and subtle top sheen.
+ * Desain tidak terlalu gelap ("ga terlalu gelap"), membiarkan wallpaper blur di belakang bersinar lembut,
+ * dengan kontras yang tetap nyaman untuk teks putih dan ikon.
  */
 fun Modifier.liquidGlass(
-    shape: Shape = RoundedCornerShape(22.dp),
-    borderAlphaTop: Float = 0.35f,
-    borderAlphaBottom: Float = 0.08f,
-    borderWidth: Dp = 1.2.dp
-): Modifier {
-    val hasWallpaper = MainActivity.customWallpaperBitmap != null
-    val backgroundBrush = if (hasWallpaper) {
-        // Frosted translucent dark glass tint identik dengan CardPreferenceItemDecoration
-        Brush.verticalGradient(
-            colors = listOf(
-                Color(0xD01A1E26), // argb(208, 26, 30, 38)
-                Color(0xA812161C)  // argb(168, 18, 22, 28)
-            )
-        )
-    } else {
-        // Deep OLED Glass tone
-        Brush.verticalGradient(
-            colors = listOf(
-                Color(0xFA181C22),
-                Color(0xFA0E1014)
-            )
-        )
-    }
-
-    return this
-        .clip(shape)
-        .background(backgroundBrush, shape = shape)
-        .background(
-            brush = Brush.verticalGradient(
+    shape: Shape = RoundedCornerShape(24.dp),
+    hasWallpaper: Boolean = true,
+    borderAlphaTop: Float = 0.38f,
+    borderAlphaBottom: Float = 0.12f,
+    borderWidth: Dp = 1.dp
+): Modifier = this
+    .clip(shape)
+    .background(
+        brush = if (hasWallpaper) {
+            // Translucent frosted glass tint (subtle, not dark)
+            Brush.verticalGradient(
                 colors = listOf(
-                    Color.White.copy(alpha = 0.12f),
-                    Color.Transparent
-                ),
-                startY = 0f,
-                endY = 80f
-            ),
-            shape = shape
-        )
-        .border(
-            width = borderWidth,
-            brush = Brush.linearGradient(
-                colors = listOf(
-                    Color.White.copy(alpha = borderAlphaTop),
-                    Color.White.copy(alpha = borderAlphaBottom)
+                    Color(0x4D202632), // ~30% alpha soft slate glass
+                    Color(0x2E141820)  // ~18% alpha translucent glass
                 )
+            )
+        } else {
+            // Deep OLED Glass tone when no wallpaper
+            Brush.verticalGradient(
+                colors = listOf(
+                    Color(0xE6181C22),
+                    Color(0xE60E1014)
+                )
+            )
+        },
+        shape = shape
+    )
+    .background(
+        brush = Brush.verticalGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.14f),
+                Color.Transparent
             ),
-            shape = shape
-        )
-}
+            startY = 0f,
+            endY = 90f
+        ),
+        shape = shape
+    )
+    .border(
+        width = borderWidth,
+        brush = Brush.verticalGradient(
+            colors = listOf(
+                Color.White.copy(alpha = borderAlphaTop),
+                Color.White.copy(alpha = borderAlphaBottom)
+            )
+        ),
+        shape = shape
+    )
 
 /**
  * Kotak Card Liquid Glass yang siap menampung konten di dalamnya.
@@ -82,11 +80,15 @@ fun Modifier.liquidGlass(
 @Composable
 fun LiquidGlassCard(
     modifier: Modifier = Modifier,
-    shape: Shape = RoundedCornerShape(22.dp),
+    shape: Shape = RoundedCornerShape(24.dp),
+    hasWallpaper: Boolean = true,
     content: @Composable BoxScope.() -> Unit
 ) {
     Box(
-        modifier = modifier.liquidGlass(shape = shape),
+        modifier = modifier.liquidGlass(
+            shape = shape,
+            hasWallpaper = hasWallpaper
+        ),
         content = content
     )
 }
@@ -110,7 +112,7 @@ fun GlassIconContainer(
             .size(size)
             .clip(shape)
             .background(containerColor, shape)
-            .border(1.dp, Color.White.copy(alpha = 0.20f), shape),
+            .border(1.dp, Color.White.copy(alpha = 0.18f), shape),
         contentAlignment = Alignment.Center
     ) {
         Icon(

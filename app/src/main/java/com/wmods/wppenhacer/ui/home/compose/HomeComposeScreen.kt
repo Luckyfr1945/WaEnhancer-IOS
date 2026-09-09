@@ -1,6 +1,8 @@
 package com.wmods.wppenhacer.ui.home.compose
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,9 +22,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.wmods.wppenhacer.activities.MainActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -43,6 +49,8 @@ fun HomeComposeScreen(
     onResetConfigs: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+
     // State deteksi root dinamis
     var currentRootStatus by remember { mutableStateOf(isRootGranted) }
     LaunchedEffect(Unit) {
@@ -58,10 +66,14 @@ fun HomeComposeScreen(
         }
     }
 
+    val hasWallpaper = remember {
+        MainActivity.customWallpaperBitmap != null || initialWallpaperBitmap != null
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color.Transparent)
+            .background(if (hasWallpaper) Color.Transparent else Color(0xFF121418))
     ) {
         val scrollState = rememberScrollState()
         Column(
@@ -77,11 +89,12 @@ fun HomeComposeScreen(
             // ========================================================
             LiquidGlassHeroCard(
                 isModuleActive = isModuleActive,
-                onOpenDiagnostics = onOpenDiagnostics
+                onOpenDiagnostics = onOpenDiagnostics,
+                hasWallpaper = hasWallpaper
             )
 
             // ========================================================
-            // 2. KOTAK 2-KOLOM: WhatsApp Standard & WA Business / Device Info
+            // 2. KOTAK 2-KOLOM (Seperti Kesehatan, Suhu, Siklus Remielle)
             // ========================================================
             Row(
                 modifier = Modifier
@@ -93,7 +106,8 @@ fun HomeComposeScreen(
                 LiquidGlassCard(
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxHeight()
+                        .fillMaxHeight(),
+                    hasWallpaper = hasWallpaper
                 ) {
                     Column(
                         modifier = Modifier
@@ -144,9 +158,9 @@ fun HomeComposeScreen(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(14.dp))
                                 .background(Color(0xFF25D366).copy(alpha = 0.20f))
-                                .border(1.dp, Color(0xFF25D366).copy(alpha = 0.40f), RoundedCornerShape(12.dp))
+                                .border(1.dp, Color(0xFF25D366).copy(alpha = 0.40f), RoundedCornerShape(14.dp))
                                 .clickable { onRestartWpp() }
                                 .padding(vertical = 10.dp),
                             contentAlignment = Alignment.Center
@@ -170,7 +184,7 @@ fun HomeComposeScreen(
                     }
                 }
 
-                // KOLOM KANAN (Dua Kotak)
+                // KOLOM KANAN (Dua Kotak: Suhu & Siklus Style)
                 Column(
                     modifier = Modifier
                         .weight(1f)
@@ -181,7 +195,8 @@ fun HomeComposeScreen(
                     LiquidGlassCard(
                         modifier = Modifier
                             .weight(1f)
-                            .fillMaxWidth()
+                            .fillMaxWidth(),
+                        hasWallpaper = hasWallpaper
                     ) {
                         Column(
                             modifier = Modifier
@@ -241,7 +256,8 @@ fun HomeComposeScreen(
                     LiquidGlassCard(
                         modifier = Modifier
                             .weight(1f)
-                            .fillMaxWidth()
+                            .fillMaxWidth(),
+                        hasWallpaper = hasWallpaper
                     ) {
                         Column(
                             modifier = Modifier
@@ -290,7 +306,8 @@ fun HomeComposeScreen(
             // 3. KOTAK DIAGNOSTIK & QUICK ACTIONS
             // ========================================================
             LiquidGlassCard(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                hasWallpaper = hasWallpaper
             ) {
                 Column(
                     modifier = Modifier
@@ -419,19 +436,21 @@ fun HomeComposeScreen(
 
 /**
  * Kartu Hero Status Utama (Modul LSPosed)
- * Desain bersih, lega, liquid glass serasi dengan Kustomisasi Tampilan.
+ * Desain bersih, lega, liquid glass murni seperti Remielle Kernel Manager.
  */
 @Composable
 fun LiquidGlassHeroCard(
     isModuleActive: Boolean,
     onOpenDiagnostics: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    hasWallpaper: Boolean = true
 ) {
     LiquidGlassCard(
         modifier = modifier
             .fillMaxWidth()
             .height(170.dp)
-            .clickable { onOpenDiagnostics() }
+            .clickable { onOpenDiagnostics() },
+        hasWallpaper = hasWallpaper
     ) {
         Column(
             modifier = Modifier
