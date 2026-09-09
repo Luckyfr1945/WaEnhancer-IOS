@@ -1,4 +1,7 @@
 [ADDED]
+* Floating Liquid Navigation Bar: Brand new Jetpack Compose bottom navigation bar featuring interactive liquid glass aesthetics, real-time lens distortion refraction, and chromatic aberration effects
+* Interactive Spring Physics Navigation: Touch-responsive damped drag animation allowing the liquid bubble indicator to be smoothly dragged, stretched, and flung between tabs
+* Custom Wallpaper & Glass UI Refinement: Deep glassmorphism integration with custom background wallpapers, customizable blur intensity, and adaptive scrim overlay for optimal contrast
 * Video Call Screen Recording: Added automatic screen recording for WhatsApp video calls with background root capture and clean MP4 output
 * Jump to First Message: Added menu option in conversation chats to instantly jump and navigate to the very first message
 * WhatsApp ConversationScrollApi Hook: Hooked WhatsApp's internal ConversationScrollApi for smooth message list scrolling and dynamic history loading
@@ -6,6 +9,8 @@
 * Long-Press "Anda" Tab for Account Switcher: Long-pressing the "Anda"/Settings tab in the floating bottom navigation bar opens WhatsApp's native Account Switching bottom sheet
 
 [IMPROVED]
+* Bidirectional Navigation Synchronization: Instant, fluid two-way synchronization between Compose liquid bar gesture dragging and ViewPager2 page swipe transitions
+* Hardware-Accelerated Wallpaper Blur: Replaced CPU-bound software blur views with GPU-accelerated RenderEffect pipeline for higher frame rates and zero jitter
 * Adaptive Navigation Bar: Floating bottom nav bar automatically adapts width and hides unavailable tabs based on LSPosed and Root activation state
 * Extended Video Size Limit: Increased maximum video size limit slider from 90MB up to 120MB in Media settings
 * Account Switcher Gesture Recognition: Integrated low-latency (260ms) touch gesture recognition on the "Anda" tab with 1500ms debounce cooldown to prevent double popup triggers
@@ -17,6 +22,7 @@
 * Performance & Clean Logging: Streamlined diagnostic logs across modules with zero-overhead logDebug
 
 [FIXED]
+* Fixed Software Rendering RuntimeShader Crash (Android 14/15 - API 35): Resolved IllegalArgumentException ("Software rendering doesn't support RuntimeShader") by replacing AGSL highlight shaders with GPU-safe radial gradients and removing redundant software blur Canvas captures
 * Fixed Jump to First Message Navigation: Replaced fragile reflection with direct ConversationScrollApi navigation, resolving issues where message scrolling did not trigger or caused unintended reply quotes
 * Fixed Search Filtering: Filtered search catalog to hide unavailable hook-dependent preferences when LSPosed is not active
 * Fixed Intermediate Tab Flickering: Created dynamic ViewPager adapter modes so transitions switch directly without passing through hidden tabs
