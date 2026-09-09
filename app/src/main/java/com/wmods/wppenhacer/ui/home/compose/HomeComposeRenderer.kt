@@ -5,12 +5,14 @@ import android.graphics.Bitmap
 import android.view.View
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.lifecycle.LifecycleOwner
 import com.wmods.wppenhacer.activities.MainActivity
 
 object HomeComposeRenderer {
     @JvmStatic
     fun createHomeView(
         context: Context,
+        lifecycleOwner: LifecycleOwner,
         isModuleActive: Boolean,
         isRootGranted: Boolean,
         wppVersion: String,
@@ -25,7 +27,7 @@ object HomeComposeRenderer {
         onResetConfigs: Runnable
     ): View {
         return ComposeView(context).apply {
-            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnLifecycleDestroyed(lifecycleOwner))
             setContent {
                 HomeComposeScreen(
                     isModuleActive = isModuleActive,

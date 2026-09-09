@@ -1,6 +1,5 @@
 package com.wmods.wppenhacer.ui.home.compose
 
-import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -19,78 +18,75 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.zIndex
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.HazeStyle
-import dev.chrisbanes.haze.hazeEffect
+import com.wmods.wppenhacer.activities.MainActivity
 
 /**
- * Modifier liquid glass identik dengan Remielle Kernel Manager.
- * Mem-blur background secara real-time di bawah kotak dengan tepi kristal putih berkilau
- * dan pantulan specular halus di bagian atas kartu.
+ * Modifier liquid glass serasi dengan Kustomisasi Tampilan & Remielle Kernel Manager.
+ * Memadukan latar belakang kristal kaca gelap bergradasi dengan pantulan specular sheen di bagian atas
+ * dan border specular putih mengkilap di keliling kartu.
  */
 fun Modifier.liquidGlass(
-    hazeState: HazeState,
-    shape: Shape = RoundedCornerShape(28.dp),
-    backgroundColor: Color = Color(0xFF1E222A).copy(alpha = 0.35f),
-    blurRadius: Dp = 32.dp,
+    shape: Shape = RoundedCornerShape(22.dp),
     borderAlphaTop: Float = 0.35f,
     borderAlphaBottom: Float = 0.08f,
-    borderWidth: Dp = 1.dp
-): Modifier = this
-    .zIndex(1f)
-    .clip(shape)
-    .hazeEffect(
-        state = hazeState,
-        style = HazeStyle(
-            backgroundColor = backgroundColor,
-            blurRadius = blurRadius,
-            noiseFactor = 0f,
-            tints = emptyList()
+    borderWidth: Dp = 1.2.dp
+): Modifier {
+    val hasWallpaper = MainActivity.customWallpaperBitmap != null
+    val backgroundBrush = if (hasWallpaper) {
+        // Frosted translucent dark glass tint identik dengan CardPreferenceItemDecoration
+        Brush.verticalGradient(
+            colors = listOf(
+                Color(0xD01A1E26), // argb(208, 26, 30, 38)
+                Color(0xA812161C)  // argb(168, 18, 22, 28)
+            )
         )
-    ) {
-        // Fix mutlak untuk Android 12+ (API 31-35) RenderEffect pre-draw invalidation
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            forceInvalidateOnPreDraw = true
-        }
+    } else {
+        // Deep OLED Glass tone
+        Brush.verticalGradient(
+            colors = listOf(
+                Color(0xFA181C22),
+                Color(0xFA0E1014)
+            )
+        )
     }
-    .background(
-        brush = Brush.verticalGradient(
-            colors = listOf(
-                Color.White.copy(alpha = 0.09f),
-                Color.Transparent
-            )
-        ),
-        shape = shape
-    )
-    .border(
-        width = borderWidth,
-        brush = Brush.verticalGradient(
-            colors = listOf(
-                Color.White.copy(alpha = borderAlphaTop),
-                Color.White.copy(alpha = borderAlphaBottom)
-            )
-        ),
-        shape = shape
-    )
+
+    return this
+        .clip(shape)
+        .background(backgroundBrush, shape = shape)
+        .background(
+            brush = Brush.verticalGradient(
+                colors = listOf(
+                    Color.White.copy(alpha = 0.12f),
+                    Color.Transparent
+                ),
+                startY = 0f,
+                endY = 80f
+            ),
+            shape = shape
+        )
+        .border(
+            width = borderWidth,
+            brush = Brush.linearGradient(
+                colors = listOf(
+                    Color.White.copy(alpha = borderAlphaTop),
+                    Color.White.copy(alpha = borderAlphaBottom)
+                )
+            ),
+            shape = shape
+        )
+}
 
 /**
  * Kotak Card Liquid Glass yang siap menampung konten di dalamnya.
  */
 @Composable
 fun LiquidGlassCard(
-    hazeState: HazeState,
     modifier: Modifier = Modifier,
-    shape: Shape = RoundedCornerShape(28.dp),
-    backgroundColor: Color = Color(0xFF1E222A).copy(alpha = 0.35f),
+    shape: Shape = RoundedCornerShape(22.dp),
     content: @Composable BoxScope.() -> Unit
 ) {
     Box(
-        modifier = modifier.liquidGlass(
-            hazeState = hazeState,
-            shape = shape,
-            backgroundColor = backgroundColor
-        ),
+        modifier = modifier.liquidGlass(shape = shape),
         content = content
     )
 }
@@ -114,7 +110,7 @@ fun GlassIconContainer(
             .size(size)
             .clip(shape)
             .background(containerColor, shape)
-            .border(1.dp, Color.White.copy(alpha = 0.18f), shape),
+            .border(1.dp, Color.White.copy(alpha = 0.20f), shape),
         contentAlignment = Alignment.Center
     ) {
         Icon(

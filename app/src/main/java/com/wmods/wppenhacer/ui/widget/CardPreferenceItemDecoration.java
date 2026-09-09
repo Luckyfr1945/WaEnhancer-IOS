@@ -2,25 +2,33 @@ package com.wmods.wppenhacer.ui.widget;
 
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.graphics.Shader;
 import android.view.View;
 
 import androidx.annotation.NonNull;
-import androidx.core.content.ContextCompat;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceCategory;
 import androidx.preference.PreferenceGroupAdapter;
 import androidx.recyclerview.widget.RecyclerView;
 
-import com.wmods.wppenhacer.R;
+import com.wmods.wppenhacer.activities.MainActivity;
 
+/**
+ * Liquid Glass ItemDecoration untuk seluruh layar Preferensi Android.
+ * Mengaplikasikan sudut halus 22dp, border specular gradien putih yang hanya membungkus keliling luar kartu,
+ * specular top sheen, dan latar belakang liquid glass transparan berkilau yang menyatu dengan wallpaper.
+ */
 public class CardPreferenceItemDecoration extends RecyclerView.ItemDecoration {
 
     private final Paint cardBgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint strokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint sheenPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint dividerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     private final float radius;
@@ -30,19 +38,16 @@ public class CardPreferenceItemDecoration extends RecyclerView.ItemDecoration {
     public CardPreferenceItemDecoration(Context context) {
         float density = context.getResources().getDisplayMetrics().density;
 
-        cardBgPaint.setColor(ContextCompat.getColor(context, R.color.card_bg));
-        cardBgPaint.setStyle(Paint.Style.FILL);
-
         strokeWidth = 1.2f * density;
-        strokePaint.setColor(ContextCompat.getColor(context, R.color.card_border));
         strokePaint.setStyle(Paint.Style.STROKE);
         strokePaint.setStrokeWidth(strokeWidth);
 
-        dividerPaint.setColor(ContextCompat.getColor(context, R.color.card_divider));
+        cardBgPaint.setStyle(Paint.Style.FILL);
+        sheenPaint.setStyle(Paint.Style.FILL);
         dividerPaint.setStyle(Paint.Style.FILL);
 
-        radius = 18f * density;
-        marginHorizontal = (int) (14 * density);
+        radius = 22f * density;
+        marginHorizontal = (int) (16 * density);
     }
 
     private Preference getPreference(RecyclerView.Adapter<?> adapter, int position) {
@@ -87,8 +92,8 @@ public class CardPreferenceItemDecoration extends RecyclerView.ItemDecoration {
         outRect.right = marginHorizontal;
 
         if (isCategory(pref)) {
-            // Category Title: clean compact spacing, absolutely no lines
-            outRect.top = (int) (14 * density);
+            // Category Title: jarak bersih dan rapi tanpa ada garis bawah
+            outRect.top = (position == 0) ? (int) (10 * density) : (int) (20 * density);
             outRect.bottom = (int) (6 * density);
         } else {
             if (isLastItem(adapter, position)) {
@@ -105,7 +110,10 @@ public class CardPreferenceItemDecoration extends RecyclerView.ItemDecoration {
         RecyclerView.Adapter<?> adapter = parent.getAdapter();
         if (adapter == null) return;
 
+        boolean hasWallpaper = MainActivity.customWallpaperBitmap != null;
         int childCount = parent.getChildCount();
+        float density = parent.getContext().getResources().getDisplayMetrics().density;
+
         for (int i = 0; i < childCount; i++) {
             View child = parent.getChildAt(i);
             int position = parent.getChildAdapterPosition(child);
@@ -113,7 +121,7 @@ public class CardPreferenceItemDecoration extends RecyclerView.ItemDecoration {
 
             Preference pref = getPreference(adapter, position);
             if (isCategory(pref)) {
-                // NEVER draw background, border, or divider for category titles!
+                // Kategori tidak digambar card atau garis apapun
                 continue;
             }
 
@@ -125,26 +133,68 @@ public class CardPreferenceItemDecoration extends RecyclerView.ItemDecoration {
             float top = child.getTop();
             float bottom = child.getBottom();
 
-            // Draw clean Card Background and Card Border
-            Path path = createRoundedCardPath(left, top, right, bottom, isFirst, isLast, radius);
-            canvas.drawPath(path, cardBgPaint);
-            canvas.drawPath(path, strokePaint);
+            // 1. Liquid Glass Card Background Fill
+            if (hasWallpaper) {
+                // Frosted translucent dark glass tint with rich contrast
+                cardBgPaint.setShader(new LinearGradient(
+                        left, top, left, bottom,
+                        Color.argb(135, 26, 30, 38),
+                        Color.argb(105, 18, 22, 28),
+                        Shader.TileMode.CLAMP
+                ));
+            } else {
+                // Deep OLED Glass tone
+                cardBgPaint.setShader(new LinearGradient(
+                        left, top, left, bottom,
+                        Color.argb(230, 24, 28, 34),
+                        Color.argb(230, 14, 16, 20),
+                        Shader.TileMode.CLAMP
+                ));
+            }
 
-            // Draw inner divider line ONLY between items inside the same card
-            // and NEVER on the last item!
+            Path bgPath = createBackgroundPath(left, top, right, bottom, isFirst, isLast, radius);
+            canvas.drawPath(bgPath, cardBgPaint);
+
+            // 2. Specular Top Sheen (efek pantulan kaca di bagian atas kartu seperti di Dashboard)
+            if (isFirst) {
+                float sheenHeight = Math.min(bottom - top, 26f * density);
+                sheenPaint.setShader(new LinearGradient(
+                        left, top, left, top + sheenHeight,
+                        Color.argb(24, 255, 255, 255),
+                        Color.TRANSPARENT,
+                        Shader.TileMode.CLAMP
+                ));
+                Path sheenPath = createTopSheenPath(left, top, right, top + sheenHeight, radius);
+                canvas.drawPath(sheenPath, sheenPaint);
+            }
+
+            // 3. Specular Outer Perimeter Border (White 35% -> White 8%)
+            // Hanya gambar perimeter luar kartu, tidak memotong garis di tengah kartu!
+            strokePaint.setShader(new LinearGradient(
+                    left, top, right, bottom,
+                    Color.argb(90, 255, 255, 255),
+                    Color.argb(20, 255, 255, 255),
+                    Shader.TileMode.CLAMP
+            ));
+
+            Path strokePath = createOuterStrokePath(left, top, right, bottom, isFirst, isLast, radius);
+            if (strokePath != null) {
+                canvas.drawPath(strokePath, strokePaint);
+            }
+
+            // 4. Hairline Crystal Divider di dalam kartu antar item
             if (!isLast) {
-                float density = parent.getContext().getResources().getDisplayMetrics().density;
-                float dividerHeight = 1f * density;
+                float dividerHeight = 0.8f * density;
                 float indent = 18f * density;
+                dividerPaint.setColor(Color.argb(20, 255, 255, 255));
                 canvas.drawRect(left + indent, bottom - dividerHeight, right - indent, bottom, dividerPaint);
             }
         }
     }
 
-    private Path createRoundedCardPath(float left, float top, float right, float bottom, boolean isFirst, boolean isLast, float r) {
+    private Path createBackgroundPath(float left, float top, float right, float bottom, boolean isFirst, boolean isLast, float r) {
         Path path = new Path();
         float[] radii;
-
         if (isFirst && isLast) {
             radii = new float[]{r, r, r, r, r, r, r, r};
         } else if (isFirst) {
@@ -154,9 +204,52 @@ public class CardPreferenceItemDecoration extends RecyclerView.ItemDecoration {
         } else {
             radii = new float[]{0, 0, 0, 0, 0, 0, 0, 0};
         }
-
         RectF rect = new RectF(left, top, right, bottom);
         path.addRoundRect(rect, radii, Path.Direction.CW);
         return path;
+    }
+
+    private Path createTopSheenPath(float left, float top, float right, float sheenBottom, float r) {
+        Path path = new Path();
+        float[] radii = new float[]{r, r, r, r, 0, 0, 0, 0};
+        RectF rect = new RectF(left, top, right, sheenBottom);
+        path.addRoundRect(rect, radii, Path.Direction.CW);
+        return path;
+    }
+
+    private Path createOuterStrokePath(float left, float top, float right, float bottom, boolean isFirst, boolean isLast, float r) {
+        Path p = new Path();
+        if (isFirst && isLast) {
+            RectF rect = new RectF(left, top, right, bottom);
+            p.addRoundRect(rect, r, r, Path.Direction.CW);
+            return p;
+        }
+
+        if (isFirst) {
+            p.moveTo(left, bottom);
+            p.lineTo(left, top + r);
+            p.quadTo(left, top, left + r, top);
+            p.lineTo(right - r, top);
+            p.quadTo(right, top, right, top + r);
+            p.lineTo(right, bottom);
+            return p;
+        }
+
+        if (!isLast) {
+            p.moveTo(left, top);
+            p.lineTo(left, bottom);
+            p.moveTo(right, top);
+            p.lineTo(right, bottom);
+            return p;
+        }
+
+        // isLast
+        p.moveTo(left, top);
+        p.lineTo(left, bottom - r);
+        p.quadTo(left, bottom, left + r, bottom);
+        p.lineTo(right - r, bottom);
+        p.quadTo(right, bottom, right, bottom - r);
+        p.lineTo(right, top);
+        return p;
     }
 }

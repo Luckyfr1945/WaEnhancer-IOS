@@ -67,6 +67,7 @@ public class MainActivity extends BaseActivity {
 
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
+        applyCustomWallpaper();
 
         setSupportActionBar(binding.toolbar);
         if (getSupportActionBar() != null) {
@@ -75,8 +76,9 @@ public class MainActivity extends BaseActivity {
 
         pagerAdapter = new MainPagerAdapter(this);
         binding.viewPager.setAdapter(pagerAdapter);
+        binding.viewPager.setOffscreenPageLimit(4);
 
-        binding.viewPager.setPageTransformer(new DepthPageTransformer());
+        // binding.viewPager.setPageTransformer(new DepthPageTransformer());
 
         updateNavMenuVisibility();
 
@@ -131,6 +133,14 @@ public class MainActivity extends BaseActivity {
             @Override
             public void onPageSelected(int position) {
                 super.onPageSelected(position);
+                for (androidx.fragment.app.Fragment f : getSupportFragmentManager().getFragments()) {
+                    if (f instanceof com.wmods.wppenhacer.ui.fragments.base.BaseFragment) {
+                        ((com.wmods.wppenhacer.ui.fragments.base.BaseFragment) f).setupBackdropBlur();
+                    }
+                    if (f instanceof com.wmods.wppenhacer.ui.fragments.base.BasePreferenceFragment) {
+                        ((com.wmods.wppenhacer.ui.fragments.base.BasePreferenceFragment) f).setupBackdropBlur();
+                    }
+                }
                 MainPagerAdapter.Mode mode = pagerAdapter != null ? pagerAdapter.getMode() : MainPagerAdapter.Mode.FULL;
 
                 int menuId;
@@ -173,6 +183,11 @@ public class MainActivity extends BaseActivity {
                     item.setChecked(true);
                 }
                 binding.toolbarSubtitle.setText(subtitle);
+
+                androidx.fragment.app.Fragment currentFrag = getSupportFragmentManager().findFragmentByTag("f" + position);
+                if (currentFrag instanceof com.wmods.wppenhacer.ui.fragments.base.BaseFragment) {
+                    ((com.wmods.wppenhacer.ui.fragments.base.BaseFragment) currentFrag).setupBackdropBlur();
+                }
 
                 // Handle pending scroll after page change
                 if (pendingScrollToFragment == position && pendingScrollToPreference != null) {
@@ -498,8 +513,17 @@ public class MainActivity extends BaseActivity {
                 }
 
                 binding.container.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-                binding.appBarLayout.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+                binding.appBarLayout.setBackgroundColor(android.graphics.Color.argb(120, 14, 18, 24));
                 binding.toolbar.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+
+                for (androidx.fragment.app.Fragment f : getSupportFragmentManager().getFragments()) {
+                    if (f instanceof com.wmods.wppenhacer.ui.fragments.base.BaseFragment) {
+                        ((com.wmods.wppenhacer.ui.fragments.base.BaseFragment) f).setupBackdropBlur();
+                    }
+                    if (f instanceof com.wmods.wppenhacer.ui.fragments.base.BasePreferenceFragment) {
+                        ((com.wmods.wppenhacer.ui.fragments.base.BasePreferenceFragment) f).setupBackdropBlur();
+                    }
+                }
                 return;
             }
         }
@@ -557,7 +581,7 @@ public class MainActivity extends BaseActivity {
             } else if (position <= 1) {
                 page.setAlpha(1 - position);
                 page.setTranslationX(pageWidth * -position);
-                page.setTranslationZ(-1f);
+                page.setTranslationZ(0f);
                 float scaleFactor = MIN_SCALE + (1 - MIN_SCALE) * (1 - Math.abs(position));
                 page.setScaleX(scaleFactor);
                 page.setScaleY(scaleFactor);

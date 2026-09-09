@@ -7,7 +7,8 @@
         <item name="android:statusBarColor">@color/background_color</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightNavigationBar">true</item>
-        <item name="android:textAppearanceListItem">?textAppearanceSubtitle1</item>
+        <item name="android:textAppearanceListItem">@style/ModernPreferenceTitleTextAppearance</item>
+        <item name="android:textAppearanceListItemSecondary">@style/ModernPreferenceSummaryTextAppearance</item>
         <item name="android:colorAccent">@color/whatsapp_green</item>
         <item name="android:colorControlActivated">@color/whatsapp_green</item>
         <item name="android:listDivider">@android:color/transparent</item>
@@ -25,7 +26,8 @@
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:textAppearanceListItem">?textAppearanceSubtitle1</item>
+        <item name="android:textAppearanceListItem">@style/ModernPreferenceTitleTextAppearance</item>
+        <item name="android:textAppearanceListItemSecondary">@style/ModernPreferenceSummaryTextAppearance</item>
         <item name="android:colorAccent">@color/whatsapp_green</item>
         <item name="android:colorControlActivated">@color/whatsapp_green</item>
         <item name="android:statusBarColor">@color/background_color</item>
@@ -40,15 +42,22 @@
     </style>
 
     <style name="ModernPreferenceCategoryStyle" parent="@style/Preference.Category">
-        <item name="android:layout_marginTop">0dp</item>
-        <item name="android:layout_marginBottom">0dp</item>
-        <item name="android:paddingTop">2dp</item>
-        <item name="android:paddingBottom">2dp</item>
-        <item name="android:paddingStart">4dp</item>
-        <item name="android:textAllCaps">true</item>
-        <item name="android:background">@null</item>
+        <item name="android:layout">@layout/preference_category_modern</item>
         <item name="allowDividerAbove">false</item>
         <item name="allowDividerBelow">false</item>
+    </style>
+
+    <style name="ModernPreferenceTitleTextAppearance" parent="TextAppearance.Material3.BodyLarge">
+        <item name="android:textColor">#F0FFFFFF</item>
+        <item name="android:textSize">14.5sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="ModernPreferenceSummaryTextAppearance" parent="TextAppearance.Material3.BodySmall">
+        <item name="android:textColor">#B0FFFFFF</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:lineSpacingMultiplier">1.15</item>
     </style>
 
     <style name="ModernSwitchStyle" parent="Widget.Material3.CompoundButton.MaterialSwitch">

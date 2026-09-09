@@ -1,9 +1,6 @@
 package com.wmods.wppenhacer.ui.home.compose
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,18 +19,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.hazeSource
-import dev.chrisbanes.haze.rememberHazeState
-import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun HomeComposeScreen(
@@ -52,91 +43,45 @@ fun HomeComposeScreen(
     onResetConfigs: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val hazeState = rememberHazeState()
-
-    // Ambil wallpaper foto secara aman (prioritas dari MainActivity, fallback decode aman jika null)
-    val wallpaperBitmap = remember(initialWallpaperBitmap) {
-        if (initialWallpaperBitmap != null && !initialWallpaperBitmap.isRecycled) {
-            initialWallpaperBitmap
-        } else {
-            val file = File(context.filesDir, "custom_app_wallpaper.png")
-            if (file.exists() && file.length() > 0) {
-                try {
-                    val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    BitmapFactory.decodeFile(file.absolutePath, boundsOptions)
-                    var sampleSize = 1
-                    val maxDim = 1920
-                    if (boundsOptions.outWidth > maxDim || boundsOptions.outHeight > maxDim) {
-                        val halfH = boundsOptions.outHeight / 2
-                        val halfW = boundsOptions.outWidth / 2
-                        while ((halfH / sampleSize) >= maxDim || (halfW / sampleSize) >= maxDim) {
-                            sampleSize *= 2
-                        }
-                    }
-                    val decodeOptions = BitmapFactory.Options().apply {
-                        inSampleSize = sampleSize
-                        inPreferredConfig = Bitmap.Config.ARGB_8888
-                    }
-                    BitmapFactory.decodeFile(file.absolutePath, decodeOptions)
-                } catch (t: Throwable) {
-                    null
-                }
-            } else {
-                null
+    // State deteksi root dinamis
+    var currentRootStatus by remember { mutableStateOf(isRootGranted) }
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            val root = try {
+                com.topjohnwu.superuser.Shell.isAppGrantedRoot() == true
+            } catch (e: Exception) {
+                false
+            }
+            withContext(Dispatchers.Main) {
+                currentRootStatus = root
             }
         }
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
-        // ========================================================
-        // LAYER 0: WALLPAPER BACKGROUND (Sumber blur hazeSource zIndex = 0f)
-        // ========================================================
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .hazeSource(state = hazeState, zIndex = 0f)
-        ) {
-            if (wallpaperBitmap != null) {
-                Image(
-                    bitmap = wallpaperBitmap.asImageBitmap(),
-                    contentDescription = "Wallpaper",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-                // Scrim tipis 12% hitam agar kontras teks tetap sangat tajam & terbaca
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.12f))
-                )
-            }
-        }
-
-        // ========================================================
-        // LAYER 1: KOTAK-KOTAK LIQUID GLASS WIDGETS (hazeSource zIndex = 1f)
-        // ========================================================
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.Transparent)
+    ) {
         val scrollState = rememberScrollState()
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .hazeSource(state = hazeState, zIndex = 1f)
                 .verticalScroll(scrollState)
                 .padding(horizontal = 16.dp)
-                .padding(top = 16.dp, bottom = 96.dp),
+                .padding(top = 16.dp, bottom = 140.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             // ========================================================
-            // 1. KOTAK HERO STATUS (Seperti Kotak Arus Listrik Remielle)
+            // 1. KOTAK HERO STATUS (Modul LSPosed)
             // ========================================================
             LiquidGlassHeroCard(
-                hazeState = hazeState,
                 isModuleActive = isModuleActive,
                 onOpenDiagnostics = onOpenDiagnostics
             )
 
             // ========================================================
-            // 2. KOTAK 2-KOLOM (Seperti Kesehatan, Suhu, Siklus Remielle)
+            // 2. KOTAK 2-KOLOM: WhatsApp Standard & WA Business / Device Info
             // ========================================================
             Row(
                 modifier = Modifier
@@ -146,7 +91,6 @@ fun HomeComposeScreen(
             ) {
                 // KOTAK KIRI (TINGGI): WhatsApp Standard
                 LiquidGlassCard(
-                    hazeState = hazeState,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
@@ -165,7 +109,7 @@ fun HomeComposeScreen(
                             ) {
                                 Text(
                                     text = "WhatsApp",
-                                    color = Color.White.copy(alpha = 0.8f),
+                                    color = Color.White.copy(alpha = 0.85f),
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Medium
                                 )
@@ -191,7 +135,7 @@ fun HomeComposeScreen(
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = "com.whatsapp",
-                                color = Color.White.copy(alpha = 0.6f),
+                                color = Color.White.copy(alpha = 0.65f),
                                 fontSize = 11.sp
                             )
                         }
@@ -200,9 +144,9 @@ fun HomeComposeScreen(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(14.dp))
+                                .clip(RoundedCornerShape(12.dp))
                                 .background(Color(0xFF25D366).copy(alpha = 0.20f))
-                                .border(1.dp, Color(0xFF25D366).copy(alpha = 0.40f), RoundedCornerShape(14.dp))
+                                .border(1.dp, Color(0xFF25D366).copy(alpha = 0.40f), RoundedCornerShape(12.dp))
                                 .clickable { onRestartWpp() }
                                 .padding(vertical = 10.dp),
                             contentAlignment = Alignment.Center
@@ -226,7 +170,7 @@ fun HomeComposeScreen(
                     }
                 }
 
-                // KOLOM KANAN (Dua Kotak: Suhu & Siklus Style)
+                // KOLOM KANAN (Dua Kotak)
                 Column(
                     modifier = Modifier
                         .weight(1f)
@@ -235,7 +179,6 @@ fun HomeComposeScreen(
                 ) {
                     // KOTAK KANAN ATAS: WhatsApp Business
                     LiquidGlassCard(
-                        hazeState = hazeState,
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth()
@@ -253,7 +196,7 @@ fun HomeComposeScreen(
                             ) {
                                 Text(
                                     text = "WA Business",
-                                    color = Color.White.copy(alpha = 0.8f),
+                                    color = Color.White.copy(alpha = 0.85f),
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Medium
                                 )
@@ -294,9 +237,8 @@ fun HomeComposeScreen(
                         }
                     }
 
-                    // KOTAK KANAN BAWAH: Akses Root & SDK
+                    // KOTAK KANAN BAWAH: Model Perangkat & SDK
                     LiquidGlassCard(
-                        hazeState = hazeState,
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth()
@@ -313,30 +255,30 @@ fun HomeComposeScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "Akses Sistem",
-                                    color = Color.White.copy(alpha = 0.8f),
+                                    text = "Perangkat",
+                                    color = Color.White.copy(alpha = 0.85f),
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Medium
                                 )
                                 Icon(
-                                    imageVector = if (isRootGranted) Icons.Rounded.Security else Icons.Rounded.PhoneAndroid,
+                                    imageVector = Icons.Rounded.PhoneAndroid,
                                     contentDescription = null,
-                                    tint = if (isRootGranted) Color(0xFF25D366) else Color.White.copy(alpha = 0.6f),
+                                    tint = Color.White.copy(alpha = 0.65f),
                                     modifier = Modifier.size(16.dp)
                                 )
                             }
 
                             Column {
                                 Text(
-                                    text = if (isRootGranted) "Root Aktif" else "LSPosed",
+                                    text = deviceModel,
                                     color = Color.White,
-                                    fontSize = 18.sp,
+                                    fontSize = 16.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "$deviceModel (SDK $androidSdk)",
-                                    color = Color.White.copy(alpha = 0.6f),
-                                    fontSize = 10.sp
+                                    text = if (currentRootStatus) "Android SDK $androidSdk (Root)" else "Android (SDK $androidSdk)",
+                                    color = Color.White.copy(alpha = 0.65f),
+                                    fontSize = 11.sp
                                 )
                             }
                         }
@@ -348,7 +290,6 @@ fun HomeComposeScreen(
             // 3. KOTAK DIAGNOSTIK & QUICK ACTIONS
             // ========================================================
             LiquidGlassCard(
-                hazeState = hazeState,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -392,7 +333,7 @@ fun HomeComposeScreen(
                                 )
                                 Text(
                                     text = "Lihat trace hook, package info & log aktif",
-                                    color = Color.White.copy(alpha = 0.65f),
+                                    color = Color.White.copy(alpha = 0.70f),
                                     fontSize = 11.sp
                                 )
                             }
@@ -418,8 +359,8 @@ fun HomeComposeScreen(
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF25D366).copy(alpha = 0.18f))
-                                .border(1.dp, Color(0xFF25D366).copy(alpha = 0.38f), RoundedCornerShape(12.dp))
+                                .background(Color(0xFF25D366).copy(alpha = 0.20f))
+                                .border(1.dp, Color(0xFF25D366).copy(alpha = 0.40f), RoundedCornerShape(12.dp))
                                 .clickable { onExportConfigs() }
                                 .padding(vertical = 10.dp),
                             contentAlignment = Alignment.Center
@@ -437,8 +378,8 @@ fun HomeComposeScreen(
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(Color.White.copy(alpha = 0.10f))
-                                .border(1.dp, Color.White.copy(alpha = 0.20f), RoundedCornerShape(12.dp))
+                                .background(Color.White.copy(alpha = 0.12f))
+                                .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(12.dp))
                                 .clickable { onImportConfigs() }
                                 .padding(vertical = 10.dp),
                             contentAlignment = Alignment.Center
@@ -456,8 +397,8 @@ fun HomeComposeScreen(
                             modifier = Modifier
                                 .weight(1f)
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFFFF6262).copy(alpha = 0.15f))
-                                .border(1.dp, Color(0xFFFF6262).copy(alpha = 0.32f), RoundedCornerShape(12.dp))
+                                .background(Color(0xFFFF6262).copy(alpha = 0.18f))
+                                .border(1.dp, Color(0xFFFF6262).copy(alpha = 0.35f), RoundedCornerShape(12.dp))
                                 .clickable { onResetConfigs() }
                                 .padding(vertical = 10.dp),
                             contentAlignment = Alignment.Center
@@ -477,99 +418,90 @@ fun HomeComposeScreen(
 }
 
 /**
- * Kartu Hero Status dengan efek gelombang halus / pulse
+ * Kartu Hero Status Utama (Modul LSPosed)
+ * Desain bersih, lega, liquid glass serasi dengan Kustomisasi Tampilan.
  */
 @Composable
 fun LiquidGlassHeroCard(
-    hazeState: HazeState,
     isModuleActive: Boolean,
     onOpenDiagnostics: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     LiquidGlassCard(
-        hazeState = hazeState,
         modifier = modifier
             .fillMaxWidth()
-            .height(180.dp)
+            .height(170.dp)
             .clickable { onOpenDiagnostics() }
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            // Wave graphic background
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val waveColor = if (isModuleActive) Color(0xFF25D366).copy(alpha = 0.15f) else Color(0xFFFF6262).copy(alpha = 0.12f)
-                drawCircle(
-                    color = waveColor,
-                    radius = size.width * 0.45f,
-                    center = androidx.compose.ui.geometry.Offset(size.width * 0.85f, size.height * 0.7f)
-                )
-            }
-
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.SpaceBetween
+        Column(
+            modifier = Modifier
+                .padding(20.dp)
+                .fillMaxSize(),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Header Baris Atas: Icon status + Tag status Terhubung / Nonaktif
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(if (isModuleActive) Color(0xFF25D366).copy(alpha = 0.22f) else Color(0xFFFF6262).copy(alpha = 0.22f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = if (isModuleActive) Icons.Rounded.CheckCircle else Icons.Rounded.ErrorOutline,
-                                contentDescription = null,
-                                tint = if (isModuleActive) Color(0xFF25D366) else Color(0xFFFF6262),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(10.dp))
-
-                        Text(
-                            text = "Status Modul LSPosed",
-                            color = Color.White.copy(alpha = 0.8f),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (isModuleActive) Color(0xFF25D366).copy(alpha = 0.25f) else Color(0xFFFF6262).copy(alpha = 0.25f))
-                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                            .size(32.dp)
+                            .clip(RoundedCornerShape(9.dp))
+                            .background(Color.White.copy(alpha = 0.15f))
+                            .border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(9.dp)),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = if (isModuleActive) "TERHUBUNG" else "NONAKTIF",
-                            color = if (isModuleActive) Color(0xFF25D366) else Color(0xFFFF6262),
-                            fontSize = 10.5.sp,
-                            fontWeight = FontWeight.Bold
+                        Icon(
+                            imageVector = if (isModuleActive) Icons.Rounded.CheckCircle else Icons.Rounded.ErrorOutline,
+                            contentDescription = null,
+                            tint = if (isModuleActive) Color(0xFF25D366) else Color(0xFFFF6262),
+                            modifier = Modifier.size(18.dp)
                         )
                     }
+
+                    Spacer(modifier = Modifier.width(10.dp))
+
+                    Text(
+                        text = "Status Modul LSPosed",
+                        color = Color.White.copy(alpha = 0.90f),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
 
-                Column {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isModuleActive) Color(0xFF25D366).copy(alpha = 0.22f) else Color(0xFFFF6262).copy(alpha = 0.22f))
+                        .border(1.dp, if (isModuleActive) Color(0xFF25D366).copy(alpha = 0.38f) else Color(0xFFFF6262).copy(alpha = 0.38f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                ) {
                     Text(
-                        text = if (isModuleActive) "Modul Aktif" else "Modul Tidak Aktif",
-                        color = Color.White,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = if (isModuleActive) "Hook LSPosed berhasil dimuat ke WhatsApp" else "Modul belum diaktifkan di LSPosed Manager",
-                        color = Color.White.copy(alpha = 0.75f),
-                        fontSize = 12.sp
+                        text = if (isModuleActive) "TERHUBUNG" else "NONAKTIF",
+                        color = if (isModuleActive) Color(0xFF25D366) else Color(0xFFFF6262),
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
+            }
+
+            // Konten Bawah: Judul Modul Aktif & Deskripsi
+            Column {
+                Text(
+                    text = if (isModuleActive) "Modul Aktif" else "Modul Tidak Aktif",
+                    color = Color.White,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = if (isModuleActive) "Hook LSPosed berhasil dimuat ke WhatsApp" else "Modul belum diaktifkan di LSPosed Manager",
+                    color = Color.White.copy(alpha = 0.75f),
+                    fontSize = 12.sp
+                )
             }
         }
     }

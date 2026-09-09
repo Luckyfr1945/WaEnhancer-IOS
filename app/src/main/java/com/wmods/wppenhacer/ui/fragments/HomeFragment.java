@@ -105,8 +105,9 @@ public class HomeFragment extends BaseFragment {
             }
         } catch (Exception ignored) {}
 
-        return com.wmods.wppenhacer.ui.home.compose.HomeComposeRenderer.createHomeView(
+        View composeView = com.wmods.wppenhacer.ui.home.compose.HomeComposeRenderer.createHomeView(
                 requireContext(),
+                getViewLifecycleOwner(),
                 isModuleActive,
                 Boolean.TRUE.equals(com.topjohnwu.superuser.Shell.isAppGrantedRoot()),
                 wppVer,
@@ -134,6 +135,30 @@ public class HomeFragment extends BaseFragment {
                     resetConfigs(requireContext());
                 }
         );
+
+        android.widget.FrameLayout root = new android.widget.FrameLayout(requireContext());
+        root.setLayoutParams(new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+
+        eightbitlab.com.blurview.BlurView blurBackdrop = new eightbitlab.com.blurview.BlurView(requireContext());
+        blurBackdrop.setId(R.id.fragment_blur_backdrop);
+        blurBackdrop.setLayoutParams(new android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+        blurBackdrop.setVisibility(View.GONE);
+        root.addView(blurBackdrop);
+
+        composeView.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+        root.addView(composeView);
+
+        return root;
+    }
+
+    @Override
+    public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
+        super.onViewCreated(view, savedInstanceState);
+        setupBackdropBlur();
     }
 
     private void checkRootStatus() {
@@ -171,6 +196,7 @@ public class HomeFragment extends BaseFragment {
     public void onResume() {
         super.onResume();
         setDisplayHomeAsUpEnabled(false);
+        setupBackdropBlur();
         if (getActivity() != null) {
             checkStateWpp(requireActivity());
         }

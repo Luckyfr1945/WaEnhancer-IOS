@@ -56,18 +56,75 @@ public abstract class BasePreferenceFragment extends PreferenceFragmentCompat
             @Nullable Bundle savedInstanceState) {
         chanceStates(null);
         monitorPreference();
-        return super.onCreateView(inflater, container, savedInstanceState);
+        View superView = super.onCreateView(inflater, container, savedInstanceState);
+
+        // Jika fragment berada di dalam BaseFragment (seperti GeneralFragment),
+        // BaseFragment sudah memiliki BlurView sehingga tidak perlu diduplikasi.
+        if (getParentFragment() instanceof BaseFragment) {
+            return superView;
+        }
+
+        android.widget.FrameLayout root = new android.widget.FrameLayout(requireContext());
+        root.setLayoutParams(new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+
+        eightbitlab.com.blurview.BlurView blurBackdrop = new eightbitlab.com.blurview.BlurView(requireContext());
+        blurBackdrop.setId(R.id.fragment_blur_backdrop);
+        blurBackdrop.setLayoutParams(new android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+        blurBackdrop.setVisibility(View.GONE);
+        root.addView(blurBackdrop);
+
+        if (superView != null) {
+            superView.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+            root.addView(superView);
+        }
+
+        return root;
+    }
+
+    public void setupBackdropBlur() {
+        if (getView() == null || getActivity() == null) return;
+        if (getParentFragment() instanceof BaseFragment) return;
+
+        eightbitlab.com.blurview.BlurView blurBackdrop = getView().findViewById(R.id.fragment_blur_backdrop);
+        if (blurBackdrop == null) return;
+
+        if (com.wmods.wppenhacer.activities.MainActivity.customWallpaperBitmap != null) {
+            float blurRadius = PreferenceManager.getDefaultSharedPreferences(requireContext())
+                    .getInt("app_blur_radius", 20);
+            blurRadius = Math.max(1f, Math.min(blurRadius, 25f));
+
+            ViewGroup decorView = (ViewGroup) requireActivity().getWindow().getDecorView();
+            blurBackdrop.setVisibility(View.VISIBLE);
+            blurBackdrop.setupWith(decorView)
+                    .setFrameClearDrawable(decorView.getBackground())
+                    .setBlurRadius(blurRadius)
+                    .setOverlayColor(android.graphics.Color.argb(35, 10, 14, 20))
+                    .setBlurAutoUpdate(true);
+        } else {
+            blurBackdrop.setVisibility(View.GONE);
+        }
     }
 
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
+        setupBackdropBlur();
         setDivider(null);
         setDividerHeight(0);
         var listView = getListView();
         if (listView != null) {
+            for (int i = listView.getItemDecorationCount() - 1; i >= 0; i--) {
+                androidx.recyclerview.widget.RecyclerView.ItemDecoration decor = listView.getItemDecorationAt(i);
+                if (decor.getClass().getName().contains("Divider")) {
+                    listView.removeItemDecorationAt(i);
+                }
+            }
             listView.setClipToPadding(false);
-            listView.setPadding(0, (int) (6 * getResources().getDisplayMetrics().density), 0, (int) (95 * getResources().getDisplayMetrics().density));
+            listView.setPadding(0, (int) (8 * getResources().getDisplayMetrics().density), 0, (int) (140 * getResources().getDisplayMetrics().density));
             listView.addItemDecoration(new com.wmods.wppenhacer.ui.widget.CardPreferenceItemDecoration(requireContext()));
         }
     }
@@ -76,6 +133,7 @@ public abstract class BasePreferenceFragment extends PreferenceFragmentCompat
     public void onResume() {
         super.onResume();
         setDisplayHomeAsUpEnabled(true);
+        setupBackdropBlur();
     }
 
     @Override

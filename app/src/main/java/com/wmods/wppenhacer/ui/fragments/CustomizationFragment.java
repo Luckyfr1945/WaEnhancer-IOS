@@ -38,6 +38,17 @@ public class CustomizationFragment extends BasePreferenceFragment {
             }
         }
 
+        // Blur radius live preview
+        androidx.preference.SeekBarPreference blurPref = findPreference("app_blur_radius");
+        if (blurPref != null) {
+            blurPref.setOnPreferenceChangeListener((preference, newValue) -> {
+                if (getActivity() != null) {
+                    getActivity().recreate();
+                }
+                return true;
+            });
+        }
+
         androidx.preference.SwitchPreferenceCompat iosTheme = findPreference("ios_header");
         if (iosTheme != null) {
             iosTheme.setOnPreferenceChangeListener((preference, newValue) -> {
