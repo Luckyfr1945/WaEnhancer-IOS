@@ -4,6 +4,7 @@
     android:id="@+id/fragment_container"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@android:color/transparent"
     android:animateLayoutChanges="true"
     app:consumeSystemWindowsInsets="@integer/internal_fragment_insets"
     app:edgeToEdge="true"
@@ -13,6 +14,7 @@
         android:id="@+id/frag_container"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:background="@android:color/transparent"
         app:layout_behavior="@string/appbar_scrolling_view_behavior" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

@@ -43,7 +43,8 @@ public class RecordingsFragment extends Fragment implements RecordingsAdapter.On
 
     @Nullable
     @Override
-    public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
+    public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
+            @Nullable Bundle savedInstanceState) {
         binding = FragmentRecordingsBinding.inflate(inflater, container, false);
         return binding.getRoot();
     }
@@ -55,6 +56,24 @@ public class RecordingsFragment extends Fragment implements RecordingsAdapter.On
         adapter = new RecordingsAdapter(this);
         binding.recyclerView.setLayoutManager(new LinearLayoutManager(requireContext()));
         binding.recyclerView.setAdapter(adapter);
+        binding.recyclerView.setClipToPadding(false);
+        int topPad = (int) (72 * getResources().getDisplayMetrics().density);
+        int botPad = (int) (140 * getResources().getDisplayMetrics().density);
+        binding.recyclerView.setPadding(0, topPad, 0, botPad);
+        binding.recyclerView.addOnScrollListener(new androidx.recyclerview.widget.RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrolled(@NonNull androidx.recyclerview.widget.RecyclerView recyclerView, int dx, int dy) {
+                super.onScrolled(recyclerView, dx, dy);
+                var act = getActivity();
+                if (act instanceof com.wmods.wppenhacer.activities.MainActivity mainActivity) {
+                    if (dy > 12) {
+                        mainActivity.hideLiquidBar();
+                    } else if (dy < -8 || !recyclerView.canScrollVertically(-1)) {
+                        mainActivity.showLiquidBar();
+                    }
+                }
+            }
+        });
 
         // Set up selection change listener
         adapter.setSelectionChangeListener(count -> {
@@ -74,7 +93,7 @@ public class RecordingsFragment extends Fragment implements RecordingsAdapter.On
             isGroupByContact = false;
             loadRecordings();
         });
-        
+
         binding.chipGroupByContact.setOnClickListener(v -> {
             isGroupByContact = true;
             loadRecordings();
@@ -100,7 +119,8 @@ public class RecordingsFragment extends Fragment implements RecordingsAdapter.On
     @Override
     public void onResume() {
         super.onResume();
-        if (binding == null) return;
+        if (binding == null)
+            return;
         initializeBaseDirs();
         loadRecordings();
     }
@@ -115,8 +135,7 @@ public class RecordingsFragment extends Fragment implements RecordingsAdapter.On
         // 1. Current default location used by CallRecording
         addBaseDir(addedPaths, new File(
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                "WA Call Recordings"
-        ));
+                "WA Call Recordings"));
 
         // 2. User configured location from shared preferences
         if (configuredPath != null && !configuredPath.isEmpty()) {
@@ -175,8 +194,10 @@ public class RecordingsFragment extends Fragment implements RecordingsAdapter.On
                 applySort();
 
                 if (isGroupByContact) {
-                    // For group by contact, we'll navigate to ContactRecordingsActivity when a contact is clicked
-                    // For now, just show sorted list (full group UI needs ContactRecordingsActivity)
+                    // For group by contact, we'll navigate to ContactRecordingsActivity when a
+                    // contact is clicked
+                    // For now, just show sorted list (full group UI needs
+                    // ContactRecordingsActivity)
                     adapter.setRecordings(allRecordings);
                 } else {
                     adapter.setRecordings(allRecordings);
@@ -195,7 +216,8 @@ public class RecordingsFragment extends Fragment implements RecordingsAdapter.On
                     traverseDirectory(file);
                 } else {
                     String name = file.getName().toLowerCase();
-                    if (name.endsWith(".wav") || name.endsWith(".mp3") || name.endsWith(".aac") || name.endsWith(".m4a")) {
+                    if (name.endsWith(".wav") || name.endsWith(".mp3") || name.endsWith(".aac")
+                            || name.endsWith(".m4a")) {
                         allRecordings.add(new Recording(file));
                     }
                 }
@@ -219,7 +241,7 @@ public class RecordingsFragment extends Fragment implements RecordingsAdapter.On
         popup.getMenu().add(0, 2, 0, R.string.sort_name);
         popup.getMenu().add(0, 3, 0, R.string.sort_duration);
         popup.getMenu().add(0, 4, 0, R.string.sort_contact);
-        
+
         popup.setOnMenuItemClickListener(item -> {
             currentSortType = item.getItemId();
             applySort();
@@ -268,7 +290,7 @@ public class RecordingsFragment extends Fragment implements RecordingsAdapter.On
 
     private void shareRecording(File file) {
         try {
-            Uri uri = FileProvider.getUriForFile(requireContext(), 
+            Uri uri = FileProvider.getUriForFile(requireContext(),
                     requireContext().getPackageName() + ".fileprovider", file);
             Intent intent = new Intent(Intent.ACTION_SEND);
             intent.setType("audio/*");
@@ -282,7 +304,8 @@ public class RecordingsFragment extends Fragment implements RecordingsAdapter.On
 
     private void shareSelectedRecordings() {
         List<Recording> selected = adapter.getSelectedRecordings();
-        if (selected.isEmpty()) return;
+        if (selected.isEmpty())
+            return;
 
         if (selected.size() == 1) {
             shareRecording(selected.get(0).getFile());
@@ -296,7 +319,8 @@ public class RecordingsFragment extends Fragment implements RecordingsAdapter.On
                 Uri uri = FileProvider.getUriForFile(requireContext(),
                         requireContext().getPackageName() + ".fileprovider", rec.getFile());
                 uris.add(uri);
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
         }
 
         if (!uris.isEmpty()) {
@@ -311,7 +335,8 @@ public class RecordingsFragment extends Fragment implements RecordingsAdapter.On
 
     private void deleteSelectedRecordings() {
         List<Recording> selected = adapter.getSelectedRecordings();
-        if (selected.isEmpty()) return;
+        if (selected.isEmpty())
+            return;
 
         new AlertDialog.Builder(requireContext())
                 .setTitle(R.string.delete_confirmation)

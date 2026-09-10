@@ -18,18 +18,32 @@ public class BaseFragment extends Fragment {
 
     @Nullable
     @Override
-    public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
+    public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
+            @Nullable Bundle savedInstanceState) {
         binding = BaseFragmentBinding.inflate(inflater, container, false);
         return binding.getRoot();
     }
 
+    @Override
+    public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
+        super.onViewCreated(view, savedInstanceState);
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+    }
+
+    public void setupBackdropBlur() {
+        // Blur is hardware-rendered on MainActivity wallpaper directly
+    }
+
     public void setDisplayHomeAsUpEnabled(boolean enabled) {
-        if (getActivity() == null) return;
+        if (getActivity() == null)
+            return;
         var actionBar = ((AppCompatActivity) getActivity()).getSupportActionBar();
         if (actionBar != null) {
             actionBar.setDisplayHomeAsUpEnabled(enabled);
         }
     }
-
-
 }

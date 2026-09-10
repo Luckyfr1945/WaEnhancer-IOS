@@ -44,12 +44,19 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
         }
 
         private fun findObjectFMessage(param: XC_MethodHook.MethodHookParam): FMessageWpp? {
-            val safeArgs = param.args?.filterNotNull() ?: return null
+            val safeArgs = param.args?.filterNotNull() ?: emptyList()
             safeArgs.firstOrNull { FMessageWpp.TYPE.isInstance(it) }?.let { return FMessageWpp(it) }
-            val arg0 = param.args?.getOrNull(0) ?: return null
-            val statusItem = StatusItemWpp.from(arg0) ?: return null
-            return statusItem.fMessage
+            for (arg in safeArgs) {
+                val statusItem = StatusItemWpp.from(arg)
+                if (statusItem?.fMessage != null) return statusItem.fMessage
+            }
+            if (param.thisObject != null) {
+                val statusItem = StatusItemWpp.from(param.thisObject)
+                if (statusItem?.fMessage != null) return statusItem.fMessage
+            }
+            return null
         }
+
 
 
         private fun getJidKeys(fMessage: FMessageWpp): Set<String> {
@@ -129,15 +136,40 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
         XposedBridge.hookMethod(antiRevokeFStatusMethod, object : XC_MethodHook() {
 
             override fun beforeHookedMethod(param: MethodHookParam) {
-                val fStatusKey = FStatusWpp.FStatusKey(param.args[1])
-                val fstatus = fStatusKey.fStatus ?: return
-                val fMessage = fstatus.fMessage ?: return
-                if (!fStatusKey.isFromMe && handleRevocationAttempt(
-                        fMessage,
-                        setOf(fStatusKey.messageID)
-                    ) != 0
-                ) {
-                    param.result = 0
+                try {
+                    val rawKey = param.args?.firstOrNull { it != null && FStatusWpp.FStatusKey.TYPE.isInstance(it) }
+                        ?: param.args?.getOrNull(0)
+                        ?: param.args?.getOrNull(1)
+                        ?: return
+
+                    val fStatusKey = FStatusWpp.FStatusKey(rawKey)
+                    if (fStatusKey.isFromMe) return
+
+                    val statusMsgId = fStatusKey.messageID
+                    if (statusMsgId.isBlank()) return
+
+                    val antirevokeStatusVal = getAntirevokeValue("antirevokestatus")
+                    if (antirevokeStatusVal == 0) return
+
+                    val fstatus = fStatusKey.fStatus
+                    val fMessage = fstatus?.fMessage
+
+                    if (fMessage != null) {
+                        handleRevocationAttempt(fMessage, setOf(statusMsgId))
+                    } else {
+                        handleStatusRevocationFallback(fStatusKey, statusMsgId)
+                    }
+
+                    val returnType = (param.method as? Method)?.returnType
+                    param.result = when {
+                        returnType == java.lang.Integer.TYPE -> 0
+                        returnType == java.lang.Boolean.TYPE -> false
+                        returnType == java.lang.Long.TYPE -> 0L
+                        else -> null
+                    }
+                    logDebug("[AntiRevoke] Blocked status revocation for msgId=$statusMsgId, sender=${fStatusKey.senderJid.phoneNumber}")
+                } catch (t: Throwable) {
+                    log(t)
                 }
             }
 
@@ -292,12 +324,13 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
         XposedBridge.hookMethod(unknownStatusPlaybackMethod, object : XC_MethodHook() {
             override fun afterHookedMethod(param: MethodHookParam) {
                 val obj = ReflectionUtils.getArg(param.args, param.method.declaringClass, 0)
+                    ?: param.thisObject
                 val fMessage = findObjectFMessage(param)
                 val field =
                     ReflectionUtils.getFieldByType(param.method.declaringClass, statusPlaybackClass)
 
                 if (obj == null || field == null || fMessage == null) {
-                    logDebug("Invalid parameters")
+                    logDebug("Invalid parameters for status playback")
                     return
                 }
 
@@ -305,17 +338,21 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
                 val textViews =
                     ReflectionUtils.getFieldsByType(statusPlaybackClass, TextView::class.java)
 
-                if (textViews.isEmpty()) {
-                    logDebug("No text views found")
-                    return
-                }
-
                 val dateId = Utils.getID("date", "id")
+                var bound = false
                 for (textViewField in textViews) {
                     val textView = textViewField.get(objView) as? TextView
-                    if (textView != null && textView.id == dateId) {
+                    if (textView != null && (textView.id == dateId || (dateId == 0 && textView.text?.isNotEmpty() == true))) {
                         bindRevokedMessageUI(fMessage, textView, "antirevokestatus")
+                        bound = true
                         break
+                    }
+                }
+
+                if (!bound && objView is ViewGroup) {
+                    val dateTv = findDateTextView(objView)
+                    if (dateTv != null) {
+                        bindRevokedMessageUI(fMessage, dateTv, "antirevokestatus")
                     }
                 }
             }
@@ -562,6 +599,38 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
         }
 
         Tasker.sendTaskerEvent(name, jidAuthor.phoneNumber, taskerAction)
+    }
+
+    private fun handleStatusRevocationFallback(fStatusKey: FStatusWpp.FStatusKey, statusMsgId: String) {
+        try {
+            val authorJid = fStatusKey.senderJid
+            val waContact = WaContactWpp.getWaContactFromJid(authorJid)
+            val name = waContact?.displayName ?: authorJid.phoneNumber ?: "Someone"
+            val messageSuffix = Utils.application.getString(R.string.deleted_status)
+            val alertMsg = "$name $messageSuffix"
+
+            if (prefs.getBoolean("toastdeleted", false)) {
+                Utils.showToast(alertMsg, Toast.LENGTH_LONG)
+            }
+            Tasker.sendTaskerEvent(name, authorJid.phoneNumber, "deleted_status")
+        } catch (e: Throwable) {
+            log(e)
+        }
+
+        val statusJid = "status@broadcast"
+        val messageRevokedList = messageRevokedMap.computeIfAbsent(statusJid) {
+            Collections.synchronizedSet(HashSet())
+        }
+        if (messageRevokedList.add(statusMsgId)) {
+            CompletableFuture.runAsync {
+                try {
+                    val store = DelMessageStore.getInstance(Utils.application)
+                    store.insertMessage(statusJid, statusMsgId, System.currentTimeMillis())
+                } catch (e: Throwable) {
+                    logDebug(e)
+                }
+            }
+        }
     }
 
     override fun getPluginName(): String = "Anti Revoke"

@@ -31,8 +31,8 @@ class CallPrivacy(loader: ClassLoader, preferences:SharedPreferences) :
         })
 
         val clazzVoip = WppCore.voipManagerClass
-        val endCallMethod = clazzVoip.declaredMethods.first { it.name == "endCall" }
-        val rejectCallMethod = clazzVoip.declaredMethods.first { it.name == "rejectCall" }
+        val endCallMethod = clazzVoip.declaredMethods.firstOrNull { it.name == "endCall" }
+        val rejectCallMethod = clazzVoip.declaredMethods.firstOrNull { it.name == "rejectCall" }
 
         val onCallReceivedMethod = Unobfuscator.loadAntiRevokeOnCallReceivedMethod(classLoader)
 
@@ -43,7 +43,7 @@ class CallPrivacy(loader: ClassLoader, preferences:SharedPreferences) :
                     param.args[0] is Message -> (param.args[0] as Message).obj
                     param.args.size > 1 && callInfoClass.isInstance(param.args[1]) -> param.args[1]
                     else -> {
-                        Utils.showToast("Invalid call info", Toast.LENGTH_SHORT)
+                        logDebug("CallPrivacy: received non-callinfo argument")
                         return
                     }
                 }
@@ -73,17 +73,21 @@ class CallPrivacy(loader: ClassLoader, preferences:SharedPreferences) :
                         if (rejectType == "declined") {
                             rejectType = ""
                         }
-                        val params = ReflectionUtils.initArray(rejectCallMethod.parameterTypes)
-                        params[0] = callId
-                        params[1] = rejectType
-                        ReflectionUtils.callMethod(rejectCallMethod, mVoipManager, *params)
-                        param.result = true
+                        if (rejectCallMethod != null) {
+                            val params = ReflectionUtils.initArray(rejectCallMethod.parameterTypes)
+                            params[0] = callId
+                            params[1] = rejectType
+                            ReflectionUtils.callMethod(rejectCallMethod, mVoipManager, *params)
+                            param.result = true
+                        }
                     }
                     "ended" -> {
-                        val params = ReflectionUtils.initArray(endCallMethod.parameterTypes)
-                        params[0] = true
-                        ReflectionUtils.callMethod(endCallMethod, mVoipManager, *params)
-                        param.result = true
+                        if (endCallMethod != null) {
+                            val params = ReflectionUtils.initArray(endCallMethod.parameterTypes)
+                            params[0] = true
+                            ReflectionUtils.callMethod(endCallMethod, mVoipManager, *params)
+                            param.result = true
+                        }
                     }
                 }
             }
@@ -126,18 +130,24 @@ class CallPrivacy(loader: ClassLoader, preferences:SharedPreferences) :
                 !waContact.isSavedContact()
             }
             PrivacyType.BACKLIST -> {
-                if (customprivacy.optBoolean("BlockCall", false)) return true;
-                val callBlockList = prefs.getString("call_block_contacts", "[]")!!
-                val blockList = callBlockList.substring(1, callBlockList.length - 1).split(", ")
-                    .map { it.trim() }
+                if (customprivacy.optBoolean("BlockCall", false)) return true
+                val callBlockList = prefs.getString("call_block_contacts", "[]") ?: "[]"
+                val blockList = if (callBlockList.length >= 2) {
+                    callBlockList.substring(1, callBlockList.length - 1).split(",")
+                        .map { it.trim().removeSurrounding("\"") }
+                        .filter { it.isNotEmpty() }
+                } else emptyList()
                 blockList.any { it.isNotEmpty() && it == userJid.phoneRawString }
             }
 
             PrivacyType.WHITELIST -> {
-                if (customprivacy.optBoolean("BlockCall", false)) return true;
-                val callWhiteList = prefs.getString("call_white_contacts", "[]")!!
-                val whiteList = callWhiteList.substring(1, callWhiteList.length - 1).split(", ")
-                    .map { it.trim() }
+                if (customprivacy.optBoolean("BlockCall", false)) return true
+                val callWhiteList = prefs.getString("call_white_contacts", "[]") ?: "[]"
+                val whiteList = if (callWhiteList.length >= 2) {
+                    callWhiteList.substring(1, callWhiteList.length - 1).split(",")
+                        .map { it.trim().removeSurrounding("\"") }
+                        .filter { it.isNotEmpty() }
+                } else emptyList()
                 whiteList.none { it.isNotEmpty() && it == userJid.phoneRawString }
             }
 

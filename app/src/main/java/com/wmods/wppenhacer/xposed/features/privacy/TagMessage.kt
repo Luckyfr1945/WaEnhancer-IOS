@@ -60,9 +60,7 @@ class TagMessage(loader: ClassLoader, preferences: SharedPreferences) :
             }
         })
 
-        if (prefs.getBoolean("broadcast_tag", false)) {
-            hookBroadcastView()
-        }
+        hookBroadcastView()
     }
 
     private fun hookBroadcastView() {
@@ -73,6 +71,7 @@ class TagMessage(loader: ClassLoader, preferences: SharedPreferences) :
                 position: Int,
                 convertView: View?
             ) {
+                if (!prefs.getBoolean("broadcast_tag", false)) return
                 if (fMessage.key.isFromMe) return
                 val dateTextView = view.findViewById<TextView>(Utils.getID("date", "id")) ?: return
                 val dateWrapper = dateTextView.parent as? ViewGroup ?: return

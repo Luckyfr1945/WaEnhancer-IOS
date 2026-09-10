@@ -75,13 +75,17 @@ class GroupAdmin(classLoader: ClassLoader, preferences: SharedPreferences) : Fea
                     nameGroup.addView(view1, 0, lpparams)
                 }
 
-                val groupRawJid = chatCurrentJid.phoneRawString
+                val groupRawJid = chatCurrentJid.rawJidString ?: chatCurrentJid.userRawString ?: chatCurrentJid.phoneRawString
                 if (groupRawJid == null) {
                     iconAdmin.visibility = View.GONE
                     return
                 }
 
-                val jidGrp = jidFactory.invoke(null, groupRawJid)
+                val jidGrp = chatCurrentJid.phoneJid ?: chatCurrentJid.userJid ?: runCatching { jidFactory.invoke(null, groupRawJid) }.getOrNull()
+                if (jidGrp == null) {
+                    iconAdmin.visibility = View.GONE
+                    return
+                }
                 val participantJid = resolveParticipantJidForAdminCheck(fMessage.userJid, grpcheckAdmin)
 
                 if (participantJid == null) {

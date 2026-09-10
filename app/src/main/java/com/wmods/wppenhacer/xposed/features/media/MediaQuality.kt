@@ -24,11 +24,13 @@ class MediaQuality(loader: ClassLoader, preferences: SharedPreferences) :
         val imageQuality = prefs.getBoolean("imagequality", false)
         val maxSize = prefs.getFloat("video_limit_size", 60f).toInt().coerceIn(30, 120)
 
-        // Disable manual calculation ProcessMediaQuality
-        Others.propsBoolean[14447] = false
+        if (videoQuality || imageQuality) {
+            // Disable manual calculation ProcessMediaQuality
+            Others.propsBoolean[14447] = false
 
-        // Enable Media Quality selection for Stories
-        enableMediaQualityForStories()
+            // Enable Media Quality selection for Stories
+            enableMediaQualityForStories()
+        }
 
         val videoRealResolution = prefs.getBoolean("video_real_resolution", false)
         val videoMaxFps = prefs.getBoolean("video_maxfps", false)
