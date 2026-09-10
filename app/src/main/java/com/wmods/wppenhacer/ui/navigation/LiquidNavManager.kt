@@ -20,6 +20,13 @@ class LiquidNavManager(
         composeView.setViewCompositionStrategy(
             ViewCompositionStrategy.DisposeOnLifecycleDestroyed(lifecycleOwner)
         )
+        // Disable clipping so scaled/animated content can overflow upward
+        composeView.clipChildren = false
+        composeView.clipToPadding = false
+        (composeView.parent as? android.view.ViewGroup)?.let {
+            it.clipChildren = false
+            it.clipToPadding = false
+        }
         composeView.setContent {
             WaLiquidNavigationBar(
                 selectedIndex = selectedIndexState.intValue,
@@ -32,6 +39,15 @@ class LiquidNavManager(
                     }
                 }
             )
+        }
+        // Re-apply after content is set (parent may have changed)
+        composeView.post {
+            composeView.clipChildren = false
+            composeView.clipToPadding = false
+            (composeView.parent as? android.view.ViewGroup)?.let {
+                it.clipChildren = false
+                it.clipToPadding = false
+            }
         }
     }
 

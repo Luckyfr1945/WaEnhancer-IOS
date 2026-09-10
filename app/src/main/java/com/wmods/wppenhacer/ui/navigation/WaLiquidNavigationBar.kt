@@ -76,7 +76,7 @@ fun WaLiquidNavigationBar(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(bottom = 20.dp),
+            .padding(top = 16.dp, bottom = 20.dp),
         contentAlignment = Alignment.BottomCenter
     ) {
         LiquidBottomTabsImpl(
