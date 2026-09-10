@@ -10,9 +10,12 @@ import android.graphics.Color
 import android.graphics.ColorFilter
 import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.PixelFormat
+import android.graphics.PorterDuff
 import android.graphics.RectF
 import android.graphics.Shader
+import android.graphics.SweepGradient
 import android.graphics.RenderEffect
 import android.graphics.RuntimeShader
 import android.graphics.drawable.ColorDrawable
@@ -85,13 +88,19 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         private const val TAG_ITEM_INITIALIZED = 0x46_42_49_49 // 'FBII'
 
         // Visual & Physics Parameters
-        private const val BAR_HEIGHT_DP = 66f
+        private const val BAR_HEIGHT_DP = 64f
+        private const val PILL_HEIGHT_DP = 50f
         private const val BAR_PADDING_DP = 4f
         private const val INDICATOR_INSET_DP = 4f
-        private const val INDICATOR_WIDTH_RATIO = 0.90f
-        private const val BLUR_RADIUS = 2.5f
+        private const val BLUR_RADIUS = 14f
         private const val PRESSED_SCALE = 1.08f
         private const val RUBBER_BAND_DP = 4f
+
+        private fun getPillHalfWidth(itemWidth: Float): Float {
+            val padding = Utils.dipToPixels(6f).toFloat()
+            val pillW = (itemWidth - padding * 2f).coerceAtLeast(Utils.dipToPixels(54f).toFloat())
+            return pillW / 2f
+        }
     }
 
     private val processedBars = WeakHashMap<ViewGroup, Boolean>()
@@ -99,11 +108,13 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
     private val barStates = WeakHashMap<ViewGroup, BarState>()
 
     /**
-     * Pure Glass Spotlight Pill Indicator:
-     * - Pure translucent glass capsule
+     * Optical Liquid Glass Indicator matching WaLiquidNavigationBar:
      * - Multi-layer soft drop shadow
-     * - Crisp crystalline 1.2dp border stroke
-     * - Silky smooth spring physics & interactive squash/stretch
+     * - Refractive liquid glass body with vertical light gradient
+     * - Prismatic chromatic aberration / rainbow rim refraction
+     * - Crystalline dual-gradient border stroke (1.2dp)
+     * - Upper specular lens curvature & inner refraction depth
+     * - 120 Hz spring physics & interactive squash/stretch
      */
     private class LiquidIndicatorDrawable(
         private val fillColor: Int,
@@ -117,7 +128,18 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             style = Paint.Style.STROKE
             strokeWidth = Utils.dipToPixels(1.2f).toFloat()
         }
+        private val chromaticPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = Utils.dipToPixels(1.5f).toFloat()
+        }
+        private val specularPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = Utils.dipToPixels(1.0f).toFloat()
+        }
+        private val innerShadowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val clipPath = Path()
         private val rect = RectF()
+        private val innerRect = RectF()
 
         var centerX = 0f
         var halfWidth = 0f
@@ -135,8 +157,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             val expansion = 1f + 0.10f * pressProgress
             val halfW = halfWidth * scaleX * expansion
             val halfH = (bottom - top) * 0.5f * scaleY * expansion
-            val maxCorner = Utils.dipToPixels(18f).toFloat()
-            val corner = maxCorner.coerceAtMost(halfH).coerceAtMost(halfW)
+            val corner = halfH.coerceAtMost(halfW)
 
             // 1. Soft multi-layer drop shadow
             shadowPaint.color = shadowColor
@@ -154,15 +175,72 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                 canvas.drawRoundRect(rect, corner + grow, corner + grow, shadowPaint)
             }
 
-            // 2. Pure Translucent Glass Body (No fake gradients)
-            bodyPaint.color = fillColor
-            bodyPaint.alpha = (Color.alpha(fillColor) * (1f - pressProgress * 0.15f)).toInt().coerceIn(0, 255)
             rect.set(centerX - halfW, centerY - halfH, centerX + halfW, centerY + halfH)
+
+            // 2. Liquid Glass Body (Refractive depth gradient)
+            val topBodyAlpha = (48 * (1f - pressProgress * 0.2f)).toInt().coerceIn(0, 255)
+            val btmBodyAlpha = (16 * (1f - pressProgress * 0.2f)).toInt().coerceIn(0, 255)
+            bodyPaint.shader = LinearGradient(
+                centerX, rect.top,
+                centerX, rect.bottom,
+                Color.argb(topBodyAlpha, 255, 255, 255),
+                Color.argb(btmBodyAlpha, 255, 255, 255),
+                Shader.TileMode.CLAMP
+            )
             canvas.drawRoundRect(rect, corner, corner, bodyPaint)
 
-            // 3. Crisp Crystalline Glass Rim Stroke
-            val rimAlpha = (Color.alpha(strokeColor) + 40 * pressProgress).toInt().coerceIn(0, 255)
-            strokePaint.color = Color.argb(rimAlpha, Color.red(strokeColor), Color.green(strokeColor), Color.blue(strokeColor))
+            // 3. Inner shadow / bottom depth (clipped to capsule)
+            val saveCount = canvas.save()
+            clipPath.reset()
+            clipPath.addRoundRect(rect, corner, corner, Path.Direction.CW)
+            canvas.clipPath(clipPath)
+
+            val innerShadowH = Utils.dipToPixels(12f).toFloat()
+            innerShadowPaint.shader = LinearGradient(
+                centerX, rect.bottom - innerShadowH,
+                centerX, rect.bottom,
+                Color.argb(0, 0, 0, 0),
+                Color.argb((35 + 25 * pressProgress).toInt(), 0, 0, 0),
+                Shader.TileMode.CLAMP
+            )
+            canvas.drawRect(rect.left, rect.bottom - innerShadowH, rect.right, rect.bottom, innerShadowPaint)
+
+            // 4. Specular Highlight (Curved lens reflection along top)
+            val specH = Utils.dipToPixels(16f).toFloat()
+            innerRect.set(rect.left + 1f, rect.top + 1f, rect.right - 1f, rect.top + specH)
+            specularPaint.shader = LinearGradient(
+                centerX, rect.top,
+                centerX, rect.top + specH,
+                Color.argb((130 * (1f + pressProgress * 0.3f)).toInt().coerceIn(0, 255), 255, 255, 255),
+                Color.argb(0, 255, 255, 255),
+                Shader.TileMode.CLAMP
+            )
+            canvas.drawRoundRect(rect, corner, corner, specularPaint)
+            canvas.restoreToCount(saveCount)
+
+            // 5. Chromatic Aberration / Prismatic Rainbow Rim (The WaEnhancer Signature!)
+            val rainbowColors = intArrayOf(
+                Color.argb(0, 139, 92, 246),   // Violet transparent
+                Color.argb(95, 6, 182, 212),   // Cyan neon
+                Color.argb(105, 16, 185, 129), // Emerald
+                Color.argb(95, 245, 158, 11),  // Amber / Gold
+                Color.argb(80, 244, 63, 94),   // Rose / Pink
+                Color.argb(0, 139, 92, 246)    // Violet transparent
+            )
+            val rainbowPositions = floatArrayOf(0f, 0.22f, 0.48f, 0.72f, 0.90f, 1f)
+            chromaticPaint.shader = SweepGradient(centerX, centerY, rainbowColors, rainbowPositions)
+            canvas.drawRoundRect(rect, corner, corner, chromaticPaint)
+
+            // 6. Crystalline Dual-Gradient Glass Rim Stroke
+            val topRimAlpha = (210 + 45 * pressProgress).toInt().coerceIn(0, 255)
+            val btmRimAlpha = (65 + 30 * pressProgress).toInt().coerceIn(0, 255)
+            strokePaint.shader = LinearGradient(
+                centerX, rect.top,
+                centerX, rect.bottom,
+                Color.argb(topRimAlpha, 255, 255, 255),
+                Color.argb(btmRimAlpha, 255, 255, 255),
+                Shader.TileMode.CLAMP
+            )
             canvas.drawRoundRect(rect, corner, corner, strokePaint)
         }
 
@@ -395,9 +473,9 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                                     val center = offsetInBar(bar, item).first + item.width / 2f
                                     abs(center - newCenterX)
                                 } ?: state.selectedIndex
-                                val targetWidth = items[closestIndex].width * INDICATOR_WIDTH_RATIO / 2f
+                                val targetWidth = getPillHalfWidth(items[closestIndex].width.toFloat())
 
-                                val safeMargin = Utils.dipToPixels(10f).toFloat()
+                                val safeMargin = Utils.dipToPixels(8f).toFloat()
                                 val minCenter = safeMargin + targetWidth
                                 val maxCenter = if (bar.width > 0) bar.width - safeMargin - targetWidth else minCenter
                                 if (maxCenter > minCenter) {
@@ -506,65 +584,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                 }
             })
 
-        // Hook ViewPager page scroll for smooth sliding indicator during tab swipe
-        try {
-            val viewPagerClass = classLoader.loadClass("androidx.viewpager.widget.ViewPager")
-            XposedBridge.hookAllMethods(viewPagerClass, "A0G", object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam) {
-                    val position = param.args.getOrNull(0) as? Int ?: return
-                    val positionOffset = param.args.getOrNull(1) as? Float ?: 0f
-
-                    for ((bar, state) in barStates) {
-                        if (!bar.isShown) continue
-                        val items = state.items
-                        if (items.size < 2 || state.isDragging) continue
-                        val indicator = state.indicator ?: continue
-
-                        val item1 = items.getOrNull(position)
-                        val item2 = items.getOrNull(position + 1)
-
-                        if (item1 != null) {
-                            val (offX1, _) = offsetInBar(bar, item1)
-                            val center1 = offX1 + item1.width / 2f
-                            val halfW1 = item1.width * INDICATOR_WIDTH_RATIO / 2f
-
-                            val (targetCenter, targetHalfW) = if (item2 != null && positionOffset > 0f) {
-                                val (offX2, _) = offsetInBar(bar, item2)
-                                val center2 = offX2 + item2.width / 2f
-                                val halfW2 = item2.width * INDICATOR_WIDTH_RATIO / 2f
-                                (center1 + (center2 - center1) * positionOffset) to (halfW1 + (halfW2 - halfW1) * positionOffset)
-                            } else {
-                                center1 to halfW1
-                            }
-
-                            val inset = Utils.dipToPixels(INDICATOR_INSET_DP).toFloat()
-                            val barH = (if (bar.height > 0) bar.height else item1.height).toFloat()
-                            val pillH = Utils.dipToPixels(52f).toFloat()
-                            val centerY = barH / 2f
-                            indicator.top = (centerY - pillH / 2f).coerceAtLeast(inset)
-                            indicator.bottom = (centerY + pillH / 2f).coerceAtMost(barH - inset)
-
-                            // Only set target – let Choreographer spring-animate to it smoothly
-                            state.targetCenterX = targetCenter
-                            state.targetHalfWidth = targetHalfW
-
-                            if (!indicator.active) {
-                                state.currentCenterX = targetCenter
-                                state.currentHalfWidth = targetHalfW
-                                indicator.centerX = targetCenter
-                                indicator.halfWidth = targetHalfW
-                                indicator.active = true
-                                indicator.invalidateSelf()
-                                bar.invalidate()
-                            } else {
-                                startPillPhysics(bar, state)
-                            }
-                        }
-                    }
-                }
-            })
-        } catch (_: Throwable) {}
-
         try {
             val itemClasses = listOf("X.0hl", "X.18n")
             for (clsName in itemClasses) {
@@ -595,10 +614,9 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                                     val idx = items.indexOf(view)
                                     if (idx >= 0 && !state.isDragging && !state.isScrubbing) {
                                         state.checkedViewRef = java.lang.ref.WeakReference(view)
-                                        if (idx != state.selectedIndex) {
-                                            state.selectedIndex = idx
-                                            animateToItem(bar, state, items, idx)
-                                        }
+                                        state.selectedIndex = idx
+                                        animateToItem(bar, state, items, idx)
+                                        syncSelection(bar, state)
                                         break
                                     }
                                 }
@@ -885,12 +903,12 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         val radiusDp = prefs.getInt("floating_bottom_bar_radius", CORNER_RADIUS_DP.toInt()).toFloat()
         val radius = Utils.dipToPixels(radiusDp).toFloat()
 
-        // Pure Crystal Liquid Glass Bar
-        val pillAlpha = if (blurEnabled) 15 else 140
+        // Pure Crystal Liquid Glass Bar matching WaLiquidNavigationBar
+        val pillAlpha = if (blurEnabled) 100 else 160
         val pillColor = if (isLight) {
             Color.argb(pillAlpha, 255, 255, 255)
         } else {
-            Color.argb(pillAlpha, 25, 25, 30)
+            Color.argb(pillAlpha, 18, 18, 22)
         }
 
         val corners = floatArrayOf(radius, radius, radius, radius, radius, radius, radius, radius)
@@ -907,7 +925,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             shape = GradientDrawable.RECTANGLE
             cornerRadii = corners
             setColor(Color.TRANSPARENT)
-            val strokeAlpha = if (isLight) 40 else 65
+            val strokeAlpha = if (isLight) 50 else 85
             setStroke(Utils.dipToPixels(1.2f), Color.argb(strokeAlpha, 255, 255, 255))
         }
 
@@ -959,21 +977,21 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         }
         bar.bringToFront()
 
-        // Clean spotlight indicator
+        // Clean spotlight indicator matching WaLiquidNavigationBar
         val indicatorColor = if (isLight) {
-            Color.argb(38, 0, 0, 0)
+            Color.argb(25, 0, 0, 0)
         } else {
-            Color.argb(55, 255, 255, 255)
+            Color.argb(35, 255, 255, 255)
         }
         val shadowColor = if (isLight) {
-            Color.argb(30, 0, 0, 0)
+            Color.argb(20, 0, 0, 0)
         } else {
-            Color.argb(45, 0, 0, 0)
+            Color.argb(35, 0, 0, 0)
         }
         val indicatorStroke = if (isLight) {
-            Color.argb(30, 255, 255, 255)
+            Color.argb(100, 0, 0, 0)
         } else {
-            Color.argb(70, 255, 255, 255)
+            Color.argb(180, 255, 255, 255)
         }
         val indicator = LiquidIndicatorDrawable(indicatorColor, shadowColor, indicatorStroke)
         state.indicator = indicator
@@ -991,8 +1009,22 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         try {
             val setLabelMode = bar.javaClass
                 .getMethod("setLabelVisibilityMode", Int::class.javaPrimitiveType)
-            setLabelMode.invoke(bar, 1)
+            // 2 = LABEL_VISIBILITY_UNLABELED (icon-only mode matching WaEnhancer)
+            setLabelMode.invoke(bar, 2)
         } catch (e: Exception) { }
+
+        try {
+            XposedHelpers.findAndHookMethod(
+                bar.javaClass,
+                "setLabelVisibilityMode",
+                Int::class.javaPrimitiveType,
+                object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        param.args[0] = 2 // Always force LABEL_VISIBILITY_UNLABELED
+                    }
+                }
+            )
+        } catch (_: Throwable) {}
 
         attachSelectionWatcher(bar, state)
     }
@@ -1381,9 +1413,12 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             }
         } catch (_: Throwable) {}
         
-        // Ensure manual tinting so native wrong selection doesn't bleed through
-        val activeColor = resolveBarColor(bar).let { if (isLightColor(it)) Color.BLACK else Color.WHITE }
-        val inactiveColor = Color.argb(128, Color.red(activeColor), Color.green(activeColor), Color.blue(activeColor))
+        // Ensure manual tinting matching WaLiquidNavigationBar
+        // Active icon is vibrant WhatsApp Green (#25D366)
+        // Inactive icons are clean translucent white (65% alpha)
+        val activeColor = Color.parseColor("#25D366")
+        val isLight = isLightColor(resolveBarColor(bar))
+        val inactiveColor = if (isLight) Color.argb(166, 60, 60, 67) else Color.argb(166, 255, 255, 255)
         
         val activeColorState = state.activeColorState ?: android.content.res.ColorStateList.valueOf(activeColor).also { state.activeColorState = it }
         val inactiveColorState = state.inactiveColorState ?: android.content.res.ColorStateList.valueOf(inactiveColor).also { state.inactiveColorState = it }
@@ -1391,29 +1426,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         for (i in items.indices) {
             val view = items[i]
             val isActive = (i == selected)
-            val targetColorState = if (isActive) activeColorState else inactiveColorState
-            val targetColor = if (isActive) activeColor else inactiveColor
-            
-            // Tint ImageView and TextView manually
-            val group = view as? ViewGroup
-            if (group != null) {
-                group.clipChildren = false
-                group.clipToPadding = false
-                for (j in 0 until group.childCount) {
-                    val child = group.getChildAt(j)
-                    if (child is ImageView) {
-                        if (getTabRank(view) == 5) {
-                            child.imageTintList = null
-                        } else if (child.imageTintList !== targetColorState) {
-                            child.imageTintList = targetColorState
-                        }
-                    } else if (child is TextView) {
-                        if (child.currentTextColor != targetColor) {
-                            child.setTextColor(targetColor)
-                        }
-                    }
-                }
-            }
+            tintTabItemRecursively(view, isActive, activeColorState, inactiveColorState, activeColor, inactiveColor)
         }
 
         // Only animate pill when selected tab actually changes, and not during swipe/drag
@@ -1689,7 +1702,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         if (item !is ViewGroup) return
         item.clipChildren = false
         item.clipToPadding = false
-        val density = item.resources.displayMetrics.density
 
         if (item.translationY != 0f) {
             item.translationY = 0f
@@ -1711,21 +1723,64 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             val isLabel = v is TextView || clsName.contains("Label", ignoreCase = true)
 
             if (isIcon) {
-                val targetY = -3f * density
-                if (v.translationY != targetY) {
-                    v.translationY = targetY
+                if (v.translationY != 0f) {
+                    v.translationY = 0f
                 }
             } else if (isLabel) {
-                val targetY = 3.5f * density
-                if (v.translationY != targetY) {
-                    v.translationY = targetY
+                val isBadge = (v is TextView && v.text?.toString()?.matches(Regex("^\\d+\\+?$")) == true)
+                    || v.id == Utils.getID("badge", "id")
+                    || clsName.contains("Badge", ignoreCase = true)
+                if (isBadge) {
+                    v.visibility = View.VISIBLE
+                } else {
+                    v.visibility = View.GONE
+                    v.alpha = 0f
                 }
-                if (v is TextView) {
-                    if (v.textSize != 9.5f * density && v.textSize != 9.5f) {
-                        v.textSize = 9.5f
-                    }
-                    v.maxLines = 1
-                    v.ellipsize = android.text.TextUtils.TruncateAt.END
+            }
+        }
+    }
+
+    private fun tintTabItemRecursively(
+        view: View,
+        isActive: Boolean,
+        activeColorState: android.content.res.ColorStateList,
+        inactiveColorState: android.content.res.ColorStateList,
+        activeColor: Int,
+        inactiveColor: Int
+    ) {
+        val targetColorState = if (isActive) activeColorState else inactiveColorState
+        val targetColor = if (isActive) activeColor else inactiveColor
+        val isRank5 = getTabRank(view) == 5
+
+        val queue = ArrayDeque<View>()
+        queue.add(view)
+        while (queue.isNotEmpty()) {
+            val v = queue.removeFirst()
+            if (v is ImageView) {
+                if (isRank5 && Utils.getUserProfileAvatar(v.context, 128) != null && v.drawable === Utils.getUserProfileAvatar(v.context, 128)) {
+                    v.imageTintList = null
+                    v.colorFilter = null
+                } else {
+                    v.imageTintList = targetColorState
+                    v.setColorFilter(targetColor, PorterDuff.Mode.SRC_IN)
+                }
+                v.translationY = 0f
+            } else if (v is TextView) {
+                val clsName = v.javaClass.simpleName
+                val isBadge = (v.text?.toString()?.matches(Regex("^\\d+\\+?$")) == true) ||
+                        clsName.contains("Badge", ignoreCase = true) ||
+                        (v.id > 0 && v.id == Utils.getID("badge", "id"))
+                if (isBadge) {
+                    v.visibility = View.VISIBLE
+                } else {
+                    v.visibility = View.GONE
+                    v.alpha = 0f
+                }
+            } else if (v is ViewGroup) {
+                v.clipChildren = false
+                v.clipToPadding = false
+                for (i in 0 until v.childCount) {
+                    queue.add(v.getChildAt(i))
                 }
             }
         }
@@ -1939,7 +1994,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         val inset = Utils.dipToPixels(INDICATOR_INSET_DP).toFloat()
 
         var toCenter = offsetX + target.width / 2f
-        val toHalfWidth = target.width * INDICATOR_WIDTH_RATIO / 2f
+        val toHalfWidth = getPillHalfWidth(target.width.toFloat())
 
         val safeMargin = Utils.dipToPixels(10f).toFloat()
         val minCenter = safeMargin + toHalfWidth
@@ -1954,7 +2009,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         state.selectedIndex = newIndex
 
         val barH = (if (bar.height > 0) bar.height else target.height).toFloat()
-        val pillH = Utils.dipToPixels(52f).toFloat()
+        val pillH = Utils.dipToPixels(PILL_HEIGHT_DP).toFloat()
         val centerY = barH / 2f
         indicator.top = (centerY - pillH / 2f).coerceAtLeast(inset)
         indicator.bottom = (centerY + pillH / 2f).coerceAtMost(barH - inset)
