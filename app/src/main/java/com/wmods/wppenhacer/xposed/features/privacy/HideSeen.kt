@@ -96,7 +96,7 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
 
                 logDebug("[HideSeen] hookSendReadReceiptJob: job=$jobClassName, userJid=$userJid, isHide=$isHide, blueOnReply=$blueOnReply, hideread=$isHideRead, ghost=$isGhostMode")
 
-                if (blueOnReply) {
+                if (blueOnReply && !userJid.isStatus) {
                     param.result = null
                     dbExecutor.execute {
                         runCatching { recordHiddenMessages(job, userJid) }.onFailure { log(it) }
@@ -217,6 +217,8 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
 
                     val hideReceiptActive = checkPrivacyAndHideReceipt(fmessageKey)
                     val hideSeenActive = checkPrivacyAndHideSeen(fmessageKey)
+                    val hideOnceActive = checkPrivacyAndHideOnce(fmessageKey)
+                    val hideAudioActive = checkPrivacyAndHideAudio(fmessageKey)
 
                     if (hideReceiptActive) {
                         val typeKV = protocolTreeNodeWpp.attributes.firstOrNull { it.key == "type" }
@@ -227,9 +229,12 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
                             typeKV.value = "inactive"
                             protocolTreeNodeWpp.removeAllKeyValuesByKey("sts")
                         }
-                    } else if (hideSeenActive) {
+                    } else if (hideSeenActive || hideOnceActive || hideAudioActive) {
                         val typeKV = protocolTreeNodeWpp.attributes.firstOrNull { it.key == "type" }
-                        if (typeKV?.value == "read") {
+                        if (typeKV?.value == "read" && hideSeenActive) {
+                            protocolTreeNodeWpp.removeAllKeyValuesByKey("sts")
+                            protocolTreeNodeWpp.removeAllKeyValuesByKey("type")
+                        } else if (typeKV?.value == "played" && (hideOnceActive || hideAudioActive || hideSeenActive)) {
                             protocolTreeNodeWpp.removeAllKeyValuesByKey("sts")
                             protocolTreeNodeWpp.removeAllKeyValuesByKey("type")
                         }
@@ -237,6 +242,16 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
                 }
             }
         })
+    }
+
+    private fun checkPrivacyAndHideOnce(fmessageKey: FMessageWpp.Key): Boolean {
+        val privacy = CustomPrivacy.getJSON(fmessageKey.remoteJid.phoneNumber)
+        return privacy.optBoolean("HideOnceSeen", isHideOnceSeen) || isGhostMode
+    }
+
+    private fun checkPrivacyAndHideAudio(fmessageKey: FMessageWpp.Key): Boolean {
+        val privacy = CustomPrivacy.getJSON(fmessageKey.remoteJid.phoneNumber)
+        return privacy.optBoolean("HideAudioSeen", isHideAudioSeen) || isGhostMode
     }
 
     private fun checkPrivacyAndHideReceipt(fmessageKey: FMessageWpp.Key): Boolean {
@@ -271,18 +286,22 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
                 val set = param.args[0] as? Set<*>
                 if (set.isNullOrEmpty()) return
 
-                val fMessage = FMessageWpp(set.first() ?: return)
-                processSenderPlayed(param, fMessage)
+                for (item in set) {
+                    val fMessage = FMessageWpp(item ?: continue)
+                    processSenderPlayed(param, fMessage)
+                }
             }
         })
     }
 
     private fun processSenderPlayed(param: XC_MethodHook.MethodHookParam, fMessage: FMessageWpp) {
         val ghost = isGhostMode
-        val hideOnce = isHideOnceSeen
+        val privacy = CustomPrivacy.getJSON(fMessage.key.remoteJid.phoneNumber)
+        val hideOnce = privacy.optBoolean("HideOnceSeen", isHideOnceSeen)
+        val hideAudio = privacy.optBoolean("HideAudioSeen", isHideAudioSeen)
         val isHideViewOnce = (hideOnce || ghost) && fMessage.isViewOnce
         val isHideVoiceNote =
-            (isHideAudioSeen || ghost) && fMessage.mediaType == MEDIA_TYPE_VOICE_NOTE
+            (hideAudio || ghost) && fMessage.mediaType == MEDIA_TYPE_VOICE_NOTE
         val key = fMessage.key
 
         val primaryJid = key.remoteJid.phoneRawString ?: key.remoteJid.userRawString ?: return

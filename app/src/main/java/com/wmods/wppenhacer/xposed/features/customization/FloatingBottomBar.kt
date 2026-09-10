@@ -92,7 +92,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         private const val INDICATOR_INSET_DP = 4f
         private const val INDICATOR_WIDTH_RATIO = 0.88f
         private const val BLUR_RADIUS = 2.5f
-        private const val PRESSED_SCALE = 1.393f // 78f / 56f ala Remielle Kernel Manager
+        private const val PRESSED_SCALE = 1.18f // Refined liquid swell matching continuous capsule
         private const val RUBBER_BAND_DP = 4f
     }
 
@@ -173,14 +173,14 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             val halfH = baseRadius * scaleY
             val corner = halfH.coerceAtMost(halfW)
 
-            // 1. Soft multi-layer dynamic drop shadow (glows and expands when pressed)
+            // 1. Soft subtle dynamic ambient shadow
             val baseAlpha = Color.alpha(shadowColor)
             shadowPaint.color = shadowColor
-            val shadowSpread = 1f + 0.40f * pressProgress
+            val shadowSpread = 1f + 0.20f * pressProgress
             for (i in SHADOW_SPREAD.indices) {
-                val grow = Utils.dipToPixels(6f) * SHADOW_SPREAD[i] * shadowSpread
-                shadowPaint.alpha = (baseAlpha * SHADOW_ALPHA[i] * (1f + 0.6f * pressProgress)).toInt().coerceIn(0, 255)
-                val drop = grow * (0.30f + 0.15f * pressProgress)
+                val grow = Utils.dipToPixels(4f) * SHADOW_SPREAD[i] * shadowSpread
+                shadowPaint.alpha = (baseAlpha * SHADOW_ALPHA[i] * (1f + 0.4f * pressProgress)).toInt().coerceIn(0, 255)
+                val drop = grow * (0.25f + 0.10f * pressProgress)
                 rect.set(
                     centerX - halfW - grow,
                     centerY - halfH - grow + drop,
@@ -190,54 +190,60 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                 canvas.drawRoundRect(rect, corner + grow, corner + grow, shadowPaint)
             }
 
-            // 2. Pure Translucent Liquid Lens Body
+            // 2. Translucent Liquid Lens Body (Crystal clear, exactly like photo 3)
             bodyPaint.color = fillColor
-            val fillAlpha = (Color.alpha(fillColor) * (1f - pressProgress * 0.20f)).toInt().coerceIn(0, 255)
+            val fillAlpha = (Color.alpha(fillColor) * (1f + pressProgress * 0.20f)).toInt().coerceIn(0, 255)
             bodyPaint.alpha = fillAlpha
             rect.set(centerX - halfW, centerY - halfH, centerX + halfW, centerY + halfH)
             canvas.drawRoundRect(rect, corner, corner, bodyPaint)
 
-            // 3. Chromatic Aberration Rim (Iridescent rainbow refraction like Kyant's backdrop in Remielle)
-            if (pressProgress > 0.04f) {
-                val chromAlpha = (190 * pressProgress).toInt().coerceIn(0, 255)
-                val rainbowColors = intArrayOf(
-                    Color.argb((chromAlpha * 0.90f).toInt(), 0, 229, 255),   // Cyan
-                    Color.argb((chromAlpha * 0.85f).toInt(), 118, 255, 3),   // Green
-                    Color.argb((chromAlpha * 0.85f).toInt(), 255, 214, 0),   // Gold
-                    Color.argb((chromAlpha * 0.95f).toInt(), 255, 23, 68),   // Red
-                    Color.argb((chromAlpha * 0.90f).toInt(), 213, 0, 249),   // Magenta
-                    Color.argb((chromAlpha * 0.90f).toInt(), 41, 121, 255),  // Blue
-                    Color.argb((chromAlpha * 0.90f).toInt(), 0, 229, 255)    // Loop to Cyan
-                )
-                val sweep = SweepGradient(centerX, centerY, rainbowColors, null)
-                chromaticMatrix.reset()
-                chromaticMatrix.postRotate(-45f, centerX, centerY)
-                sweep.setLocalMatrix(chromaticMatrix)
-                chromaticPaint.shader = sweep
-                chromaticPaint.strokeWidth = Utils.dipToPixels(1.6f).toFloat() * (1f + 0.3f * pressProgress)
-                rect.set(centerX - halfW, centerY - halfH, centerX + halfW, centerY + halfH)
-                canvas.drawRoundRect(rect, corner, corner, chromaticPaint)
-            }
-
-            // 4. Crisp Crystalline Glass Rim Stroke
-            val rimAlpha = (Color.alpha(strokeColor) + 50 * pressProgress).toInt().coerceIn(0, 255)
+            // 3. Crisp Crystalline Glass Rim Stroke (Delicate clean border around the capsule)
+            val rimAlpha = (Color.alpha(strokeColor) + 30 * pressProgress).toInt().coerceIn(0, 255)
             strokePaint.color = Color.argb(rimAlpha, Color.red(strokeColor), Color.green(strokeColor), Color.blue(strokeColor))
             rect.set(centerX - halfW, centerY - halfH, centerX + halfW, centerY + halfH)
             canvas.drawRoundRect(rect, corner, corner, strokePaint)
 
-            // 5. Specular 3D Convex Lens Reflection (Top highlight)
-            if (pressProgress > 0.04f) {
-                val highlightAlpha = (65 * pressProgress).toInt().coerceIn(0, 255)
-                highlightPaint.color = Color.argb(highlightAlpha, 255, 255, 255)
-                val hlW = halfW * 0.60f
-                val hlH = halfH * 0.28f
-                rect.set(
-                    centerX - hlW,
-                    centerY - halfH + Utils.dipToPixels(2.5f),
-                    centerX + hlW,
-                    centerY - halfH + hlH + Utils.dipToPixels(2.5f)
+            // 4. Subtle Specular Highlight along the Top Rim (Light reflection from above, like photo 3)
+            val topHlAlpha = (75 + 65 * pressProgress).toInt().coerceIn(0, 255)
+            val topHighlightShader = LinearGradient(
+                centerX, centerY - halfH,
+                centerX, centerY,
+                intArrayOf(
+                    Color.argb(topHlAlpha, 255, 255, 255),
+                    Color.argb((topHlAlpha * 0.25f).toInt(), 255, 255, 255),
+                    Color.TRANSPARENT
+                ),
+                floatArrayOf(0f, 0.45f, 1f),
+                Shader.TileMode.CLAMP
+            )
+            highlightPaint.style = Paint.Style.STROKE
+            highlightPaint.strokeWidth = Utils.dipToPixels(1.2f).toFloat()
+            highlightPaint.shader = topHighlightShader
+            rect.set(centerX - halfW, centerY - halfH, centerX + halfW, centerY + halfH)
+            canvas.drawRoundRect(rect, corner, corner, highlightPaint)
+
+            // 5. Chromatic Aberration Dispersion (Realistic edge refraction ONLY at bottom-right rim, like Photo 3!)
+            if (pressProgress > 0.02f) {
+                val chromAlpha = (130 * pressProgress).toInt().coerceIn(0, 255)
+                val chromaticShader = LinearGradient(
+                    centerX - halfW * 0.2f, centerY - halfH * 0.2f,
+                    centerX + halfW, centerY + halfH,
+                    intArrayOf(
+                        Color.TRANSPARENT,
+                        Color.TRANSPARENT,
+                        Color.argb((chromAlpha * 0.60f).toInt(), 0, 229, 255),   // Cyan
+                        Color.argb((chromAlpha * 0.80f).toInt(), 41, 121, 255),  // Blue
+                        Color.argb((chromAlpha * 0.85f).toInt(), 213, 0, 249),  // Purple / Magenta
+                        Color.argb((chromAlpha * 0.65f).toInt(), 255, 23, 68),   // Red
+                        Color.TRANSPARENT
+                    ),
+                    floatArrayOf(0f, 0.55f, 0.72f, 0.82f, 0.90f, 0.96f, 1f),
+                    Shader.TileMode.CLAMP
                 )
-                canvas.drawRoundRect(rect, hlH, hlH, highlightPaint)
+                chromaticPaint.shader = chromaticShader
+                chromaticPaint.strokeWidth = Utils.dipToPixels(1.5f).toFloat()
+                rect.set(centerX - halfW, centerY - halfH, centerX + halfW, centerY + halfH)
+                canvas.drawRoundRect(rect, corner, corner, chromaticPaint)
             }
         }
 
@@ -476,15 +482,15 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                                     rawCenterX > maxX -> maxX + sqrt((rawCenterX - maxX) * Utils.dipToPixels(RUBBER_BAND_DP * 2.5f))
                                     else -> rawCenterX
                                 }
-
                                 val closestIndex = items.indices.minByOrNull { idx ->
                                     val item = items[idx]
                                     val center = offsetInBar(bar, item).first + item.width / 2f
                                     abs(center - newCenterX)
                                 } ?: state.selectedIndex
-                                val targetWidth = items[closestIndex].width * INDICATOR_WIDTH_RATIO / 2f
+                                val hPadding = Utils.dipToPixels(4f).toFloat()
+                                val targetWidth = (items[closestIndex].width / 2f) - hPadding
 
-                                val safeMargin = Utils.dipToPixels(6f).toFloat()
+                                val safeMargin = Utils.dipToPixels(4f).toFloat()
                                 val minCenter = safeMargin + targetWidth
                                 val maxCenter = if (bar.width > 0) bar.width - safeMargin - targetWidth else minCenter
                                 if (maxCenter > minCenter) {
@@ -679,6 +685,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             val view = param.thisObject as? View ?: return
                             if (!isBarOrChild(view)) return
                             disableNativeActiveIndicator(view)
+                            formatTabItemViews(view)
                             val isNowSelected = param.args.getOrNull(0) as? Boolean ?: return
                             if (isNowSelected) {
                                 val rank = getTabRank(view)
@@ -1064,19 +1071,19 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
 
         // Clean spotlight indicator
         val indicatorColor = if (isLight) {
-            Color.argb(38, 0, 0, 0)
+            Color.argb(22, 0, 0, 0)
         } else {
-            Color.argb(55, 255, 255, 255)
+            Color.argb(32, 255, 255, 255)
         }
         val shadowColor = if (isLight) {
-            Color.argb(30, 0, 0, 0)
+            Color.argb(18, 0, 0, 0)
         } else {
-            Color.argb(45, 0, 0, 0)
+            Color.argb(35, 0, 0, 0)
         }
         val indicatorStroke = if (isLight) {
-            Color.argb(30, 255, 255, 255)
+            Color.argb(35, 0, 0, 0)
         } else {
-            Color.argb(70, 255, 255, 255)
+            Color.argb(55, 255, 255, 255)
         }
         val indicator = LiquidIndicatorDrawable(indicatorColor, shadowColor, indicatorStroke)
         state.indicator = indicator
@@ -1094,7 +1101,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         try {
             val setLabelMode = bar.javaClass
                 .getMethod("setLabelVisibilityMode", Int::class.javaPrimitiveType)
-            setLabelMode.invoke(bar, 1)
+            setLabelMode.invoke(bar, 2) // LABEL_VISIBILITY_UNLABELED
         } catch (e: Exception) { }
 
         attachSelectionWatcher(bar, state)
@@ -1511,7 +1518,12 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             child.imageTintList = targetColorState
                         }
                     } else if (child is TextView) {
-                        if (child.currentTextColor != targetColor) {
+                        val entryName = runCatching { child.resources.getResourceEntryName(child.id) }.getOrNull()?.lowercase() ?: ""
+                        val isBadge = child.javaClass.simpleName.contains("Badge", ignoreCase = true) || entryName.contains("badge")
+                        if (!isBadge) {
+                            child.visibility = View.GONE
+                            child.alpha = 0f
+                        } else if (child.currentTextColor != targetColor) {
                             child.setTextColor(targetColor)
                         }
                     }
@@ -1810,25 +1822,30 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                 }
             }
             val clsName = v.javaClass.simpleName
-            val isIcon = v is ImageView || clsName.contains("Icon", ignoreCase = true)
-            val isLabel = v is TextView || clsName.contains("Label", ignoreCase = true)
+            val entryName = runCatching { v.resources.getResourceEntryName(v.id) }.getOrNull()?.lowercase() ?: ""
+            val isBadge = clsName.contains("Badge", ignoreCase = true) || entryName.contains("badge")
+            val isIcon = !isBadge && (v is ImageView || clsName.contains("Icon", ignoreCase = true))
+            val isLabel = !isBadge && !isIcon && (clsName.contains("Label", ignoreCase = true) ||
+                    clsName.contains("BaselineLayout", ignoreCase = true) ||
+                    entryName.contains("label") ||
+                    v is TextView)
 
             if (isIcon) {
-                val targetY = -3f * density
+                val targetY = 0f
                 if (v.translationY != targetY) {
                     v.translationY = targetY
                 }
             } else if (isLabel) {
-                val targetY = 3.5f * density
-                if (v.translationY != targetY) {
-                    v.translationY = targetY
+                if (v.visibility != View.GONE) {
+                    v.visibility = View.GONE
                 }
-                if (v is TextView) {
-                    if (v.textSize != 9.5f * density && v.textSize != 9.5f) {
-                        v.textSize = 9.5f
-                    }
-                    v.maxLines = 1
-                    v.ellipsize = android.text.TextUtils.TruncateAt.END
+                if (v.alpha != 0f) {
+                    v.alpha = 0f
+                }
+                val lp = v.layoutParams
+                if (lp != null && lp.height != 0) {
+                    lp.height = 0
+                    v.layoutParams = lp
                 }
             }
         }
@@ -2043,9 +2060,14 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         val (offsetX, _) = offsetInBar(bar, target)
 
         var toCenter = offsetX + target.width / 2f
-        val toHalfWidth = target.width * INDICATOR_WIDTH_RATIO / 2f
+        val barH = (if (bar.height > 0) bar.height else target.height).toFloat()
+        val vPadding = Utils.dipToPixels(5f).toFloat()
+        val hPadding = Utils.dipToPixels(4f).toFloat()
 
-        val safeMargin = Utils.dipToPixels(6f).toFloat()
+        val toHalfWidth = (target.width / 2f) - hPadding
+        val toHalfHeight = (barH / 2f) - vPadding
+
+        val safeMargin = Utils.dipToPixels(4f).toFloat()
         val minCenter = safeMargin + toHalfWidth
         val maxCenter = if (bar.width > 0) bar.width - safeMargin - toHalfWidth else minCenter
         if (maxCenter > minCenter) {
@@ -2057,11 +2079,9 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
 
         state.selectedIndex = newIndex
 
-        val barH = (if (bar.height > 0) bar.height else target.height).toFloat()
-        val pillH = Utils.dipToPixels(54f).toFloat()
         val centerY = barH / 2f
-        indicator.top = centerY - pillH / 2f
-        indicator.bottom = centerY + pillH / 2f
+        indicator.top = centerY - toHalfHeight
+        indicator.bottom = centerY + toHalfHeight
 
         if (firstRun) {
             state.currentCenterX = toCenter
