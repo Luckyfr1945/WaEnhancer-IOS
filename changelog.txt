@@ -3,11 +3,16 @@
 * Interactive Spring Physics Navigation: Touch-responsive damped drag animation allowing the liquid bubble indicator to be smoothly dragged, stretched, and flung between tabs
 * Custom Wallpaper & Glass UI Refinement: Deep glassmorphism integration with custom background wallpapers, customizable blur intensity, and adaptive translucent scrim overlay for optimal contrast
 * Modernized Liquid Glass Preferences: Redesigned preferences and home cards with translucent liquid glass card styling, custom category headers, and refined icon frames
+* Tactile Haptic Feedback: Integrated rich, low-latency tactile haptic sensations (crisp detent micro-ticks while dragging across tab notches, firm confirmation snap-clicks on landing, and tap feedback)
+* Smart Auto-Hide Floating Nav Bar: Intelligent scroll-aware navigation bar that smoothly slides down out of view during downward scrolling to expand reading area, and immediately reveals on upward scroll, top scroll, or tab switching
+* Frosted Glass Top Bar & iOS Header: Translucent acrylic glass top bar with crisp hairline bottom divider that seamlessly layers over scrolling content, allowing cards and widgets to flow smoothly behind the header
 
 [IMPROVED]
 * Bidirectional Navigation Synchronization: Instant, fluid two-way synchronization between Compose liquid bar gesture dragging and ViewPager2 page swipe transitions
 * Hardware-Accelerated Wallpaper Blur: Replaced CPU-bound software blur views with GPU-accelerated RenderEffect pipeline for higher frame rates and zero jitter
 * Adaptive Navigation Bar: Floating bottom nav bar automatically adapts width and hides unavailable tabs based on LSPosed and Root activation state
+* Adaptive High Refresh Rate Support: Automatically detects the physical screen's maximum refresh rate (up to 120Hz/144Hz) and locks the window mode to ensure ultra-smooth 120 FPS animations without OEM 60Hz throttling, while gracefully adapting to 60Hz/90Hz on other displays
+* 120 FPS Zero-Tessellation GPU Pipeline: Completely eliminated CPU Path geometry tessellation by transitioning CardPreferenceItemDecoration to native GPU hardware primitives (drawRoundRect, drawRect, drawLine, drawArc), added explicit hardware acceleration in AndroidManifest, removed heavy 12dp/20dp dynamic elevation shadow projection, enabled setHasFixedSize(true), and added debounced scroll delta accumulation to guarantee rock-solid 120 FPS scrolling without micro-hitches
 
 [FIXED]
 * Fixed Navigation Bar Top Clipping Bug: Resolved visual bug where the top portion of the liquid bubble indicator was cut off during press and drag gestures by adding vertical headroom padding and disabling parent view clipping (`clipChildren = false`, `clipToPadding = false`)

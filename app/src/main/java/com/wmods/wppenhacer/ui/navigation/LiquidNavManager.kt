@@ -86,4 +86,37 @@ class LiquidNavManager(
     fun setVisibility(visibility: Int) {
         composeView.visibility = visibility
     }
+
+    private var isBarHidden = false
+
+    fun hideBar(animated: Boolean = true) {
+        if (isBarHidden || composeView.visibility != android.view.View.VISIBLE) return
+        isBarHidden = true
+        val targetY = if (composeView.height > 0) composeView.height.toFloat() + 100f else 350f
+        if (animated) {
+            composeView.animate()
+                .translationY(targetY)
+                .setDuration(260)
+                .setInterpolator(android.view.animation.AccelerateInterpolator(1.4f))
+                .start()
+        } else {
+            composeView.translationY = targetY
+        }
+    }
+
+    fun showBar(animated: Boolean = true) {
+        if (!isBarHidden) return
+        isBarHidden = false
+        if (animated) {
+            composeView.animate()
+                .translationY(0f)
+                .setDuration(300)
+                .setInterpolator(android.view.animation.DecelerateInterpolator(1.5f))
+                .start()
+        } else {
+            composeView.translationY = 0f
+        }
+    }
+
+    fun isHidden(): Boolean = isBarHidden
 }

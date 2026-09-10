@@ -1,0 +1,58 @@
+================================================================================
+           WAENHANCER-IOS — UI & INTERACTION ROADMAP (1 - 7)
+================================================================================
+
+[x] 1. Tactile Haptic Feedback pada Liquid Navigation Bar [SELESAI]
+       - Deskripsi: Menambahkan getaran haptic halus (tactile tick / click vibration)
+         saat bubble liquid digeser dan snapping/mendarat di antara tab.
+       - Sensasi: Memberikan feedback fisik nyata di tangan yang kenyal dan responsif,
+         menjadikan navigasi terasa hidup seperti objek fisik.
+       - Implementasi: Android VibrationEffect / HapticFeedbackConstants pada gesture drag
+         di LiquidHelpers.kt & WaLiquidNavigationBar.kt.
+
+[-] 2. Liquid Glass Dialog & Bottom Sheet Styling [DILEWATI / DIHAPUS]
+       - Deskripsi: Mengubah dialog standar Android (dialog konfirmasi, info update,
+         reset preferences, dsb.) menjadi Frosted Liquid Glass Dialog.
+       - Fitur: Latar belakang semi-transparan dengan blur, outline glassmorphism halus,
+         dan tombol pill rounded dengan gradient elegan yang konsisten dengan tema app.
+       - Implementasi: Custom Compose / Material Dialog Theme dengan backdrop blur filter.
+
+[ ] 3. Ambient Weather & Particle Overlay (Remielle-Style)
+       - Deskripsi: Menambahkan efek partikel cuaca/ambience interaktif mengalir di atas
+         wallpaper background.
+       - Pilihan Efek:
+         * Sakura Petals (kelopak bunga sakura melayang perlahan)
+         * Rain Droplets (gerimis hujan halus)
+         * Starry / Light Dust Glow (partikel debu cahaya berkilau)
+       - Kontrol: Toggle On/Off dan pilihan jenis partikel di tab Customization.
+
+[ ] 4. Live / Video Wallpaper Support
+       - Deskripsi: Memungkinkan pengguna memilih video pendek (format .mp4) sebagai
+         live wallpaper bergerak di latar belakang aplikasi.
+       - Fitur: Auto-loop mulus, hemat daya (auto-pause saat aplikasi di background atau layar mati),
+         dan tetap terintegrasi dengan blur rendering pipeline GPU yang ada.
+       - Implementasi: ExoPlayer / TextureView renderer di background layout.
+
+[x] 5. Smart Auto-Hide Floating Nav Bar saat Scroll [SELESAI]
+       - Deskripsi: Ketika user melakukan scroll ke bawah membaca daftar pengaturan/fitur
+         yang panjang, liquid navigation bar otomatis meluncur halus ke bawah (slide-down hide)
+         sehingga layar menjadi lebih lega (immersive view).
+       - Perilaku: Bar langsung muncul kembali (slide-up reveal) begitu user scroll ke atas sedikit.
+       - Implementasi: NestedScrollConnection / RecyclerView OnScrollListener dengan spring animation.
+
+[x] 6. Frosted Glass Top Bar / Header (iOS-Style Collapsing Header) [SELESAI]
+       - Deskripsi: Mengubah Top App Bar / Toolbar utama menjadi frosted glass transparan dengan blur.
+       - Visual: Saat daftar konten di-scroll ke atas, card preference akan mengalir mulus
+         secara transparan di balik top bar, memberikan kedalaman visual ala iOS.
+       - Implementasi: RenderEffect blur overlay / transparent background pada header container.
+
+[-] 7. Micro-Interactions & Animated Tab Icons [DILEWATI / DIHAPUS]
+       - Deskripsi: Menambahkan animasi mikro pada ikon-ikon navigasi ketika disentuh atau
+         ketika bubble berpindah tempat.
+       - Visual: Efek jelly bounce / squash-and-stretch pada ikon yang aktif, serta dukungan
+         dynamic badge indicator (misalnya titik aksen jika ada update baru atau status aktif).
+       - Implementasi: Compose animateFloatAsState / spring scale transform pada masing-masing icon.
+
+================================================================================
+Catatan: Fitur akan dieksekusi secara bertahap satu per satu (1 -> 7).
+================================================================================

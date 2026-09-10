@@ -18,6 +18,56 @@ public class BaseActivity extends AppCompatActivity {
         getTheme().applyStyle(R.style.ThemeOverlay, true);
         applyThemeOverlay();
         super.onCreate(savedInstanceState);
+        enableHighRefreshRate();
+    }
+
+    /**
+     * Dynamically detects and requests the highest refresh rate supported by the
+     * display (90Hz, 120Hz, 144Hz+).
+     * Safely adapts to the hardware: if the device only supports 60Hz, it
+     * gracefully leaves default attributes intact.
+     */
+    private void enableHighRefreshRate() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                android.view.Window window = getWindow();
+                if (window == null)
+                    return;
+
+                android.view.Display display = null;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    display = getDisplay();
+                }
+                if (display == null) {
+                    android.view.WindowManager wm = (android.view.WindowManager) getSystemService(WINDOW_SERVICE);
+                    if (wm != null) {
+                        display = wm.getDefaultDisplay();
+                    }
+                }
+
+                if (display != null) {
+                    android.view.Display.Mode[] modes = display.getSupportedModes();
+                    if (modes != null && modes.length > 0) {
+                        android.view.Display.Mode maxMode = null;
+                        float maxRate = 0f;
+                        for (android.view.Display.Mode mode : modes) {
+                            if (mode.getRefreshRate() > maxRate) {
+                                maxRate = mode.getRefreshRate();
+                                maxMode = mode;
+                            }
+                        }
+
+                        if (maxMode != null && maxRate > 60f) {
+                            android.view.WindowManager.LayoutParams params = window.getAttributes();
+                            params.preferredDisplayModeId = maxMode.getModeId();
+                            params.preferredRefreshRate = maxRate;
+                            window.setAttributes(params);
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+        }
     }
 
     private void applyThemeOverlay() {

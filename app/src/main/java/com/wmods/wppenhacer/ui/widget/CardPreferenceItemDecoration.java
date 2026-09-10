@@ -21,8 +21,10 @@ import com.wmods.wppenhacer.activities.MainActivity;
 
 /**
  * Liquid Glass ItemDecoration untuk seluruh layar Preferensi Android.
- * Mengaplikasikan sudut halus 22dp, border specular gradien putih yang hanya membungkus keliling luar kartu,
- * specular top sheen, dan latar belakang liquid glass transparan berkilau yang menyatu dengan wallpaper.
+ * Mengaplikasikan sudut halus 22dp, border specular gradien putih yang hanya
+ * membungkus keliling luar kartu,
+ * specular top sheen, dan latar belakang liquid glass transparan berkilau yang
+ * menyatu dengan wallpaper.
  */
 public class CardPreferenceItemDecoration extends RecyclerView.ItemDecoration {
 
@@ -60,30 +62,36 @@ public class CardPreferenceItemDecoration extends RecyclerView.ItemDecoration {
     }
 
     private boolean isCategory(Preference pref) {
-        if (pref == null) return false;
+        if (pref == null)
+            return false;
         return pref instanceof PreferenceCategory || pref.getClass().getSimpleName().contains("Category");
     }
 
     private boolean isFirstItem(RecyclerView.Adapter<?> adapter, int position) {
-        if (position == 0) return true;
+        if (position == 0)
+            return true;
         Preference prev = getPreference(adapter, position - 1);
         return prev == null || isCategory(prev);
     }
 
     private boolean isLastItem(RecyclerView.Adapter<?> adapter, int position) {
         int count = adapter != null ? adapter.getItemCount() : 0;
-        if (position == count - 1) return true;
+        if (position == count - 1)
+            return true;
         Preference next = getPreference(adapter, position + 1);
         return next == null || isCategory(next);
     }
 
     @Override
-    public void getItemOffsets(@NonNull Rect outRect, @NonNull View view, @NonNull RecyclerView parent, @NonNull RecyclerView.State state) {
+    public void getItemOffsets(@NonNull Rect outRect, @NonNull View view, @NonNull RecyclerView parent,
+            @NonNull RecyclerView.State state) {
         RecyclerView.Adapter<?> adapter = parent.getAdapter();
-        if (adapter == null) return;
+        if (adapter == null)
+            return;
 
         int position = parent.getChildAdapterPosition(view);
-        if (position == RecyclerView.NO_POSITION) return;
+        if (position == RecyclerView.NO_POSITION)
+            return;
 
         float density = parent.getContext().getResources().getDisplayMetrics().density;
         Preference pref = getPreference(adapter, position);
@@ -108,7 +116,8 @@ public class CardPreferenceItemDecoration extends RecyclerView.ItemDecoration {
     @Override
     public void onDraw(@NonNull Canvas canvas, @NonNull RecyclerView parent, @NonNull RecyclerView.State state) {
         RecyclerView.Adapter<?> adapter = parent.getAdapter();
-        if (adapter == null) return;
+        if (adapter == null)
+            return;
 
         boolean hasWallpaper = MainActivity.customWallpaperBitmap != null;
         int childCount = parent.getChildCount();
@@ -117,7 +126,8 @@ public class CardPreferenceItemDecoration extends RecyclerView.ItemDecoration {
         for (int i = 0; i < childCount; i++) {
             View child = parent.getChildAt(i);
             int position = parent.getChildAdapterPosition(child);
-            if (position == RecyclerView.NO_POSITION) continue;
+            if (position == RecyclerView.NO_POSITION)
+                continue;
 
             Preference pref = getPreference(adapter, position);
             if (isCategory(pref)) {
@@ -140,30 +150,28 @@ public class CardPreferenceItemDecoration extends RecyclerView.ItemDecoration {
                         left, top, left, bottom,
                         Color.argb(135, 26, 30, 38),
                         Color.argb(105, 18, 22, 28),
-                        Shader.TileMode.CLAMP
-                ));
+                        Shader.TileMode.CLAMP));
             } else {
                 // Deep OLED Glass tone
                 cardBgPaint.setShader(new LinearGradient(
                         left, top, left, bottom,
                         Color.argb(230, 24, 28, 34),
                         Color.argb(230, 14, 16, 20),
-                        Shader.TileMode.CLAMP
-                ));
+                        Shader.TileMode.CLAMP));
             }
 
             Path bgPath = createBackgroundPath(left, top, right, bottom, isFirst, isLast, radius);
             canvas.drawPath(bgPath, cardBgPaint);
 
-            // 2. Specular Top Sheen (efek pantulan kaca di bagian atas kartu seperti di Dashboard)
+            // 2. Specular Top Sheen (efek pantulan kaca di bagian atas kartu seperti di
+            // Dashboard)
             if (isFirst) {
                 float sheenHeight = Math.min(bottom - top, 26f * density);
                 sheenPaint.setShader(new LinearGradient(
                         left, top, left, top + sheenHeight,
                         Color.argb(24, 255, 255, 255),
                         Color.TRANSPARENT,
-                        Shader.TileMode.CLAMP
-                ));
+                        Shader.TileMode.CLAMP));
                 Path sheenPath = createTopSheenPath(left, top, right, top + sheenHeight, radius);
                 canvas.drawPath(sheenPath, sheenPaint);
             }
@@ -174,8 +182,7 @@ public class CardPreferenceItemDecoration extends RecyclerView.ItemDecoration {
                     left, top, right, bottom,
                     Color.argb(90, 255, 255, 255),
                     Color.argb(20, 255, 255, 255),
-                    Shader.TileMode.CLAMP
-            ));
+                    Shader.TileMode.CLAMP));
 
             Path strokePath = createOuterStrokePath(left, top, right, bottom, isFirst, isLast, radius);
             if (strokePath != null) {
@@ -192,17 +199,18 @@ public class CardPreferenceItemDecoration extends RecyclerView.ItemDecoration {
         }
     }
 
-    private Path createBackgroundPath(float left, float top, float right, float bottom, boolean isFirst, boolean isLast, float r) {
+    private Path createBackgroundPath(float left, float top, float right, float bottom, boolean isFirst, boolean isLast,
+            float r) {
         Path path = new Path();
         float[] radii;
         if (isFirst && isLast) {
-            radii = new float[]{r, r, r, r, r, r, r, r};
+            radii = new float[] { r, r, r, r, r, r, r, r };
         } else if (isFirst) {
-            radii = new float[]{r, r, r, r, 0, 0, 0, 0};
+            radii = new float[] { r, r, r, r, 0, 0, 0, 0 };
         } else if (isLast) {
-            radii = new float[]{0, 0, 0, 0, r, r, r, r};
+            radii = new float[] { 0, 0, 0, 0, r, r, r, r };
         } else {
-            radii = new float[]{0, 0, 0, 0, 0, 0, 0, 0};
+            radii = new float[] { 0, 0, 0, 0, 0, 0, 0, 0 };
         }
         RectF rect = new RectF(left, top, right, bottom);
         path.addRoundRect(rect, radii, Path.Direction.CW);
@@ -211,13 +219,14 @@ public class CardPreferenceItemDecoration extends RecyclerView.ItemDecoration {
 
     private Path createTopSheenPath(float left, float top, float right, float sheenBottom, float r) {
         Path path = new Path();
-        float[] radii = new float[]{r, r, r, r, 0, 0, 0, 0};
+        float[] radii = new float[] { r, r, r, r, 0, 0, 0, 0 };
         RectF rect = new RectF(left, top, right, sheenBottom);
         path.addRoundRect(rect, radii, Path.Direction.CW);
         return path;
     }
 
-    private Path createOuterStrokePath(float left, float top, float right, float bottom, boolean isFirst, boolean isLast, float r) {
+    private Path createOuterStrokePath(float left, float top, float right, float bottom, boolean isFirst,
+            boolean isLast, float r) {
         Path p = new Path();
         if (isFirst && isLast) {
             RectF rect = new RectF(left, top, right, bottom);

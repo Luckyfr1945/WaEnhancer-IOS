@@ -99,6 +99,7 @@ public class MainActivity extends BaseActivity {
                 super.onPageSelected(position);
                 if (liquidNavManager != null) {
                     liquidNavManager.setSelectedIndex(position);
+                    liquidNavManager.showBar(true);
                 }
                 updateToolbarSubtitleForPage(position);
 
@@ -358,6 +359,18 @@ public class MainActivity extends BaseActivity {
         }
     }
 
+    public void hideLiquidBar() {
+        if (liquidNavManager != null) {
+            liquidNavManager.hideBar(true);
+        }
+    }
+
+    public void showLiquidBar() {
+        if (liquidNavManager != null) {
+            liquidNavManager.showBar(true);
+        }
+    }
+
     @Override
     public boolean onSupportNavigateUp() {
         onBackPressed();
@@ -390,7 +403,7 @@ public class MainActivity extends BaseActivity {
                 }
 
                 binding.container.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-                binding.appBarLayout.setBackgroundColor(android.graphics.Color.argb(120, 14, 18, 24));
+                binding.appBarLayout.setBackgroundResource(R.drawable.bg_frosted_glass_topbar);
                 binding.toolbar.setBackgroundColor(android.graphics.Color.TRANSPARENT);
                 return;
             }
@@ -403,8 +416,8 @@ public class MainActivity extends BaseActivity {
             binding.mainWallpaper.setRenderEffect(null);
         }
         binding.container.setBackgroundResource(R.color.background_color);
-        binding.appBarLayout.setBackgroundResource(R.color.background_color);
-        binding.toolbar.setBackgroundResource(R.color.background_color);
+        binding.appBarLayout.setBackgroundResource(R.drawable.bg_frosted_glass_topbar);
+        binding.toolbar.setBackgroundColor(android.graphics.Color.TRANSPARENT);
     }
 
     private void showWallpaperOptionsDialog() {

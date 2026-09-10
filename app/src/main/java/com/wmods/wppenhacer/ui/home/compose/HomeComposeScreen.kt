@@ -76,12 +76,25 @@ fun HomeComposeScreen(
             .background(if (hasWallpaper) Color.Transparent else Color(0xFF121418))
     ) {
         val scrollState = rememberScrollState()
+
+        val activity = context as? MainActivity
+        var previousScrollValue by remember { mutableIntStateOf(0) }
+        LaunchedEffect(scrollState.value) {
+            val diff = scrollState.value - previousScrollValue
+            if (diff > 12) {
+                activity?.hideLiquidBar()
+            } else if (diff < -8 || scrollState.value == 0) {
+                activity?.showLiquidBar()
+            }
+            previousScrollValue = scrollState.value
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(scrollState)
                 .padding(horizontal = 16.dp)
-                .padding(top = 16.dp, bottom = 140.dp),
+                .padding(top = 80.dp, bottom = 140.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             // ========================================================

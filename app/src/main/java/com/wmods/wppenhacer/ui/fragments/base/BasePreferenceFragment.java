@@ -81,10 +81,24 @@ public abstract class BasePreferenceFragment extends PreferenceFragmentCompat
                 }
             }
             listView.setClipToPadding(false);
-            listView.setPadding(0, (int) (8 * getResources().getDisplayMetrics().density), 0,
+            listView.setPadding(0, (int) (72 * getResources().getDisplayMetrics().density), 0,
                     (int) (140 * getResources().getDisplayMetrics().density));
             listView.addItemDecoration(
                     new com.wmods.wppenhacer.ui.widget.CardPreferenceItemDecoration(requireContext()));
+            listView.addOnScrollListener(new androidx.recyclerview.widget.RecyclerView.OnScrollListener() {
+                @Override
+                public void onScrolled(@NonNull androidx.recyclerview.widget.RecyclerView recyclerView, int dx, int dy) {
+                    super.onScrolled(recyclerView, dx, dy);
+                    var act = getActivity();
+                    if (act instanceof com.wmods.wppenhacer.activities.MainActivity mainActivity) {
+                        if (dy > 12) {
+                            mainActivity.hideLiquidBar();
+                        } else if (dy < -8 || !recyclerView.canScrollVertically(-1)) {
+                            mainActivity.showLiquidBar();
+                        }
+                    }
+                }
+            });
         }
     }
 

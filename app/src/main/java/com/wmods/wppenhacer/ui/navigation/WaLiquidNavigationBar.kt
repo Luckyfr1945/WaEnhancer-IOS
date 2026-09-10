@@ -79,6 +79,8 @@ fun WaLiquidNavigationBar(
             .padding(top = 16.dp, bottom = 20.dp),
         contentAlignment = Alignment.BottomCenter
     ) {
+        val haptics = rememberLiquidHaptics()
+
         LiquidBottomTabsImpl(
             selectedIndex = selectedIndex.coerceIn(0, items.size - 1),
             onTabSelected = onTabSelected,
@@ -92,7 +94,12 @@ fun WaLiquidNavigationBar(
         ) {
             items.forEachIndexed { index, item ->
                 LiquidBottomTab(
-                    onClick = { onTabSelected(index) }
+                    onClick = {
+                        if (selectedIndex != index) {
+                            haptics.click()
+                        }
+                        onTabSelected(index)
+                    }
                 ) {
                     Icon(
                         painter = painterResource(id = item.iconRes),
@@ -118,6 +125,7 @@ private fun LiquidBottomTabsImpl(
 ) {
     val containerColor = Color.Black.copy(alpha = 0.40f)
     val tabsBackdrop = rememberLayerBackdrop()
+    val haptics = rememberLiquidHaptics()
 
     BoxWithConstraints(
         modifier,
@@ -142,6 +150,7 @@ private fun LiquidBottomTabsImpl(
         val animationScope = rememberCoroutineScope()
 
         var currentIndex by remember { mutableIntStateOf(selectedIndex) }
+        var lastHapticIndex by remember { mutableIntStateOf(selectedIndex) }
 
         val dampedDragAnimation = remember(animationScope) {
             DampedDragAnimation(
@@ -151,23 +160,33 @@ private fun LiquidBottomTabsImpl(
                 visibilityThreshold = 0.001f,
                 initialScale = 1f,
                 pressedScale = 78f / 56f,
-                onDragStarted = {},
+                onDragStarted = {
+                    haptics.tick()
+                    lastHapticIndex = targetValue.fastRoundToInt().fastCoerceIn(0, tabsCount - 1)
+                },
                 onDragStopped = {
                     val targetIndex = targetValue.fastRoundToInt().fastCoerceIn(0, tabsCount - 1)
                     if (currentIndex != targetIndex) {
                         currentIndex = targetIndex
                         onTabSelected(targetIndex)
                     }
+                    haptics.click()
                     animateToValue(targetIndex.toFloat())
                     animationScope.launch {
                         offsetAnimation.animateTo(0f, spring(1f, 300f, 0.5f))
                     }
                 },
                 onDrag = { _, dragAmount ->
-                    updateValue(
-                        (targetValue + dragAmount.x / tabWidth * if (isLtr) 1f else -1f)
-                            .fastCoerceIn(0f, (tabsCount - 1).toFloat())
-                    )
+                    val rawTarget = (targetValue + dragAmount.x / tabWidth * if (isLtr) 1f else -1f)
+                    val clampedTarget = rawTarget.fastCoerceIn(0f, (tabsCount - 1).toFloat())
+                    updateValue(clampedTarget)
+
+                    val hoveredIndex = clampedTarget.fastRoundToInt().fastCoerceIn(0, tabsCount - 1)
+                    if (hoveredIndex != lastHapticIndex) {
+                        lastHapticIndex = hoveredIndex
+                        haptics.tick()
+                    }
+
                     animationScope.launch {
                         offsetAnimation.snapTo(offsetAnimation.value + dragAmount.x)
                     }
@@ -178,6 +197,7 @@ private fun LiquidBottomTabsImpl(
         LaunchedEffect(selectedIndex) {
             if (currentIndex != selectedIndex) {
                 currentIndex = selectedIndex
+                lastHapticIndex = selectedIndex
                 dampedDragAnimation.animateToValue(selectedIndex.toFloat())
             }
         }
