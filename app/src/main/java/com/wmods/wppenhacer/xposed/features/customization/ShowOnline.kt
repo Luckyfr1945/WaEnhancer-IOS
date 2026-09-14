@@ -140,26 +140,49 @@ class ShowOnline(loader: ClassLoader, preferences:SharedPreferences) : Feature(l
         ContactItemListener.contactListeners.add(object : ContactItemListener.OnContactItemListener() {
             @SuppressLint("ResourceType")
             override fun onBind(waContact: WaContactWpp?, view: View?) {
-                try {
-                    val userJid = waContact!!.userJid
-                    if (userJid.isGroup) return
+                if (waContact == null || view == null) return
+                val userJid = waContact.userJid
+                if (userJid.isGroup) return
 
-                    val csDot: ImageView? = if (showOnlineIcon) view?.findViewById(0x7FFF0001) else null
-                    if (showOnlineIcon && csDot != null) {
-                        csDot.visibility = View.INVISIBLE
+                val csDot: ImageView? = if (showOnlineIcon) view.findViewById(0x7FFF0001) else null
+                if (showOnlineIcon && csDot != null) {
+                    csDot.visibility = View.INVISIBLE
+                }
+                val lastSeenText: TextView? = if (showOnlineText) view.findViewById(0x7FFF0002) else null
+                if (showOnlineText && lastSeenText != null) {
+                    lastSeenText.text = ""
+                }
+
+                val currentJid = userJid.phoneRawString ?: userJid.userRawString ?: return
+                view.setTag(0x7FFF0003, currentJid)
+
+                Utils.executor.execute {
+                    try {
+                        val mInstance = mInstancePresence ?: return@execute
+                        val mStatus = mStatusUser ?: return@execute
+                        val sPresence = sendPresenceMethod ?: return@execute
+                        val gStatus = getStatusUser ?: return@execute
+                        val tClass = tokenClass ?: return@execute
+                        val fTokenDB = fieldTokenDBInstance ?: return@execute
+
+                        val tokenDBInstance = fTokenDB.get(mInstance)
+                        val tokenData = tcTokenMethod?.let {
+                            ReflectionUtils.callMethod(it, tokenDBInstance, userJid.userJid)
+                        }
+                        val tokenObj = tClass.constructors[0].newInstance(
+                            if (tokenData == null) null else XposedHelpers.getObjectField(tokenData, "A01")
+                        )
+                        sPresence.invoke(null, userJid.userJid, null, tokenObj, mInstance)
+                        val statusRaw = ReflectionUtils.callMethod(gStatus, mStatus, waContact.getObject(), false)
+                        val status = statusRaw?.toString()
+
+                        view.post {
+                            if (view.getTag(0x7FFF0003) == currentJid) {
+                                setStatus(status, csDot, lastSeenText)
+                            }
+                        }
+                    } catch (_: Throwable) {
                     }
-                    val lastSeenText: TextView? = if (showOnlineText) view?.findViewById(0x7FFF0002) else null
-
-                    val tokenDBInstance = fieldTokenDBInstance!!.get(mInstancePresence)
-                    val tokenData = ReflectionUtils.callMethod(tcTokenMethod, tokenDBInstance, userJid.userJid)
-                    val tokenObj = tokenClass!!.constructors[0].newInstance(
-                        if (tokenData == null) null else XposedHelpers.getObjectField(tokenData, "A01")
-                    )
-                    sendPresenceMethod!!.invoke(null, userJid.userJid, null, tokenObj, mInstancePresence)
-                    val status = ReflectionUtils.callMethod(getStatusUser, mStatusUser, waContact.getObject(), false) as String
-                    setStatus(status, csDot, lastSeenText)
-                } catch (e: Exception) {
-                    XposedBridge.log(e)
                 }
             }
         })
@@ -170,17 +193,37 @@ class ShowOnline(loader: ClassLoader, preferences:SharedPreferences) : Feature(l
     }
 
     companion object {
+        private fun isOnlineStatus(status: String?): Boolean {
+            if (status.isNullOrBlank()) return false
+            val trimmed = status.trim()
+            val onlineStr = getOnlineString()
+            if (trimmed.equals(onlineStr, ignoreCase = true)) return true
+            if (trimmed.equals("online", ignoreCase = true)) return true
+            if (trimmed.equals("en línea", ignoreCase = true)) return true
+            if (trimmed.equals("en linea", ignoreCase = true)) return true
+            return false
+        }
+
+        private fun getOnlineString(): String {
+            val str = runCatching { UnobfuscatorCache.getInstance().getString("online") }.getOrNull()
+            if (!str.isNullOrBlank()) return str
+            val id1 = Utils.getID("conversation_contact_online", "string")
+            if (id1 > 0) return runCatching { Utils.application.getString(id1) }.getOrDefault("online")
+            val id2 = Utils.getID("online", "string")
+            if (id2 > 0) return runCatching { Utils.application.getString(id2) }.getOrDefault("online")
+            return "online"
+        }
+
         private fun setStatus(status: String?, csDot: ImageView?, lastSeenText: TextView?) {
-            if (!TextUtils.isEmpty(status) && status!!.trim { it <= ' ' } == UnobfuscatorCache.getInstance().getString("online")) {
-                if (csDot != null) {
-                    csDot.visibility = View.VISIBLE
-                }
+            val isOnline = isOnlineStatus(status)
+            if (csDot != null) {
+                csDot.visibility = if (isOnline) View.VISIBLE else View.INVISIBLE
             }
 
             if (lastSeenText != null) {
-                if (!TextUtils.isEmpty(status)) {
+                if (!status.isNullOrBlank()) {
                     lastSeenText.text = status
-                    if (UnobfuscatorCache.getInstance().getString("online") == status) {
+                    if (isOnline) {
                         lastSeenText.setTextColor(Color.GREEN)
                     } else {
                         lastSeenText.setTextColor(0xffcac100.toInt())

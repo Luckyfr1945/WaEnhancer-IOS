@@ -3,6 +3,13 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <item
+        android:id="@+id/menu_wallpaper"
+        android:icon="@drawable/ic_image"
+        android:title="@string/menu_wallpaper"
+        app:iconTint="@color/text_on_gradient"
+        app:showAsAction="ifRoom" />
+
+    <item
         android:id="@+id/menu_search"
         android:icon="@drawable/ic_search"
         android:title="@string/search_features_title"

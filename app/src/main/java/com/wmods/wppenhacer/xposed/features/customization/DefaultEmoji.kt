@@ -33,9 +33,10 @@ class DefaultEmoji(
             val assetsClass = Utils.application.resources.assets.javaClass
             XposedBridge.hookAllMethods(assetsClass, "openFd", object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
-                    val name = param.args[0] as String
-                    if (name.contains("emojis.oba"))
-                        param.result = null
+                    val name = param.args[0] as? String ?: return
+                    if (name.contains("emojis.oba")) {
+                        param.throwable = java.io.FileNotFoundException("emojis.oba disabled")
+                    }
                 }
             })
             return

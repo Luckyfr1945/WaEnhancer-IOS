@@ -588,4 +588,12 @@
     <string name="sticker_copy_log">Copy Log</string>
     <string name="sticker_clear_log">Clear Log</string>
     <string name="sticker_select_backup_folder">Select Backup Folder</string>
+    <string name="menu_wallpaper">Wallpaper &amp; Glass</string>
+    <string name="wallpaper_dialog_title">Liquid Glass Wallpaper</string>
+    <string name="wallpaper_choose_gallery">Choose from Gallery</string>
+    <string name="wallpaper_reset">Reset to Default</string>
+    <string name="wallpaper_applied">Liquid glass wallpaper applied!</string>
+    <string name="wallpaper_removed">Wallpaper removed, restored to default theme.</string>
+    <string name="app_blur_radius">Background Blur Intensity</string>
+    <string name="app_blur_radius_sum">Adjust the blur strength of the wallpaper behind cards</string>
 </resources>

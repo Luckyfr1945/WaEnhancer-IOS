@@ -17,6 +17,8 @@ nav = "2.9.6"
 kotlin = "2.2.21"
 markwon = "4.6.2"
 remotePreferences = "0.8"
+composeBom = "2024.10.01"
+haze = "1.7.2"
 
 [libraries]
 androidx-documentfile = { module = "androidx.documentfile:documentfile", version.ref = "documentfile" }
@@ -53,6 +55,14 @@ material = { module = "com.google.android.material:material", version = "1.13.0"
 blurview = { module = "com.github.Dimezis:BlurView", version = "version-2.0.6" }
 markwon-core = { module = "io.noties.markwon:core", version.ref = "markwon" }
 remote-preferences = { module = "com.crossbowffs.remotepreferences:remotepreferences", version.ref = "remotePreferences" }
+
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
+androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
+androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
+androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+androidx-compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
+haze = { group = "dev.chrisbanes.haze", name = "haze", version.ref = "haze" }
+haze-materials = { group = "dev.chrisbanes.haze", name = "haze-materials", version.ref = "haze" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }

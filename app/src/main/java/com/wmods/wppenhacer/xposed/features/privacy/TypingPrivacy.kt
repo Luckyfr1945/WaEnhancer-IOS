@@ -17,15 +17,15 @@ class TypingPrivacy(
 
     @Throws(Throwable::class)
     override fun doHook() {
-        val ghostmode = WppCore.getPrivBoolean("ghostmode", false)
-        val ghostmodeT = prefs.getBoolean("ghostmode_t", false)
-        val ghostmodeR = prefs.getBoolean("ghostmode_r", false)
-
         val method: Method = Unobfuscator.loadGhostModeMethod(classLoader)
         logDebug(Unobfuscator.getMethodDescriptor(method))
 
         XposedBridge.hookMethod(method, object : XC_MethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
+                val ghostmode = WppCore.getPrivBoolean("ghostmode", false)
+                val ghostmodeT = prefs.getBoolean("ghostmode_t", false)
+                val ghostmodeR = prefs.getBoolean("ghostmode_r", false)
+
                 val type = ReflectionUtils.getArg(param.args, Int::class.javaObjectType, 0)
                 val jidObj = ReflectionUtils.getArg(param.args, FMessageWpp.UserJid.TYPE_JID, 0)
 

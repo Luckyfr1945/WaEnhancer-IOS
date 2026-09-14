@@ -1,37 +1,36 @@
 [ADDED]
-* Video Call Screen Recording: Added automatic screen recording for WhatsApp video calls with background root capture and clean MP4 output
-* Jump to First Message: Added menu option in conversation chats to instantly jump and navigate to the very first message
-* WhatsApp ConversationScrollApi Hook: Hooked WhatsApp's internal ConversationScrollApi for smooth message list scrolling and dynamic history loading
-* Sticker Sync & Backup: Added full backup (.zip) and restore/merge tools for WhatsApp & WhatsApp Business stickers
-* Long-Press "Anda" Tab for Account Switcher: Long-pressing the "Anda"/Settings tab in the floating bottom navigation bar opens WhatsApp's native Account Switching bottom sheet
+* Floating Liquid Navigation Bar: Brand new Jetpack Compose bottom navigation bar featuring interactive liquid glass aesthetics, real-time lens distortion refraction, and chromatic aberration effects
+* Interactive Spring Physics Navigation: Touch-responsive damped drag animation allowing the liquid bubble indicator to be smoothly dragged, stretched, and flung between tabs
+* Custom Wallpaper & Glass UI Refinement: Deep glassmorphism integration with custom background wallpapers, customizable blur intensity, and adaptive translucent scrim overlay for optimal contrast
+* Modernized Liquid Glass Preferences: Redesigned preferences and home cards with translucent liquid glass card styling, custom category headers, and refined icon frames
+* Tactile Haptic Feedback: Integrated rich, low-latency tactile haptic sensations (crisp detent micro-ticks while dragging across tab notches, firm confirmation snap-clicks on landing, and tap feedback)
+* Smart Auto-Hide Floating Nav Bar: Intelligent scroll-aware navigation bar that smoothly slides down out of view during downward scrolling to expand reading area, and immediately reveals on upward scroll, top scroll, or tab switching
+* Frosted Glass Top Bar & iOS Header: Translucent acrylic glass top bar with crisp hairline bottom divider that seamlessly layers over scrolling content, allowing cards and widgets to flow smoothly behind the header
+* WhatsApp Floating Liquid Bottom Bar (Remielle Style): Ported the interactive liquid glass floating navigation bar into WhatsApp, featuring an interactive continuous capsule liquid lens indicator, spring physics touch swell, smooth drag/scrubbing across tabs with haptic feedback, and localized chromatic dispersion refraction
+* Minimalist Icon-Only Floating Bar: Streamlined WhatsApp floating bottom bar layout by eliminating redundant text labels ("Pembaruan", "Panggilan", "Komunitas", "Chat") and centering icons vertically, while preserving unread counter badges
 
 [IMPROVED]
+* Bidirectional Navigation Synchronization: Instant, fluid two-way synchronization between Compose liquid bar gesture dragging and ViewPager2 page swipe transitions
+* Hardware-Accelerated Wallpaper Blur: Replaced CPU-bound software blur views with GPU-accelerated RenderEffect pipeline for higher frame rates and zero jitter
 * Adaptive Navigation Bar: Floating bottom nav bar automatically adapts width and hides unavailable tabs based on LSPosed and Root activation state
-* Extended Video Size Limit: Increased maximum video size limit slider from 90MB up to 120MB in Media settings
-* Account Switcher Gesture Recognition: Integrated low-latency (260ms) touch gesture recognition on the "Anda" tab with 1500ms debounce cooldown to prevent double popup triggers
-* Obfuscation-Resilient Fragment & Dialog Invocation: Dynamic reflection fallback calling A4P/supportFragmentManager and safe bundle argument injection across WhatsApp updates
-* Dynamic Status Badges: Real-time red/green indicator badges for LSPosed and Root status on the Hero Control Center
-* Direct GitHub Update Redirection: Update dialog directly opens the latest GitHub APK release download in browser
-* Native Voice Note & Send Buttons: Preserved native WhatsApp floating action button styling, colors, and animations for voice note and send buttons
-* About & Contributors UI: Standardized all contributor pill buttons with consistent styling and uniform theme colors
-* Performance & Clean Logging: Streamlined diagnostic logs across modules with zero-overhead logDebug
+* Adaptive High Refresh Rate Support: Automatically detects the physical screen's maximum refresh rate (up to 120Hz/144Hz) and locks the window mode to ensure ultra-smooth 120 FPS animations without OEM 60Hz throttling, while gracefully adapting to 60Hz/90Hz on other displays
+* 120 FPS Zero-Tessellation GPU Pipeline: Completely eliminated CPU Path geometry tessellation by transitioning CardPreferenceItemDecoration to native GPU hardware primitives (drawRoundRect, drawRect, drawLine, drawArc), added explicit hardware acceleration in AndroidManifest, removed heavy 12dp/20dp dynamic elevation shadow projection, enabled setHasFixedSize(true), and added debounced scroll delta accumulation to guarantee rock-solid 120 FPS scrolling without micro-hitches
+* Liquid Lens Geometry & Optical Aesthetics: Redesigned the WhatsApp floating bar indicator into a continuous rounded capsule matching Remielle Kernel Manager, with delicate crystalline rim stroke, top specular highlight curve, and subtle bottom-right chromatic refraction gleam
+* Resilient Status Revocation Fallback: Added persistent fallback message tracking (`DelMessageStore`) so status deletions are successfully blocked and reported even when status objects are not yet loaded in active memory
 
 [FIXED]
-* Fixed Jump to First Message Navigation: Replaced fragile reflection with direct ConversationScrollApi navigation, resolving issues where message scrolling did not trigger or caused unintended reply quotes
-* Fixed Search Filtering: Filtered search catalog to hide unavailable hook-dependent preferences when LSPosed is not active
+* Fixed Navigation Bar Top Clipping Bug: Resolved visual bug where the top portion of the liquid bubble indicator was cut off during press and drag gestures by adding vertical headroom padding and disabling parent view clipping (`clipChildren = false`, `clipToPadding = false`)
+* Fixed Software Rendering RuntimeShader Crash (Android 14/15 - API 35): Resolved IllegalArgumentException ("Software rendering doesn't support RuntimeShader") by replacing AGSL highlight shaders with GPU-safe radial gradients and removing redundant software blur Canvas captures
 * Fixed Intermediate Tab Flickering: Created dynamic ViewPager adapter modes so transitions switch directly without passing through hidden tabs
-* Fixed Per-Contact Privacy Overrides (HideSeen): Removed global toggle early-returns in hookReceiptMethod so individual contact privacy overrides are always respected even when global toggles are off
-* Fixed Multi-Job Architecture Crash: Keyed cachedMessageIdsFields by Class in ConcurrentHashMap to prevent IllegalArgumentException across WhatsApp and WhatsApp Business
-* Fixed False-Positive Read Receipts (SeenTick): Replaced fuzzy substring matching with normalized exact-match JID validation to prevent misdirected blue ticks and played receipts
-* Fixed Profile Avatar Lookup: Added multi-package directory support for both WhatsApp Standard and WhatsApp Business profile avatars
-* Fixed Account Switcher Double-Popup & Crash: Resolved NoSuchMethodError on obfuscated setArguments methods and prevented redundant synthetic touch dispatching
-* Fixed Outgoing Message Pending Stall (🕒): Added strict stanza tag validation (`tag != "receipt"`) in HideSeen, preventing outgoing `<message>` stanzas from being corrupted with `type="inactive"`, and reinforced `extractIsFromMe` with resilient `Key.toString()` parsing
-* Fixed SeenTick Job Queue Feedback Loop: Added `blue_on_reply` self-dispatch marker and `SendE2EMessageJob` type guards in `hookOnSendMessages` to eliminate recursive read-receipt job loops
-* Fixed Anti-Revoke Native Replacement: Updated `setBlockedResult()` in AntiRevoke to return `false`/`null`, preventing WhatsApp from marking revoked messages as successfully deleted and replacing them with placeholder text
-* Fixed Anti-Revoke Target Message ID Tracking: Captured original target message IDs, `originalKey.messageID`, and candidate target fields from revoke stanzas so deleted messages are accurately identified in the UI
-* Fixed Anti-Revoke Multi-JID & LID Resolution: Unified canonical `MutableSet` mapping across all JID representations (`@lid`, `@s.whatsapp.net`, raw, and normalized phone numbers) to ensure consistent message lookup regardless of timing
-* Fixed Conversation Item UI Rendering: Resolved `NoSuchMethodException` on `getDeclaredMethod("getView", ...)` by searching the full adapter inheritance hierarchy and added recursive `findDateTextView` fallback for message bubbles
-* Fixed MessageStore Transaction Rollback & Data Integrity: Wrapped `db.transaction` with proper exception rethrowing to prevent partial-write commits on failed status deletions, and fixed `getAudioListByMessageList` column selection
-* Fixed Media & Document Upload Stall on Hide Second Tick: Guarded `hookReceiptMethod` in HideSeen to only alter delivery receipt stanzas (`type == null` or `"delivery"`), preventing media/MMS negotiation receipts from being mutated to `"inactive"`
-* Fixed Chat List False Account Switcher Trigger: Removed global `Activity.dispatchTouchEvent` hook and restricted long-press touch scope strictly to the physical bottom navigation bar's "Anda" tab
-* Fixed Forwarded Media Visibility in Sender POV: Restricted `forwardAudioTypeMethod` origin field modification in Others to audio/voice note messages only (`mediaType == 2 || 9`), keeping forwarded photos and videos intact in chat view
+* Fixed Status Anti-Revoke Not Working: Resolved a fatal logic flaw in `AntiRevoke` where `fStatusKey.fStatus` was uninitialized (always null) causing early returns, fixed parameter index mismatch from `param.args[1]` to safe `args[0]` type matching, and added fallback UI traversal to reliably display `[Dihapus]` badges on modern status viewer headers
+* Fixed Audio Transcript UI Thread Blocking (ANR): Offloaded synchronous network requests and polling delays in `AudioTranscript` to background IO coroutines (`Dispatchers.IO`) to prevent WhatsApp freezes and ANR crashes during voice note transcription
+* Fixed Default Emoji Null Pointer Crash: Threw `FileNotFoundException` instead of returning null in `DefaultEmoji` asset loader to prevent fatal NPEs in WhatsApp text rendering engine
+* Fixed Freeze Last Seen Logic Flaw: Corrected dual-boolean evaluation so enabling "Freeze Last Seen" from WaEnhancer settings immediately activates the feature without requiring hidden in-app toggles
+* Fixed Blue on Reply Status Receipt Suppression: Added status broadcast checks in `HideSeen` so Blue on Reply privacy settings do not unintentionally suppress story/status view receipts
+* Fixed Group Admin Indicator Resolution: Resolved group JID via raw strings instead of null phone strings so group admin badges and tags display reliably
+* Fixed Separate Group Class Resolution Crash: Added null-safety checks during BottomNavigationView class reflection in `SeparateGroup` to prevent startup crashes when WhatsApp updates
+* Fixed Call Privacy Toast Spam: Silenced repetitive "Invalid call info" toasts and protected array bounds during call event interception
+* Fixed Chat List Stutter & Multi-Language Status in ShowOnline: Offloaded presence network invocations and reflection queries from the UI thread to a background executor with view tag recycling guards, safe CharSequence string conversion, and added localized fallback matching for multi-language WhatsApp clients (e.g. "en línea", "online")
+* Fixed Stale Preferences in DndMode, TypingPrivacy, and TagMessage: Converted static one-time preference reads into dynamic evaluation inside method hooks, enabling real-time toggling of DND mode, hide typing/recording, and broadcast tags without requiring WhatsApp to be restarted or force-stopped
+* Fixed View Once Receipt Suppression (hideonceseen): Connected the "Hide Seen View Once" toggle to protocol tree stanzas and media played hooks, preventing opened receipts from being dispatched when viewing one-time media
+* Fixed Media Quality Unconditional ABProp Override: Guarded property 14447 and stories quality configuration behind video/image quality toggles so WhatsApp's native media processing remains untouched when the feature is turned off

@@ -20,16 +20,14 @@ class FreezeLastSeen(loader: ClassLoader, preferences: SharedPreferences) :
                     val freezeLastSeenPriv = getPrivBoolean("freezelastseen", false)
                     val ghostmode = getPrivBoolean("ghostmode", false) && prefs.getBoolean("ghostmode", false)
 
-                    // If main toggle is disabled, reset in-app priv flag
-                    if (!freezeLastSeenMain && freezeLastSeenPriv) {
+                    // Sync main toggle to in-app priv flag
+                    if (freezeLastSeenMain && !freezeLastSeenPriv && showFreezeOption) {
+                        WppCore.setPrivBoolean("freezelastseen", true)
+                    } else if (!freezeLastSeenMain && freezeLastSeenPriv) {
                         WppCore.setPrivBoolean("freezelastseen", false)
                     }
 
-                    val isFrozen = if (showFreezeOption) {
-                        freezeLastSeenMain && freezeLastSeenPriv
-                    } else {
-                        freezeLastSeenMain
-                    } || ghostmode
+                    val isFrozen = freezeLastSeenMain || (showFreezeOption && freezeLastSeenPriv) || ghostmode
 
                     XposedBridge.log("[WaEnhancer] FreezeLastSeen: isFrozen=$isFrozen (main=$freezeLastSeenMain, priv=$freezeLastSeenPriv, ghost=$ghostmode)")
 

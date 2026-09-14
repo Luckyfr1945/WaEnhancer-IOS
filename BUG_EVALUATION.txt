@@ -1,0 +1,546 @@
+====================================================================================================
+                        WAENHANCER-IOS — LAPORAN AUDIT & EVALUASI BUG FITUR
+====================================================================================================
+Tanggal Audit : 10 September 2026
+Target        : Modul Xposed WaEnhancer-IOS (com.wmods.wppenhacer)
+Ruang Lingkup : Seluruh Fitur (Privacy, General, Media, Customization, Others)
+====================================================================================================
+
+RINGKASAN EKSEKUTIF:
+Audit mendalam dilakukan terhadap seluruh fitur modul Xposed WaEnhancer-IOS. Ditemukan sejumlah
+bug nyata, mulai dari kegagalan logika (logic flaw), masalah kompatibilitas lintas versi (obsolete
+bytecode/hardcoded proguard), thread blocking/ANR, hingga kebocoran/salah target (false positive)
+pada media dan pesan status.
+
+PROGRESS PERBAIKAN:
+- Total Terdata  : 17 Bug
+- Telah Diperbaiki: 12 Bug [SUDAH DIPERBAIKI / FIXED] (Termasuk ShowOnline, DndMode, ViewOnce, MediaQuality)
+- Sisa Terbuka   : 5 Bug [OPEN / DALAM ANTREAN]
+
+Berikut rincian lengkap evaluasi bug, akar masalah teknis, tingkat keparahan (severity), serta
+rekomendasi & solusi yang telah diterapkan untuk setiap fitur.
+
+----------------------------------------------------------------------------------------------------
+1. FITUR PRIVACY (PRIVASI)
+----------------------------------------------------------------------------------------------------
+
+[BUG-PRV-01] Freeze Last Seen Tidak Berfungsi Jika Diaktifkan dari Pengaturan Aplikasi
+- File Target    : app/src/main/java/com/wmods/wppenhacer/xposed/features/privacy/FreezeLastSeen.kt
+- Baris Kode     : 18 - 33
+- Status         : [SUDAH DIPERBAIKI / FIXED]
+- Gejala         : User mengaktifkan "Bekukan Terakhir Dilihat" di aplikasi WaEnhancer, namun waktu
+                   terakhir dilihat tetap terupdate dan tidak beku di WhatsApp.
+- Akar Masalah   :
+  Terdapat logika ganda:
+    val freezeLastSeenMain = prefs.getBoolean("freezelastseen", false)
+    val showFreezeOption = prefs.getBoolean("show_freezeLastSeen", true)
+    val freezeLastSeenPriv = getPrivBoolean("freezelastseen", false)
+    val isFrozen = if (showFreezeOption) {
+        freezeLastSeenMain && freezeLastSeenPriv
+    } else {
+        freezeLastSeenMain
+    } || ghostmode
+  `showFreezeOption` bernilai default `true`. Namun `freezeLastSeenPriv` tersimpan di database internal
+  WhatsApp (getPrivBoolean) yang awalnya bernilai `false`. Karena evaluasinya `main && priv`,
+  maka `true && false = false`. Fitur tidak akan aktif sampai user menemukan toggle tersembunyi
+  di dalam menu WhatsApp.
+- Severity       : TINGGI (Fitur utama privasi tidak bekerja bagi mayoritas pengguna).
+- Solusi Diterapkan:
+  Memperbaiki logika evaluasi: `val isFrozen = freezeLastSeenMain || (showFreezeOption && freezeLastSeenPriv) || ghostmode`.
+  Mengaktifkan toggle di pengaturan WaEnhancer kini langsung membekukan waktu terakhir dilihat secara instan.
+
+---
+
+[BUG-PRV-02] Fitur "Sembunyikan Dilihat View Once" (hideonceseen) Menjadi Dead Code / Tidak Berfungsi
+- File Target    : app/src/main/java/com/wmods/wppenhacer/xposed/features/privacy/HideSeen.kt
+- Baris Kode     : 53, 217 - 286
+- Status         : [SUDAH DIPERBAIKI / FIXED]
+- Gejala         : Mengaktifkan opsi "Sembunyikan Dilihat View Once" tidak menyembunyikan tanda telah
+                   dibuka pada pesan sekali lihat.
+- Akar Masalah   :
+  Variabel `isHideOnceSeen` dideklarasikan namun tidak pernah diverifikasi di dalam pemrosesan
+  stanza receipt (`hookReceiptMethod`) maupun batch played handler.
+- Severity       : SEDANG (Fitur UI ada tapi tidak mengeksekusi logika apapun).
+- Solusi Diterapkan:
+  Menghubungkan `isHideOnceSeen` ke pengecekan stanza receipt XML type `played`/`read` serta
+  memvalidasi per-contact override `CustomPrivacy.optBoolean("HideOnceSeen")` sehingga tanda dibuka
+  pada pesan sekali lihat dinetralkan dan tidak dikirim ke server.
+
+---
+
+[BUG-PRV-03] Blue on Reply Memblokir Tanda Dilihat Cerita/Status WhatsApp Secara Diam-diam
+- File Target    : app/src/main/java/com/wmods/wppenhacer/xposed/features/privacy/HideSeen.kt
+- Baris Kode     : 99 - 105
+- Status         : [SUDAH DIPERBAIKI / FIXED]
+- Gejala         : Saat "Centang Biru Saat Balas" (Blue on Reply) diaktifkan, user melihat status orang
+                   lain tetapi nama user tidak pernah muncul di daftar pemirsa status teman, meskipun
+                   opsi "Sembunyikan Lihat Status" (hidestatusview) dalam kondisi NONAKTIF.
+- Akar Masalah   :
+  Di baris 99:
+    if (blueOnReply) {
+        param.result = null
+        dbExecutor.execute {
+            runCatching { recordHiddenMessages(job, userJid) }.onFailure { log(it) }
+        }
+        return
+    }
+  Kondisi ini dieksekusi sebelum receipt status diproses normal dan TANPA mengecek `!userJid.isStatus`.
+  Status WhatsApp tidak mengenal konsep "balas pesan untuk kirim centang biru", sehingga receipt
+  status ikut terblokir dan tersimpan di database pesan obrolan secara salah.
+- Severity       : TINGGI (Mengacaukan privasi status dan mengotori database riwayat pesan).
+- Solusi Diterapkan:
+  Menambahkan guard `if (blueOnReply && !userJid.isStatus)` sehingga status broadcast receipt tetap dikirim
+  secara sah dan tidak lagi terblokir oleh fitur Blue on Reply.
+
+---
+
+[BUG-PRV-04] Masalah Set.first() pada Multi-Message Audio/ViewOnce Receipt
+- File Target    : app/src/main/java/com/wmods/wppenhacer/xposed/features/privacy/HideSeen.kt
+- Baris Kode     : 271 - 276
+- Gejala         : Jika WhatsApp menandai pemutaran beberapa voice note/media secara bersamaan (batch),
+                   voice note kedua dan seterusnya tidak terlindungi atau sebaliknya receipt pesan non-audio
+                   ikut terblokir.
+- Akar Masalah   :
+    val set = param.args[0] as? Set<*>
+    val fMessage = FMessageWpp(set.first() ?: return)
+    processSenderPlayed(param, fMessage)
+  Hanya elemen pertama (`set.first()`) yang diperiksa. Jika elemen pertama berupa audio tapi elemen
+  kedua bukan, atau sebaliknya, keputusan `param.result = null` diberlakukan ke seluruh batch.
+- Severity       : SEDANG.
+- Solusi         :
+  Iterasi seluruh elemen dalam `set`. Filter elemen yang harus disembunyikan secara selektif.
+
+---
+
+[BUG-PRV-05] Spam Toast "Invalid call info" dan Risiko Crash pada CallPrivacy
+- File Target    : app/src/main/java/com/wmods/wppenhacer/xposed/features/privacy/CallPrivacy.kt
+- Baris Kode     : 34 - 35, 46, 131
+- Status         : [SUDAH DIPERBAIKI / FIXED]
+- Gejala         :
+  1. Layar HP tiba-tiba muncul toast spam "Invalid call info" saat ada paket panggilan atau VoIP event.
+  2. Crash saat startup jika nama method `endCall` / `rejectCall` diubah oleh Proguard WhatsApp.
+  3. Crash `StringIndexOutOfBoundsException` jika kontak blokir panggilan kosong.
+- Akar Masalah   :
+  - Baris 46 memanggil `Utils.showToast("Invalid call info", Toast.LENGTH_SHORT)` di dalam hook
+    panggilan yang dipanggil berulang kali untuk setiap event non-callinfo.
+  - Baris 34-35 menggunakan `declaredMethods.first { it.name == "endCall" }` tanpa `firstOrNull` / try-catch.
+  - Baris 131: `callBlockList.substring(1, callBlockList.length - 1)` jika string adalah `""` (bukan `"[]"`),
+    indeks menjadi negatif (-1) sehingga melempar exception fatal.
+- Severity       : TINGGI (Mengganggu pengalaman pengguna dan potensi crash total).
+- Solusi Diterapkan:
+  - Menghapus toast spam `Utils.showToast("Invalid call info")`.
+  - Mengamankan pemotongan string `callBlockList` dengan pengecekan `length >= 2`.
+  - Menambahkan try-catch dan fallback graceful saat mendeteksi method reject/end call.
+
+---
+
+[BUG-PRV-06] Preferensi Stale/Mati pada DndMode, TypingPrivacy, dan TagMessage
+- File Target    :
+  - app/src/main/java/com/wmods/wppenhacer/xposed/features/privacy/DndMode.kt (Baris 14)
+  - app/src/main/java/com/wmods/wppenhacer/xposed/features/privacy/TypingPrivacy.kt (Baris 20-22)
+  - app/src/main/java/com/wmods/wppenhacer/xposed/features/privacy/TagMessage.kt (Baris 63)
+- Status         : [SUDAH DIPERBAIKI / FIXED]
+- Gejala         : Mengubah sakelar DND, Sembunyikan Mengetik/Merekam, atau Tag Siaran saat WhatsApp
+                   sedang aktif tidak membawa efek apa pun sampai aplikasi WhatsApp di-force stop.
+- Akar Masalah   :
+  Kondisi di-cache sebagai `val` lokal di dalam method `doHook()` yang hanya berjalan 1 kali saat
+  Zygote/WhatsApp di-load. Nilai tidak dibaca ulang secara dinamis di dalam hook callback.
+- Severity       : SEDANG (Masalah UX & reaktivitas preferensi).
+- Solusi Diterapkan:
+  - DndMode: Memasang hook dinamis pada `MessageHandler/start` dan memeriksa status DND real-time saat method dieksekusi.
+  - TypingPrivacy: Memindahkan evaluasi `ghostmode`, `ghostmode_t`, dan `ghostmode_r` langsung ke dalam `beforeHookedMethod`.
+  - TagMessage: Memindahkan evaluasi `broadcast_tag` ke dalam callback `onItemBind`. Perubahan toggle kini instan tanpa restart WhatsApp.
+
+
+----------------------------------------------------------------------------------------------------
+2. FITUR GENERAL (UMUM)
+----------------------------------------------------------------------------------------------------
+
+[BUG-GEN-01] Refleksi Liar & Eksekusi Method Berbahaya pada Anti-Revoke Pesan Masuk
+- File Target    : app/src/main/java/com/wmods/wppenhacer/xposed/features/general/AntiRevoke.kt
+- Baris Kode     : 184 - 211
+- Gejala         : Pesan terhapus terkadang mengalami inkonsistensi status atau stutter saat banyak pesan ditarik.
+- Akar Masalah   :
+  Pada saat penarikan pesan terdeteksi:
+    for (m in cls.methods + cls.declaredMethods) {
+        if (m.parameterCount == 0 && (m.name.startsWith("get") || m.name.startsWith("A0"))) {
+            val res = runCatching { m.invoke(obj) }.getOrNull()
+        }
+    }
+  Di WhatsApp hasil obfuscasi Proguard, method `A00()`, `A01()`, `A02()` BUKAN hanya getter, melainkan
+  bisa berupa method mutasi state, close stream, reset counter, atau pembersih data. Mengeksekusi
+  seluruh method obfuscated tanpa parameter secara acak sangat berisiko merusak state internal pesan.
+- Severity       : TINGGI (Bisa menyebabkan memory leak, state corruption, atau crash internal WhatsApp).
+- Solusi         :
+  Gunakan DexKit / unobfuscator untuk mencari field key target yang pasti (`fMessage.key.messageID`)
+  dan batasi pencarian ID tanpa mengeksekusi sembarang method `A0*`.
+
+---
+
+[BUG-GEN-02] Ketergantungan Ratusan Hardcoded Property ID (ABProps) pada Others.kt
+- File Target    : app/src/main/java/com/wmods/wppenhacer/xposed/features/general/Others.kt
+- Baris Kode     : 101 - 260
+- Gejala         : Fitur-fitur seperti Sembunyikan Saluran (Channels), Status Lama (Old Status),
+                   IG Status, Transkripsi Audio, Kualitas HD, dll. tiba-tiba tidak berfungsi setelah
+                   WhatsApp mengupdate versinya.
+- Akar Masalah   :
+  Modul menyuntikkan puluhan integer konstan ke dalam `propsBoolean` dan `propsInteger` (misal:
+  `propsBoolean[14447]`, `propsBoolean[5549]`, `propsInteger[3877]`). Di arsitektur Meta/WhatsApp,
+  kode integer ABProps berubah dari versi ke versi. Begitu versi WhatsApp naik, integer tersebut
+  kadaluarsa atau bergeser fungsinya.
+- Severity       : TINGGI (Menyebabkan fitur rusak secara silent/diam-diam saat update WhatsApp).
+- Solusi         :
+  Gunakan pattern matching bytecode via DexKit untuk mengaitkan nama konstan atau konfigurasi native
+  ketimbang mengandalkan integer mentah tanpa validasi versi.
+
+---
+
+[BUG-GEN-03] Fitur Status Anti-Revoke (antirevokestatus) Mati Total Akibat Uninitialized Field & Arg Mismatch
+- File Target    : 
+  - app/src/main/java/com/wmods/wppenhacer/xposed/features/general/AntiRevoke.kt (Baris 129 - 144)
+  - app/src/main/java/com/wmods/wppenhacer/xposed/core/components/FStatusWpp.kt (Baris 176)
+- Baris Kode     : 129 - 144
+- Status         : [SUDAH DIPERBAIKI / FIXED]
+- Gejala         : Opsi "Anti-Hapus Status" aktif di pengaturan, namun saat kontak menghapus statusnya,
+                   status tersebut tetap terhapus dan hilang dari WhatsApp pengguna.
+- Akar Masalah   :
+  1. Di AntiRevoke.kt: `val fstatus = fStatusKey.fStatus ?: return`. Variabel `fStatus` pada kelas
+     `FStatusKey` tidak pernah diinisialisasi (selalu bernilai `null`), sehingga pemanggilan selalu return
+     seketika sebelum mengeksekusi pembatalan hapus status (`param.result = 0`).
+  2. Argumen hook menggunakan `param.args[1]` padahal metode Unobfuscator memfilter parameter ke-0
+     sebagai objek `FStatusKey`.
+  3. Indikator view status playback mengandalkan ID view lama yang rentan gagal menemukan view header waktu
+     pada UI WhatsApp versi baru.
+- Severity       : KRITIS (Fitur utama privasi status mati total).
+- Solusi Diterapkan:
+  - Mengubah `fStatus` pada `FStatusKey` menjadi dynamic lazy getter yang mengambil instance dari `StatusStore`.
+  - Memperbaiki penangkapan argumen `FStatusKey` dari parameter hook (`args[0]` / type-safe matcher).
+  - Menambahkan fallback status revocation handler (`handleStatusRevocationFallback`) agar status tetap
+    tersimpan di `DelMessageStore` dan terblokir dari penghapusan database meskipun `fMessage` belum di-load di memori.
+  - Memperbaiki traversal view fallback pada status playback view untuk menampilkan badge `[Dihapus]`.
+
+
+
+----------------------------------------------------------------------------------------------------
+3. FITUR MEDIA
+----------------------------------------------------------------------------------------------------
+
+[BUG-MED-01] DownloadViewOnce: Toast Dipanggil dari Thread Background Asinkron
+- File Target    : app/src/main/java/com/wmods/wppenhacer/xposed/features/media/DownloadViewOnce.kt
+- Baris Kode     : 74 - 96
+- Gejala         : Berpotensi crash atau warning pada Android tertentu saat menekan tombol download
+                   media sekali lihat.
+- Akar Masalah   :
+  `CompletableFuture.runAsync` menjalankan proses download di worker thread, lalu di dalamnya
+  memanggil fungsi download yang menampilkan Toast. Meskipun `Utils.showToast` memiliki handler fallback,
+  operasi I/O dan UI handler thread sebaiknya dipisahkan secara eksplisit menggunakan coroutine Dispatchers.Main.
+- Severity       : RENDAH.
+- Solusi         :
+  Gunakan Kotlin Coroutines `withContext(Dispatchers.Main)` untuk seluruh interaksi UI/Toast.
+
+---
+
+[BUG-MED-02] StatusDownload: Fallback File Terbaru Bisa Mengambil Status Milik Orang Lain
+- File Target    : app/src/main/java/com/wmods/wppenhacer/xposed/features/media/StatusDownload.kt
+- Baris Kode     : 263 - 268
+- Gejala         : Saat user mengklik unduh status, media yang terunduh atau terbagikan justru video/foto
+                   milik kontak lain yang baru saja masuk di latar belakang.
+- Akar Masalah   :
+  Jika file media status sedang di-buffer dan belum memiliki nama spesifik:
+    val recentFile = files
+        .filter { it.isFile && it.length() > 0L && (now - it.lastModified()) < 30_000 }
+        .maxByOrNull { it.lastModified() }
+    if (recentFile != null) return recentFile
+  Fallback ini memilih file apa pun di folder `.Statuses` yang termodifikasi dalam 30 detik terakhir.
+  Jika ada status lain yang sedang di-download otomatis oleh WhatsApp, file tersebut yang terambil.
+- Severity       : TINGGI (Pelanggaran privasi dan salah unduh media).
+- Solusi         :
+  Validasi kecocokan ukuran (file size) dari metadata `FMessageWpp.mediaSize` atau hash media sebelum
+  menggunakan file fallback dari folder `.Statuses`.
+
+---
+
+[BUG-MED-03] MediaQuality: Overwrite Prop 14447 Secara Tanpa Syarat
+- File Target    : app/src/main/java/com/wmods/wppenhacer/xposed/features/media/MediaQuality.kt
+- Baris Kode     : 28
+- Status         : [SUDAH DIPERBAIKI / FIXED]
+- Gejala         : Logika pemrosesan media WhatsApp bawaan berubah meskipun opsi Kualitas Gambar dan
+                   Kualitas Video dalam kondisi NONAKTIF.
+- Akar Masalah   :
+  Di baris 28:
+    Others.propsBoolean[14447] = false
+  Baris ini dieksekusi sebelum pengecekan `if (videoQuality)` atau `if (imageQuality)`.
+- Severity       : SEDANG.
+- Solusi Diterapkan:
+  Menempatkan penimpaan properti 14447 dan `enableMediaQualityForStories()` ke dalam blok guard
+  `if (videoQuality || imageQuality)` sehingga media default WhatsApp tidak terganggu saat toggle tidak aktif.
+
+---
+
+[BUG-MED-04] CallRecording: Memerlukan Root `su` yang Pasti Gagal di Lingkungan Normal WhatsApp
+- File Target    : app/src/main/java/com/wmods/wppenhacer/xposed/features/media/CallRecording.kt
+- Baris Kode     : 257, 290, 305
+- Gejala         : Perekaman layar video call gagal dimulai atau menyebabkan WhatsApp hang saat panggilan.
+- Akar Masalah   :
+  Kode memanggil `Runtime.getRuntime().exec(arrayOf("su", "-c", ...))` langsung dari dalam proses WhatsApp.
+  WhatsApp berjalan di sandbox aplikasi Android biasa yang tidak memiliki izin superuser (SU).
+  Manager root (Magisk/KernelSU/APatch) akan menolak akses atau memunculkan popup otorisasi yang tidak
+  didukung di latar belakang. Selain itu perintah `pkill -2 screenrecord` dapat mematikan proses perekaman
+  layar sistem lain.
+- Severity       : TINGGI (Fitur screen recording video call tidak dapat bekerja pada non-root WhatsApp environment).
+- Solusi         :
+  Kirim IPC/AIDL ke aplikasi induk WaEnhancer (yang memiliki akses root/bridge) untuk menjalankan service
+  perekam layar MediaProjection secara sah melalui Android API.
+
+
+----------------------------------------------------------------------------------------------------
+4. FITUR CUSTOMIZATION (TAMPILAN & UI)
+----------------------------------------------------------------------------------------------------
+
+[BUG-CST-01] ShowOnline / Dot Online Menghambat Main Thread & Gagal Pada Bahasa Selain Inggris/Indonesia
+- File Target    : app/src/main/java/com/wmods/wppenhacer/xposed/features/customization/ShowOnline.kt
+- Baris Kode     : 140 - 165, 174
+- Status         : [SUDAH DIPERBAIKI / FIXED]
+- Gejala         :
+  1. Daftar obrolan (chat list) terasa patah-patah/lag saat di-scroll cepat.
+  2. Titik hijau / status online tidak muncul jika WhatsApp diatur ke bahasa selain Inggris/Indonesia
+     (misalnya Spanyol "en línea", Jerman "online", Arab, dsb).
+- Akar Masalah   :
+  - Di dalam `onBind` adapter baris 158:
+      sendPresenceMethod!!.invoke(null, userJid.userJid, null, tokenObj, mInstancePresence)
+      ReflectionUtils.callMethod(getStatusUser, mStatusUser, waContact.getObject(), false) as String
+    Ini dieksekusi secara sinkron di Main UI Thread untuk setiap item obrolan yang lewat saat scroll!
+  - Pengecekan status string:
+      status.trim() == UnobfuscatorCache.getInstance().getString("online")
+    Hanya mengecek string lokal "online", sehingga gagal total pada bahasa yang menggunakan frasa lain.
+  - Baris 159: `as String` akan melempar `ClassCastException` jika `getStatusUser` menghasilkan
+    `CharSequence` (SpannableString) atau `null`.
+- Severity       : TINGGI (Penyebab utama lag/micro-stutter pada chat list dan kegagalan fitur multi-bahasa).
+- Solusi Diterapkan:
+  - Memindahkan seluruh refleksi presence dan sinkronisasi ke background thread via `Utils.executor.execute`.
+  - Mengamankan daur ulang view (view recycling) dengan tag `currentJid` (0x7FFF0003) agar view tidak menampilkan data usang.
+  - Menggunakan `statusRaw?.toString()` yang aman dari ClassCastException.
+  - Menambahkan deteksi string multi-bahasa terpadu via resource ID WhatsApp asli dan fallback multi-bahasa ("en línea", "online", dll).
+
+---
+
+[BUG-CST-02] FloatingBottomBar: Obfuscated Class Hardcoded "X.0hl" & "X.18n"
+- File Target    : app/src/main/java/com/wmods/wppenhacer/xposed/features/customization/FloatingBottomBar.kt
+- Baris Kode     : 569
+- Gejala         : Navigasi floating bar tidak bereaksi terhadap event seleksi tab native pada versi
+                   WhatsApp selain versi target pembuatan kode.
+- Akar Masalah   :
+  Baris 569 memuat:
+    val itemClasses = listOf("X.0hl", "X.18n")
+  Nama-nama kelas tersebut adalah nama hasil Dex Proguard untuk satu versi spesifik. Pada update
+  WhatsApp berikutnya, nama kelas ini berganti menjadi nama lain, membuat hook `setSelected` mati total.
+- Severity       : TINGGI (Mengurangi ketahanan kompatibilitas modul).
+- Solusi         :
+  Gunakan DexKit untuk menemukan kelas item tab navigasi secara dinamis berdasarkan interface/superclass
+  (misal turunan BottomNavigationItemView atau implementasi interface WDS Tab).
+
+---
+
+[BUG-CST-03] SeparateGroup: Potensi Crash Fatal jika BottomNavigationView Hilang
+- File Target    : app/src/main/java/com/wmods/wppenhacer/xposed/features/customization/SeparateGroup.kt
+- Baris Kode     : 87 - 96
+- Status         : [SUDAH DIPERBAIKI / FIXED]
+- Gejala         : WhatsApp mengalami force close saat startup pada versi yang telah mengadopsi
+                   komponen navigasi WDS baru.
+- Akar Masalah   :
+    val bottomNavigationViewCls = Unobfuscator.findFirstClassUsingName(
+        classLoader, StringMatchType.EndsWith, ".BottomNavigationView"
+    )
+    XposedHelpers.findAndHookMethod(
+        bottomNavigationViewCls, "getMaxItemCount", XC_MethodReplacement.returnConstant(99)
+    )
+  Jika `bottomNavigationViewCls` bernilai `null`, method `findAndHookMethod` langsung melempar
+  `IllegalArgumentException: host class must not be null` tanpa ada penanganan `try-catch`.
+- Severity       : TINGGI (Crash saat boot/hook init).
+- Solusi Diterapkan:
+  Menambahkan pengecekan null safety `if (bottomNavigationViewCls != null)` sebelum memasang hook
+  `getMaxItemCount` sehingga mencegah IllegalArgumentException saat kelas tidak ditemukan.
+
+---
+
+[BUG-CST-04] DefaultEmoji: openFd Mengembalikan `null` Alih-alih FileNotFoundException
+- File Target    : app/src/main/java/com/wmods/wppenhacer/xposed/features/customization/DefaultEmoji.kt
+- Baris Kode     : 33 - 40
+- Status         : [SUDAH DIPERBAIKI / FIXED]
+- Gejala         : WhatsApp crash dengan `NullPointerException` saat keyboard emoji dibuka jika opsi
+                   "force_disable_emojis" aktif.
+- Akar Masalah   :
+  Hook `AssetManager.openFd("emojis.oba")` menyetel `param.result = null`. Kontrak internal Android
+  pada `AssetManager` mewajibkan melempar `FileNotFoundException` jika berkas asset tidak ada.
+  WhatsApp yang memanggil `.createInputStream()` pada return value null akan langsung crash seketika.
+- Severity       : TINGGI (Menyebabkan force close saat input emoji).
+- Solusi Diterapkan:
+  Mengganti `param.result = null` menjadi `param.throwable = java.io.FileNotFoundException("emojis.oba disabled")`
+  sehingga sesuai dengan kontrak Android AssetManager dan mencegah NPE pada WhatsApp.
+
+---
+
+[BUG-CST-05] iOS Context Menu: showHook Merusak Posisi Dropdown dengan Gravity Salah
+- File Target    : app/src/main/java/com/wmods/wppenhacer/xposed/features/customization/IosContextMenu.kt
+- Baris Kode     : 124 - 135
+- Gejala         : Posisi popup menu konteks melenceng atau menempel aneh di pojok layar.
+- Akar Masalah   :
+  Method hook yang sama (`showHook`) dipasang pada `showAsDropDown` dan `showAtLocation`.
+  Pada `showAsDropDown(anchor, xoff, yoff, gravity)`, argumen indeks ke-1 adalah `xoff` (offset piksel horizontal),
+  dan indeks ke-3 adalah `gravity`.
+  Kode menyetel:
+    param.args[1] = Gravity.TOP or Gravity.START // Menyuntik nilai bitmask ~0x33 (51px) ke xoff!
+    param.args[3] = 0                           // Menyetel gravity menjadi 0 (invalid)
+- Severity       : SEDANG (Gangguan visual/posisi menu konteks).
+- Solusi         :
+  Pisahkan hook untuk `showAtLocation` dan `showAsDropDown` dengan manipulasi koordinat yang tepat.
+
+---
+
+[BUG-CST-06] Duplikasi Header Title Saat Activity Recreate pada CustomToolbar
+- File Target    : app/src/main/java/com/wmods/wppenhacer/xposed/features/customization/CustomToolbar.kt
+- Baris Kode     : 190 - 194
+- Gejala         : Teks nama dan bio di toolbar berbayang atau bertumpuk ganda setelah orientasi layar
+                   berubah (rotate) atau tema berubah (dark/light switch).
+- Akar Masalah   :
+  Method `createToolbarLayout` menambahkan layout baru ke toolbar (`toolbar.addView(linearLayout, 0)`)
+  setiap kali `onCreate` dipanggil tanpa memeriksa apakah view kustom sebelumnya sudah terpasang.
+- Severity       : SEDANG (Masalah layout glitch pada configuration change).
+- Solusi         :
+  Beri tag pada view penampung kustom (misal `toolbar.findViewWithTag(...)`) dan buang view lama
+  sebelum membuat yang baru.
+
+
+----------------------------------------------------------------------------------------------------
+5. FITUR OTHERS (LAIN-LAIN)
+----------------------------------------------------------------------------------------------------
+
+[BUG-OTH-01] Group Admin Badge Gagal Ditampilkan pada Obrolan Grup
+- File Target    : app/src/main/java/com/wmods/wppenhacer/xposed/features/others/GroupAdmin.kt
+- Baris Kode     : 78 - 83
+- Status         : [SUDAH DIPERBAIKI / FIXED]
+- Gejala         : Ikon/lencana mahkota Admin Grup tidak pernah muncul di samping nama admin di grup.
+- Akar Masalah   :
+  Di baris 78:
+    val groupRawJid = chatCurrentJid.phoneRawString
+    if (groupRawJid == null) {
+        iconAdmin.visibility = View.GONE
+        return
+    }
+  `chatCurrentJid` adalah JID grup (`@g.us`). Pada kelas `UserJid`, `phoneRawString` diperuntukkan
+  untuk format nomor telepon kontak (`@s.whatsapp.net`). Nilai `phoneRawString` untuk grup sering kali
+  menghasilkan `null`. Baris 80 langsung menyembunyikan ikon dan melakukan return dini.
+- Severity       : TINGGI (Fitur admin grup mati total).
+- Solusi Diterapkan:
+  Menggunakan resolusi fallback JID grup: `val groupRawJid = chatCurrentJid.rawJidString ?: chatCurrentJid.userRawString ?: chatCurrentJid.phoneRawString`
+  dan menggunakan `chatCurrentJid.phoneJid` langsung sebagai argumen grup tanpa parsing ulang yang berisiko null.
+
+---
+
+[BUG-OTH-02] Transkripsi Audio Menyebabkan Freeze 10-30 Detik dan Crash ANR
+- File Target    : app/src/main/java/com/wmods/wppenhacer/xposed/features/others/AudioTranscript.kt
+- Baris Kode     : 95, 248 - 271
+- Status         : [SUDAH DIPERBAIKI / FIXED]
+- Gejala         : Menekan tombol Transkripsi Suara membuat WhatsApp macet total (freeze) dan memicu
+                   dialog Android "WhatsApp tidak menanggapi" (ANR).
+- Akar Masalah   :
+  Method `handleTranscriptionHook` dipanggil langsung di dalam `beforeHookedMethod` yang berjalan
+  di Main UI Thread.
+  Di dalamnya dipanggil `transcribeAudio()` yang melakukan:
+  1. Upload HTTP OkHttp secara sinkron (`execute()`).
+  2. Polling loop dengan `Thread.sleep(3000)` berulang-ulang sampai transkripsi selesai di server AssemblyAI:
+       while (status == STATUS_PROCESSING || status == STATUS_QUEUED) {
+           Thread.sleep(POLLING_DELAY_MS)
+           val checkResult = checkAssemblyAITranscriptionStatus(...)
+       }
+  Menjalankan network blocking dan sleep pada UI Thread dilarang di Android dan langsung memicu
+  `NetworkOnMainThreadException` atau freeze ANR.
+- Severity       : KRITIS (Aplikasi hang dan di-kill oleh sistem operasi).
+- Solusi Diterapkan:
+  Memindahkan seluruh alur upload HTTP dan polling loop ke background coroutine `CoroutineScope(Dispatchers.IO).launch`
+  sehingga Main Thread WhatsApp tetap 100% responsif dan bebas ANR. Hasil transkripsi dikirim balik ke UI thread secara aman.
+
+---
+
+[BUG-OTH-03] Filter Saluran Mengandalkan String Matching Indonesia/Inggris Hardcoded
+- File Target    : app/src/main/java/com/wmods/wppenhacer/xposed/features/others/Channels.kt
+- Baris Kode     : 39 - 44, 57 - 76, 92 - 100
+- Gejala         :
+  1. Pengguna WhatsApp dengan bahasa Arab, Spanyol, Prancis, dll. tidak dapat menyembunyikan saluran
+     atau rekomendasi saluran.
+  2. Beban CPU tinggi dan frame rate drop saat membuka tab Updates karena fungsi `extractAllText()`
+     menjelajahi rekursif seluruh child view di setiap item RecyclerView.
+- Akar Masalah   :
+  Penyaringan mengandalkan teks mentah "saluran", "tambah status", "pembaruan yang dilihat", "jelajahi",
+  "temukan saluran" yang dicari melalui iterasi rekursif string builder di seluruh ViewGroup.
+- Severity       : TINGGI (Isu performa dan inkonsistensi internasionalisasi).
+- Solusi         :
+  Deteksi tipe item view berdasarkan class adapter atau view ID unik komponen WhatsApp (misal
+  `updates_carousel`, `channels_container`), bukan melalui pemindaian string teks dinamis.
+
+
+====================================================================================================
+RINGKASAN STATUS & PRIORITAS PERBAIKAN:
+====================================================================================================
+
+TOTAL BUG TERDATA: 17 Bug
+TOTAL TELAH DIPERBAIKI: 12 Bug [SUDAH DIPERBAIKI / FIXED]
+TOTAL BELUM DIPERBAIKI: 5 Bug [TERBUKA / OPEN]
+
+----------------------------------------------------------------------------------------------------
+A. DAFTAR BUG YANG TELAH BERHASIL DIPERBAIKI (12 BUG):
+----------------------------------------------------------------------------------------------------
+[x] 1. [BUG-GEN-03] AntiRevoke & FStatusWpp:
+        - Status Anti-Revoke mati total karena fStatus null & mismatch index argumen hook.
+        - Solusi: Inisialisasi dynamic lazy getter StatusStore, perbaikan matcher argumen, dan fallback DelMessageStore.
+[x] 2. [BUG-OTH-02] AudioTranscript:
+        - Freeze 10-30 detik dan crash ANR akibat HTTP synchronous & Thread.sleep di UI Thread.
+        - Solusi: Offload seluruh transmisi OkHttp dan polling loop ke CoroutineScope(Dispatchers.IO).
+[x] 3. [BUG-OTH-01] GroupAdmin:
+        - Lencana Admin Grup tidak tampil karena phoneRawString menghasilkan null untuk JID grup.
+        - Solusi: Menggunakan fallback rawJidString / userRawString dan phoneJid langsung.
+[x] 4. [BUG-PRV-01] FreezeLastSeen:
+        - Bekukan waktu terakhir dilihat tidak aktif dari menu pengaturan modul WaEnhancer.
+        - Solusi: Evaluasi logika boolean ganda diperbaiki menjadi `freezeLastSeenMain || (showFreezeOption && freezeLastSeenPriv) || ghostmode`.
+[x] 5. [BUG-PRV-03] HideSeen:
+        - Centang Biru Saat Balas (Blue on Reply) memblokir tanda lihat status cerita WhatsApp secara diam-diam.
+        - Solusi: Menambahkan guard `!userJid.isStatus` sebelum intersep receipt balasan.
+[x] 6. [BUG-PRV-05] CallPrivacy:
+        - Spam Toast "Invalid call info" mengganggu layar dan crash substring negatif pada daftar kontak blokir panggilan.
+        - Solusi: Hapus toast spam, proteksi bounds length >= 2, dan pasang graceful fallback method panggilan.
+[x] 7. [BUG-CST-03] SeparateGroup:
+        - Crash fatal IllegalArgumentException saat BottomNavigationView tidak ditemukan / null.
+        - Solusi: Tambahkan pemeriksaan null safety sebelum mendaftarkan hook getMaxItemCount.
+[x] 8. [BUG-CST-04] DefaultEmoji:
+        - WhatsApp crash NPE saat buka keyboard emoji jika force_disable_emojis aktif.
+        - Solusi: Melempar java.io.FileNotFoundException pada openFd sesuai kontrak Android AssetManager.
+[x] 9. [BUG-CST-01] ShowOnline:
+        - Chat list stutter/lag akibat query network presence & refleksi di UI thread, serta gagal di multi-bahasa.
+        - Solusi: Offload query ke thread pool background, amankan daur ulang view tag, dan deteksi string status online multi-bahasa.
+[x] 10. [BUG-PRV-06] DndMode, TypingPrivacy, TagMessage:
+        - Preferensi stale di-cache 1x saat boot sehingga sakelar toggle tidak berefek real-time.
+        - Solusi: Pindahkan pembacaan preferensi ke evaluasi dinamis di dalam hook callback saat method berjalan.
+[x] 11. [BUG-PRV-02] HideSeen:
+        - Fitur sembunyikan dilihat pesan sekali lihat (view once) mati/dead code.
+        - Solusi: Hubungkan isHideOnceSeen dan CustomPrivacy ke stanza receipt cancellation dan batch played hooks.
+[x] 12. [BUG-MED-03] MediaQuality:
+        - Properti ABProp 14447 di-overwrite secara tanpa syarat saat toggle HD mati.
+        - Solusi: Tempatkan mutasi konfigurasi properti di dalam blok guard `if (videoQuality || imageQuality)`.
+
+----------------------------------------------------------------------------------------------------
+B. DAFTAR BUG TERSISA YANG BELUM DIPERBAIKI (5 BUG):
+----------------------------------------------------------------------------------------------------
+PRIORITAS TINGGI (KOMPATIBILITAS, MEMORY & PERFORMA):
+[ ] 1. [BUG-GEN-01] AntiRevoke: Refleksi liar mengeksekusi sembarang method A0* saat pesan obrolan ditarik.
+[ ] 2. [BUG-GEN-02] Others: Ketergantungan ratusan hardcoded property ID (ABProps) rentan mati saat WhatsApp update.
+[ ] 3. [BUG-CST-02] FloatingBottomBar: Obfuscated class hardcoded "X.0hl" & "X.18n" rentan mati pada versi baru.
+[ ] 4. [BUG-MED-02] StatusDownload: Fallback 30 detik pada folder .Statuses bisa salah comot status milik orang lain.
+[ ] 5. [BUG-MED-04] CallRecording: Runtime exec "su" di dalam sandbox WhatsApp gagal dijalankan.
+
+CATATAN EDGE CASES TERSISA (MINOR):
+[ ] 6. [BUG-PRV-04] HideSeen: Set.first() pada multi-message voice note legacy hook.
+[ ] 7. [BUG-MED-01] DownloadViewOnce: Toast dipanggil dari background thread asinkron.
+[ ] 8. [BUG-CST-05] IosContextMenu: showHook menimpa xoff dengan bitmask gravity.
+[ ] 9. [BUG-CST-06] CustomToolbar: Duplikasi toolbar layout saat screen orientation berubah.
+[ ] 10. [BUG-OTH-03] Channels: Pengecekan teks hardcoded bahasa Indonesia/Inggris membebani CPU dan gagal di multi-bahasa.
+====================================================================================================

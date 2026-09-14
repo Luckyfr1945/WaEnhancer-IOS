@@ -89,11 +89,15 @@ class SeparateGroup(loader: ClassLoader, preferences:SharedPreferences) :
             StringMatchType.EndsWith,
             ".BottomNavigationView"
         )
-        XposedHelpers.findAndHookMethod(
-            bottomNavigationViewCls,
-            "getMaxItemCount",
-            XC_MethodReplacement.returnConstant(99)
-        )
+        if (bottomNavigationViewCls != null) {
+            runCatching {
+                XposedHelpers.findAndHookMethod(
+                    bottomNavigationViewCls,
+                    "getMaxItemCount",
+                    XC_MethodReplacement.returnConstant(99)
+                )
+            }.onFailure { log(it) }
+        }
 
         if (!prefs.getBoolean("separategroups", false)) return
 

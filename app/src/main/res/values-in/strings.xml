@@ -603,4 +603,10 @@ Harap gunakan versi WhatsApp yang didukung!</string>
     <string name="sticker_copy_log">Salin Log</string>
     <string name="sticker_clear_log">Bersihkan Log</string>
     <string name="sticker_select_backup_folder">Pilih Folder Cadangan</string>
+    <string name="menu_wallpaper">Wallpaper &amp; Efek Kaca</string>
+    <string name="wallpaper_dialog_title">Liquid Glass Wallpaper</string>
+    <string name="wallpaper_choose_gallery">Pilih Foto dari Galeri</string>
+    <string name="wallpaper_reset">Kembalikan ke Default</string>
+    <string name="wallpaper_applied">Wallpaper liquid glass berhasil diterapkan!</string>
+    <string name="wallpaper_removed">Wallpaper dihapus, tema kembali ke default.</string>
 </resources>

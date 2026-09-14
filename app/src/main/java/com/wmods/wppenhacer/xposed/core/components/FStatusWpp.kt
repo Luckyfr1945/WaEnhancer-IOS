@@ -173,7 +173,10 @@ class FStatusWpp(val fstatus: Any?) {
 
 
         @JvmField
-        var fStatus: FStatusWpp? = null
+        var _fStatus: FStatusWpp? = null
+
+        val fStatus: FStatusWpp?
+            get() = _fStatus ?: FStatusWpp.getFStatusFromFKeyStatus(this).also { _fStatus = it }
 
 
         val key: FMessageWpp.Key by lazy {
@@ -207,6 +210,13 @@ class FStatusWpp(val fstatus: Any?) {
                 this.messageID = (ReflectionUtils.findFieldUsingFilterIfExists(key.javaClass) { f ->
                     f.type == String::class.java
                 }?.get(key) as? String) ?: ""
+            }
+            if (this.messageID.isBlank()) {
+                val str = key.toString()
+                val match = Regex("id=([^, )]+)").find(str)
+                if (match != null) {
+                    this.messageID = match.groupValues[1]
+                }
             }
 
             try {

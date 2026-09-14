@@ -84,66 +84,72 @@ public class HomeFragment extends BaseFragment {
     }
 
     public View onCreateView(@NonNull LayoutInflater inflater,
-                             ViewGroup container, Bundle savedInstanceState) {
-        binding = FragmentHomeBinding.inflate(inflater, container, false);
-
-        checkStateWpp(requireActivity());
-        checkRootStatus();
-
-        binding.rebootBtn.setOnClickListener(view -> {
-            animateClick(view);
-            App.instance.restartApp(FeatureLoader.PACKAGE_WPP);
-            disableWpp(requireActivity());
-        });
-
-        binding.scrollDiagBtn.setOnClickListener(view -> {
-            animateClick(view);
-            binding.nestedScrollView.post(() -> binding.nestedScrollView.smoothScrollTo(0, binding.diagCard.getTop()));
-        });
-
-        binding.rebootBtn2.setOnClickListener(view -> {
-            animateClick(view);
-            App.instance.restartApp(FeatureLoader.PACKAGE_BUSINESS);
-            disableBusiness(requireActivity());
-        });
-
-        binding.exportBtn.setOnClickListener(view -> {
-            animateClick(view);
-            saveConfigs(this.getContext());
-        });
-
-        binding.importBtn.setOnClickListener(view -> {
-            animateClick(view);
-            importConfigs(this.getContext());
-        });
-
-        binding.resetBtn.setOnClickListener(view -> {
-            animateClick(view);
-            resetConfigs(this.getContext());
-        });
-
-        binding.diagBtn.setOnClickListener(view -> {
-            animateClick(view);
-            showDiagnosticsDialog();
-        });
-
-        binding.updateCard.setOnClickListener(view -> {
-            animateClick(view);
-            showChangelogDialog();
-        });
-
-        var prefs = PreferenceManager.getDefaultSharedPreferences(requireContext());
-        if (prefs.getBoolean("update_check", true)) {
-            checkForUpdates();
-        } else {
-            binding.updateCard.setVisibility(View.GONE);
+            ViewGroup container, Bundle savedInstanceState) {
+        String wppVer = "";
+        try {
+            var pInfo = App.instance.getPackageManager().getPackageInfo(FeatureLoader.PACKAGE_WPP, 0);
+            wppVer = pInfo.versionName;
+        } catch (Exception ignored) {
         }
 
-        return binding.getRoot();
+        String w4bVer = "";
+        try {
+            var pInfoBiz = App.instance.getPackageManager().getPackageInfo(FeatureLoader.PACKAGE_BUSINESS, 0);
+            w4bVer = pInfoBiz.versionName;
+        } catch (Exception ignored) {
+        }
+
+        boolean isModuleActive = false;
+        try {
+            var mainActivity = (com.wmods.wppenhacer.activities.MainActivity) getActivity();
+            if (mainActivity != null) {
+                isModuleActive = mainActivity.isXposedEnabled();
+            }
+        } catch (Exception ignored) {
+        }
+
+        View composeView = com.wmods.wppenhacer.ui.home.compose.HomeComposeRenderer.createHomeView(
+                requireContext(),
+                getViewLifecycleOwner(),
+                isModuleActive,
+                Boolean.TRUE.equals(com.topjohnwu.superuser.Shell.isAppGrantedRoot()),
+                wppVer,
+                w4bVer,
+                android.os.Build.MODEL,
+                android.os.Build.VERSION.SDK_INT,
+                () -> {
+                    App.instance.restartApp(FeatureLoader.PACKAGE_WPP);
+                    disableWpp(requireActivity());
+                },
+                () -> {
+                    App.instance.restartApp(FeatureLoader.PACKAGE_BUSINESS);
+                    disableBusiness(requireActivity());
+                },
+                () -> {
+                    showDiagnosticsDialog();
+                },
+                () -> {
+                    saveConfigs(requireContext());
+                },
+                () -> {
+                    importConfigs(requireContext());
+                },
+                () -> {
+                    resetConfigs(requireContext());
+                });
+
+        composeView.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+        return composeView;
+    }
+
+    @Override
+    public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
+        super.onViewCreated(view, savedInstanceState);
     }
 
     private void checkRootStatus() {
-        if (getContext() == null || binding == null) return;
+        if (getContext() == null || binding == null)
+            return;
         var context = requireContext();
 
         binding.heroRootBadge.setText("● ROOT CHECK...");
@@ -152,7 +158,8 @@ public class HomeFragment extends BaseFragment {
 
         com.wmods.wppenhacer.utils.StickerSyncManager.INSTANCE.isRootAvailable(hasRoot -> {
             var activity = getActivity();
-            if (activity == null || binding == null) return kotlin.Unit.INSTANCE;
+            if (activity == null || binding == null)
+                return kotlin.Unit.INSTANCE;
             activity.runOnUiThread(() -> {
                 if (Boolean.TRUE.equals(hasRoot)) {
                     binding.heroRootBadge.setText("● ROOT ACTIVE");
@@ -185,7 +192,8 @@ public class HomeFragment extends BaseFragment {
 
     @SuppressLint("StringFormatInvalid")
     private void receiverBroadcastBusiness(Context context, Intent intent) {
-        if (App.isOriginalPackage()) binding.status3.setVisibility(View.VISIBLE);
+        if (App.isOriginalPackage())
+            binding.status3.setVisibility(View.VISIBLE);
         binding.statusTitle3.setText("WhatsApp Business Background");
         var version = intent.getStringExtra("VERSION");
         if (version != null) {
@@ -300,12 +308,15 @@ public class HomeFragment extends BaseFragment {
                 Toast.makeText(context, e.getMessage(), Toast.LENGTH_SHORT).show();
             }
         });
-        FilePicker.fileCapture.launch(new String[]{"application/json"});
+        FilePicker.fileCapture.launch(new String[] { "application/json" });
     }
 
     @SuppressLint("StringFormatInvalid")
     private void checkStateWpp(FragmentActivity activity) {
-        // Automatically format dynamic version string: e.g. "1.5.7 (EFB7AAB0)" -> "1.5.7 · EFB7AAB0"
+        if (binding == null)
+            return;
+        // Automatically format dynamic version string: e.g. "1.5.7 (EFB7AAB0)" ->
+        // "1.5.7 · EFB7AAB0"
         var formattedVersion = BuildConfig.VERSION_NAME.replace(" (", " · ").replace(")", "");
         binding.heroVersionText.setText(formattedVersion);
 
@@ -314,7 +325,8 @@ public class HomeFragment extends BaseFragment {
             binding.status.setStrokeColor(ContextCompat.getColor(context, R.color.hero_border_active));
             binding.statusIconBox.setBackgroundResource(R.drawable.bg_badge_category);
             binding.statusIcon.setImageResource(R.drawable.ic_round_check_circle_24);
-            binding.statusIcon.setImageTintList(android.content.res.ColorStateList.valueOf(ContextCompat.getColor(context, R.color.whatsapp_green)));
+            binding.statusIcon.setImageTintList(android.content.res.ColorStateList
+                    .valueOf(ContextCompat.getColor(context, R.color.whatsapp_green)));
             binding.statusTitle.setText(R.string.module_enabled);
             binding.statusSummary.setText("Hook LSPosed berhasil dimuat");
             binding.heroBgImage.setImageResource(R.drawable.hero_active);
@@ -332,7 +344,8 @@ public class HomeFragment extends BaseFragment {
             binding.status.setStrokeColor(ContextCompat.getColor(context, R.color.hero_border_inactive));
             binding.statusIconBox.setBackgroundResource(R.drawable.bg_badge_error_category);
             binding.statusIcon.setImageResource(R.drawable.ic_round_error_outline_24);
-            binding.statusIcon.setImageTintList(android.content.res.ColorStateList.valueOf(ContextCompat.getColor(context, R.color.badge_red_text)));
+            binding.statusIcon.setImageTintList(android.content.res.ColorStateList
+                    .valueOf(ContextCompat.getColor(context, R.color.badge_red_text)));
             binding.statusTitle.setText(R.string.module_disabled);
             binding.statusSummary.setText("Modul belum diaktifkan di LSPosed");
             binding.heroBgImage.setImageResource(R.drawable.hero_inactive);
@@ -389,6 +402,8 @@ public class HomeFragment extends BaseFragment {
     }
 
     private void disableBusiness(FragmentActivity activity) {
+        if (binding == null)
+            return;
         binding.statusIcon3.setImageResource(R.drawable.ic_round_error_outline_24);
         binding.statusTitle3.setText("WhatsApp Business (Nonaktif)");
         binding.statusSummary3.setText(R.string.business_is_not_running_or_has_not_been_activated_in_lsposed);
@@ -396,6 +411,8 @@ public class HomeFragment extends BaseFragment {
     }
 
     private void disableWpp(FragmentActivity activity) {
+        if (binding == null)
+            return;
         binding.statusIcon2.setImageResource(R.drawable.ic_round_error_outline_24);
         binding.statusTitle2.setText("WhatsApp (Nonaktif)");
         binding.statusSummary1.setText(R.string.whatsapp_is_not_running_or_has_not_been_activated_in_lsposed);
@@ -416,7 +433,8 @@ public class HomeFragment extends BaseFragment {
 
     private void checkForUpdates() {
         var context = getContext();
-        if (context == null) return;
+        if (context == null || binding == null)
+            return;
 
         binding.updateSummary.setText(getString(R.string.current_version_s, BuildConfig.VERSION_NAME));
 
@@ -447,7 +465,8 @@ public class HomeFragment extends BaseFragment {
                         return;
                     }
 
-                    String htmlUrl = release.optString("html_url", "https://github.com/Luckyfr1945/WaEnhancer-IOS/releases/latest");
+                    String htmlUrl = release.optString("html_url",
+                            "https://github.com/Luckyfr1945/WaEnhancer-IOS/releases/latest");
                     String releaseBody = release.optString("body", "");
                     String publishedAt = release.optString("published_at", "");
 
@@ -479,13 +498,15 @@ public class HomeFragment extends BaseFragment {
                             isoFormat.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
                             Date date = isoFormat.parse(publishedAt);
                             if (date != null) {
-                                this.latestReleaseDate = new SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(date);
+                                this.latestReleaseDate = new SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
+                                        .format(date);
                             }
                         } catch (Exception ignored) {
                         }
                     }
                     if (this.latestReleaseDate == null) {
-                        this.latestReleaseDate = new SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(new Date());
+                        this.latestReleaseDate = new SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
+                                .format(new Date());
                     }
 
                     var hash = tagName.contains("-") ? tagName.split("-")[1].trim() : tagName;
@@ -502,10 +523,12 @@ public class HomeFragment extends BaseFragment {
 
     private void updateCardState(boolean success, boolean isUpToDate, @Nullable String newVersion) {
         var activity = getActivity();
-        if (activity == null || !isAdded()) return;
+        if (activity == null || !isAdded())
+            return;
 
         activity.runOnUiThread(() -> {
-            if (binding == null) return;
+            if (binding == null)
+                return;
 
             if (!success) {
                 binding.updateIcon.setImageResource(R.drawable.ic_round_error_outline_24);
@@ -547,7 +570,8 @@ public class HomeFragment extends BaseFragment {
         var queue = new java.util.ArrayList<RootDiagnostics.LogEntry>();
 
         RootDiagnostics.INSTANCE.runDiagnostics(context, entry -> {
-            if (!isAdded()) return;
+            if (!isAdded())
+                return;
             queue.add(entry);
         });
 
@@ -556,7 +580,8 @@ public class HomeFragment extends BaseFragment {
 
             @Override
             public void run() {
-                if (!isAdded() || dialog == null || !dialog.isShowing()) return;
+                if (!isAdded() || dialog == null || !dialog.isShowing())
+                    return;
 
                 if (!queue.isEmpty()) {
                     emptyCycles = 0;
@@ -574,7 +599,8 @@ public class HomeFragment extends BaseFragment {
 
     private void showChangelogDialog() {
         var context = getContext();
-        if (context == null) return;
+        if (context == null || binding == null)
+            return;
         var dialogBinding = DialogUpdateAvailableBinding.inflate(LayoutInflater.from(context));
 
         var markwon = Markwon.create(context);
@@ -583,11 +609,13 @@ public class HomeFragment extends BaseFragment {
             dialogBinding.tvUpdateTitle.setText(R.string.update_available);
             dialogBinding.tvUpdateSubtitle.setText("Versi baru siap diunduh");
             dialogBinding.tvVersionBadge.setText(latestVersionName);
-            dialogBinding.tvReleaseDate.setText(latestReleaseDate != null ? latestReleaseDate : new SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(new Date()));
+            dialogBinding.tvReleaseDate.setText(latestReleaseDate != null ? latestReleaseDate
+                    : new SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(new Date()));
 
             String bodyText = (latestChangelog != null && !latestChangelog.isBlank())
                     ? latestChangelog
-                    : "Pembaruan versi " + latestVersionName + " telah tersedia. Klik tombol di bawah untuk mengunduh rilis terbaru.";
+                    : "Pembaruan versi " + latestVersionName
+                            + " telah tersedia. Klik tombol di bawah untuk mengunduh rilis terbaru.";
             dialogBinding.tvChangelog.setText(markwon.toMarkdown(bodyText));
 
             dialogBinding.btnIgnore.setVisibility(View.VISIBLE);
@@ -600,13 +628,15 @@ public class HomeFragment extends BaseFragment {
                     .create();
 
             if (dialog.getWindow() != null) {
-                dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+                dialog.getWindow().setBackgroundDrawable(
+                        new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
             }
 
             dialogBinding.btnIgnore.setOnClickListener(v -> dialog.dismiss());
             dialogBinding.btnUpdate.setOnClickListener(v -> {
                 dialog.dismiss();
-                String targetUrl = latestReleaseUrl != null ? latestReleaseUrl : "https://github.com/Luckyfr1945/WaEnhancer-IOS/releases/latest";
+                String targetUrl = latestReleaseUrl != null ? latestReleaseUrl
+                        : "https://github.com/Luckyfr1945/WaEnhancer-IOS/releases/latest";
                 try {
                     Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl));
                     startActivity(browserIntent);
@@ -620,26 +650,27 @@ public class HomeFragment extends BaseFragment {
             dialogBinding.tvUpdateTitle.setText("Catatan Rilis");
             dialogBinding.tvUpdateSubtitle.setText("WaEnhancer iOS Modul");
             dialogBinding.tvVersionBadge.setText("v" + BuildConfig.VERSION_NAME);
-            dialogBinding.tvReleaseDate.setText(new SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(new Date()));
+            dialogBinding.tvReleaseDate
+                    .setText(new SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(new Date()));
 
             String changelogText = (latestChangelog != null && !latestChangelog.isBlank())
                     ? latestChangelog
                     : """
-                    ### 🚀 FITUR TERBARU [ADDED]
-                    • **Lompat ke Pesan Pertama:** Menu di dalam obrolan chat untuk langsung menuju ke pesan paling awal.
-                    • **Hook ConversationScrollApi WhatsApp:** Navigasi cepat dan pemuatan riwayat pesan dinamis dari database.
-                    • **Sinkronisasi & Cadangan Stiker:** Cadangkan dan pulihkan stiker WhatsApp/WA Business dengan aman.
+                            ### 🚀 FITUR TERBARU [ADDED]
+                            • **Lompat ke Pesan Pertama:** Menu di dalam obrolan chat untuk langsung menuju ke pesan paling awal.
+                            • **Hook ConversationScrollApi WhatsApp:** Navigasi cepat dan pemuatan riwayat pesan dinamis dari database.
+                            • **Sinkronisasi & Cadangan Stiker:** Cadangkan dan pulihkan stiker WhatsApp/WA Business dengan aman.
 
-                    ### ⚡ PENINGKATAN [IMPROVED]
-                    • **Gradasi Halus Hero Card:** Efek transparansi blending menyatu mulus tanpa garis tepi di seluruh ukuran layar.
-                    • **Tombol Mic & Kirim Asli:** Mempertahankan warna, bentuk, dan animasi asli WhatsApp.
-                    • **Pencarian Fitur & Tab Adaptif:** Menyesuaikan visibilitas fitur berdasarkan status aktif LSPosed dan Root.
-                    • **Warna Status Dinamis:** Indikator badge, border, dan icon otomatis hijau saat aktif atau merah saat nonaktif.
+                            ### ⚡ PENINGKATAN [IMPROVED]
+                            • **Gradasi Halus Hero Card:** Efek transparansi blending menyatu mulus tanpa garis tepi di seluruh ukuran layar.
+                            • **Tombol Mic & Kirim Asli:** Mempertahankan warna, bentuk, dan animasi asli WhatsApp.
+                            • **Pencarian Fitur & Tab Adaptif:** Menyesuaikan visibilitas fitur berdasarkan status aktif LSPosed dan Root.
+                            • **Warna Status Dinamis:** Indikator badge, border, dan icon otomatis hijau saat aktif atau merah saat nonaktif.
 
-                    ### 🐛 PERBAIKAN BUG [FIXED]
-                    • **Perbaikan Navigasi Pesan Pertama:** Memperbaiki scroll pesan agar tidak salah memicu quote reply bar.
-                    • **Perbaikan Override Privasi Kontak:** Memastikan aturan privasi per-kontak selalu diterapkan secara konsisten.
-                    • **Perbaikan Multi-Job Architecture Crash:** Mengatasi kompatibilitas WA Standard dan Business.""";
+                            ### 🐛 PERBAIKAN BUG [FIXED]
+                            • **Perbaikan Navigasi Pesan Pertama:** Memperbaiki scroll pesan agar tidak salah memicu quote reply bar.
+                            • **Perbaikan Override Privasi Kontak:** Memastikan aturan privasi per-kontak selalu diterapkan secara konsisten.
+                            • **Perbaikan Multi-Job Architecture Crash:** Mengatasi kompatibilitas WA Standard dan Business.""";
 
             dialogBinding.tvChangelog.setText(markwon.toMarkdown(changelogText));
 
@@ -652,7 +683,8 @@ public class HomeFragment extends BaseFragment {
                     .create();
 
             if (dialog.getWindow() != null) {
-                dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+                dialog.getWindow().setBackgroundDrawable(
+                        new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
             }
 
             dialogBinding.btnUpdate.setOnClickListener(v -> dialog.dismiss());

@@ -20,6 +20,10 @@ import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.File
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class AudioTranscript(
     classLoader: ClassLoader,
@@ -92,25 +96,36 @@ class AudioTranscript(
             method.parameterCount == ON_COMPLETE_PARAMETER_COUNT
         }
 
-        val responseJson = transcribeAudio(file, provider)
-        val transcript = responseJson.getString(JSON_TEXT)
-        val segments = buildTranscriptionSegments(
-            responseJson = responseJson,
-            transcript = transcript,
-            provider = provider,
-            transcriptionSegmentClass = transcriptionSegmentClass
-        )
-
-        ReflectionUtils.callMethod(
-            onComplete,
-            callback,
-            fmessageObj,
-            transcript,
-            segments,
-            TRANSCRIPTION_STATUS_SUCCESS
-        )
-
         param.result = null
+
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val responseJson = transcribeAudio(file, provider)
+                val transcript = responseJson.getString(JSON_TEXT)
+                val segments = buildTranscriptionSegments(
+                    responseJson = responseJson,
+                    transcript = transcript,
+                    provider = provider,
+                    transcriptionSegmentClass = transcriptionSegmentClass
+                )
+
+                withContext(Dispatchers.Main) {
+                    ReflectionUtils.callMethod(
+                        onComplete,
+                        callback,
+                        fmessageObj,
+                        transcript,
+                        segments,
+                        TRANSCRIPTION_STATUS_SUCCESS
+                    )
+                }
+            } catch (e: Throwable) {
+                log(e)
+                withContext(Dispatchers.Main) {
+                    Utils.showToast(e.message ?: "Transcription error", Toast.LENGTH_SHORT)
+                }
+            }
+        }
     }
 
     private fun getApiKey(provider: String): String {

@@ -8,9 +8,9 @@
     <color name="surface_container_high">#191C1F</color>
 
     <!-- High-visibility crisp border and divider lines -->
-    <color name="card_border">#2E363E</color>
+    <color name="card_border">#3DFFFFFF</color>
     <color name="card_divider">#262C33</color>
-    <color name="card_bg">#101214</color>
+    <color name="card_bg">#D9101214</color>
 
     <color name="nav_indicator">#1C3D2B</color>
     <color name="nav_background">#101214</color>
@@ -42,7 +42,7 @@
     <color name="hero_border_inactive">#4DFF6262</color>
 
     <!-- Hero Card Specific Tokens (Dark Mode) -->
-    <color name="hero_card_bg">#0D100F</color>
+    <color name="hero_card_bg">#D90D100F</color>
     <color name="hero_solid_scrim">#0D100F</color>
     <color name="hero_fade_center">#D90D100F</color>
     <color name="hero_bottom_shadow">#F20D100F</color>

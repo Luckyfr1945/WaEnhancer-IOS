@@ -10,6 +10,7 @@ plugins {
     alias(libs.plugins.materialthemebuilder)
     alias(libs.plugins.kotlinAndroid)
     alias(libs.plugins.kspPlugin)
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 fun getGitHashCommit(): String {
@@ -129,6 +130,7 @@ android {
     }
     buildFeatures {
         viewBinding = true
+        compose = true
         buildConfig = true
         aidl = true
         resValues = true
@@ -218,8 +220,17 @@ dependencies {
     annotationProcessor(libs.lombok)
     implementation(libs.markwon.core)
     implementation(libs.remote.preferences)
-}
 
+    // Jetpack Compose & Haze (Liquid Glass)
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.graphics)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.haze)
+    implementation(libs.haze.materials)
+    implementation("io.github.kyant0:backdrop:2.0.0-alpha03")
+}
 
 configurations.all {
     exclude("androidx.appcompat", "appcompat")

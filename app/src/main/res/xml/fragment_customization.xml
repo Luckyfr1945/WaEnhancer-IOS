@@ -85,6 +85,15 @@
             app:showSeekBarValue="true"
             app:title="@string/navigation_transparency" />
 
+        <SeekBarPreference
+            android:defaultValue="20"
+            android:max="50"
+            app:key="app_blur_radius"
+            app:min="1"
+            app:showSeekBarValue="true"
+            app:summary="@string/app_blur_radius_sum"
+            app:title="@string/app_blur_radius" />
+
         <MultiSelectListPreference
             app:entries="@array/tabshide_contents"
             app:entryValues="@array/tabshide_values"

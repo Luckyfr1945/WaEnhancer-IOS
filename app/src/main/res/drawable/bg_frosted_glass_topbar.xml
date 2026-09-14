@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 1. Translucent Frosted Glass Background -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#CC12151C" />
+        </shape>
+    </item>
+    <!-- 2. Subtle Bottom Hairline Divider -->
+    <item android:gravity="bottom">
+        <shape android:shape="rectangle">
+            <size android:height="1dp" />
+            <solid android:color="#24FFFFFF" />
+        </shape>
+    </item>
+</layer-list>

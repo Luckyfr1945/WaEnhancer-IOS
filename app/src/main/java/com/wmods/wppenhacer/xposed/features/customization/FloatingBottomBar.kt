@@ -9,10 +9,12 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ColorFilter
 import android.graphics.LinearGradient
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.RectF
 import android.graphics.Shader
+import android.graphics.SweepGradient
 import android.graphics.RenderEffect
 import android.graphics.RuntimeShader
 import android.graphics.drawable.ColorDrawable
@@ -88,9 +90,9 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         private const val BAR_HEIGHT_DP = 66f
         private const val BAR_PADDING_DP = 4f
         private const val INDICATOR_INSET_DP = 4f
-        private const val INDICATOR_WIDTH_RATIO = 0.90f
+        private const val INDICATOR_WIDTH_RATIO = 0.88f
         private const val BLUR_RADIUS = 2.5f
-        private const val PRESSED_SCALE = 1.08f
+        private const val PRESSED_SCALE = 1.18f // Refined liquid swell matching continuous capsule
         private const val RUBBER_BAND_DP = 4f
     }
 
@@ -99,11 +101,36 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
     private val barStates = WeakHashMap<ViewGroup, BarState>()
 
     /**
-     * Pure Glass Spotlight Pill Indicator:
-     * - Pure translucent glass capsule
-     * - Multi-layer soft drop shadow
-     * - Crisp crystalline 1.2dp border stroke
-     * - Silky smooth spring physics & interactive squash/stretch
+     * Tactile Haptic Helper (Runs in WhatsApp host process)
+     */
+    private fun performTickHaptic(view: View) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                view.performHapticFeedback(android.view.HapticFeedbackConstants.SEGMENT_TICK)
+            } else {
+                view.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+            }
+        } catch (_: Throwable) {}
+    }
+
+    private fun performClickHaptic(view: View) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                view.performHapticFeedback(android.view.HapticFeedbackConstants.SEGMENT_FREQUENT_TICK)
+            } else {
+                view.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+            }
+        } catch (_: Throwable) {}
+    }
+
+    /**
+     * Circular Liquid Glass Lens Indicator (Ala Remielle Kernel Manager):
+     * - Circular/Capsule Liquid Bubble geometry
+     * - Multi-layer soft ambient drop shadow that spreads outward when pressed
+     * - High-vibrancy Chromatic Aberration Rim (Rainbow dispersion halo on lens edge)
+     * - Crisp crystalline rim stroke
+     * - Specular 3D convex lens reflection highlight
+     * - Damped spring physics with jelly squash & stretch
      */
     private class LiquidIndicatorDrawable(
         private val fillColor: Int,
@@ -115,9 +142,16 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         private val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG)
         private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
-            strokeWidth = Utils.dipToPixels(1.2f).toFloat()
+            strokeWidth = Utils.dipToPixels(1.3f).toFloat()
+        }
+        private val chromaticPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+        }
+        private val highlightPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
         }
         private val rect = RectF()
+        private val chromaticMatrix = Matrix()
 
         var centerX = 0f
         var halfWidth = 0f
@@ -132,19 +166,21 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             if (!active || halfWidth <= 0f || bottom <= top) return
 
             val centerY = (top + bottom) * 0.5f
-            val expansion = 1f + 0.10f * pressProgress
-            val halfW = halfWidth * scaleX * expansion
-            val halfH = (bottom - top) * 0.5f * scaleY * expansion
-            val maxCorner = Utils.dipToPixels(18f).toFloat()
-            val corner = maxCorner.coerceAtMost(halfH).coerceAtMost(halfW)
+            val baseRadius = (bottom - top) * 0.5f
 
-            // 1. Soft multi-layer drop shadow
-            shadowPaint.color = shadowColor
+            // Dynamic scale dimensions
+            val halfW = halfWidth * scaleX
+            val halfH = baseRadius * scaleY
+            val corner = halfH.coerceAtMost(halfW)
+
+            // 1. Soft subtle dynamic ambient shadow
             val baseAlpha = Color.alpha(shadowColor)
+            shadowPaint.color = shadowColor
+            val shadowSpread = 1f + 0.20f * pressProgress
             for (i in SHADOW_SPREAD.indices) {
-                val grow = Utils.dipToPixels(6f) * SHADOW_SPREAD[i]
-                shadowPaint.alpha = (baseAlpha * SHADOW_ALPHA[i]).toInt().coerceIn(0, 255)
-                val drop = grow * 0.35f
+                val grow = Utils.dipToPixels(4f) * SHADOW_SPREAD[i] * shadowSpread
+                shadowPaint.alpha = (baseAlpha * SHADOW_ALPHA[i] * (1f + 0.4f * pressProgress)).toInt().coerceIn(0, 255)
+                val drop = grow * (0.25f + 0.10f * pressProgress)
                 rect.set(
                     centerX - halfW - grow,
                     centerY - halfH - grow + drop,
@@ -154,16 +190,61 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                 canvas.drawRoundRect(rect, corner + grow, corner + grow, shadowPaint)
             }
 
-            // 2. Pure Translucent Glass Body (No fake gradients)
+            // 2. Translucent Liquid Lens Body (Crystal clear, exactly like photo 3)
             bodyPaint.color = fillColor
-            bodyPaint.alpha = (Color.alpha(fillColor) * (1f - pressProgress * 0.15f)).toInt().coerceIn(0, 255)
+            val fillAlpha = (Color.alpha(fillColor) * (1f + pressProgress * 0.20f)).toInt().coerceIn(0, 255)
+            bodyPaint.alpha = fillAlpha
             rect.set(centerX - halfW, centerY - halfH, centerX + halfW, centerY + halfH)
             canvas.drawRoundRect(rect, corner, corner, bodyPaint)
 
-            // 3. Crisp Crystalline Glass Rim Stroke
-            val rimAlpha = (Color.alpha(strokeColor) + 40 * pressProgress).toInt().coerceIn(0, 255)
+            // 3. Crisp Crystalline Glass Rim Stroke (Delicate clean border around the capsule)
+            val rimAlpha = (Color.alpha(strokeColor) + 30 * pressProgress).toInt().coerceIn(0, 255)
             strokePaint.color = Color.argb(rimAlpha, Color.red(strokeColor), Color.green(strokeColor), Color.blue(strokeColor))
+            rect.set(centerX - halfW, centerY - halfH, centerX + halfW, centerY + halfH)
             canvas.drawRoundRect(rect, corner, corner, strokePaint)
+
+            // 4. Subtle Specular Highlight along the Top Rim (Light reflection from above, like photo 3)
+            val topHlAlpha = (75 + 65 * pressProgress).toInt().coerceIn(0, 255)
+            val topHighlightShader = LinearGradient(
+                centerX, centerY - halfH,
+                centerX, centerY,
+                intArrayOf(
+                    Color.argb(topHlAlpha, 255, 255, 255),
+                    Color.argb((topHlAlpha * 0.25f).toInt(), 255, 255, 255),
+                    Color.TRANSPARENT
+                ),
+                floatArrayOf(0f, 0.45f, 1f),
+                Shader.TileMode.CLAMP
+            )
+            highlightPaint.style = Paint.Style.STROKE
+            highlightPaint.strokeWidth = Utils.dipToPixels(1.2f).toFloat()
+            highlightPaint.shader = topHighlightShader
+            rect.set(centerX - halfW, centerY - halfH, centerX + halfW, centerY + halfH)
+            canvas.drawRoundRect(rect, corner, corner, highlightPaint)
+
+            // 5. Chromatic Aberration Dispersion (Realistic edge refraction ONLY at bottom-right rim, like Photo 3!)
+            if (pressProgress > 0.02f) {
+                val chromAlpha = (130 * pressProgress).toInt().coerceIn(0, 255)
+                val chromaticShader = LinearGradient(
+                    centerX - halfW * 0.2f, centerY - halfH * 0.2f,
+                    centerX + halfW, centerY + halfH,
+                    intArrayOf(
+                        Color.TRANSPARENT,
+                        Color.TRANSPARENT,
+                        Color.argb((chromAlpha * 0.60f).toInt(), 0, 229, 255),   // Cyan
+                        Color.argb((chromAlpha * 0.80f).toInt(), 41, 121, 255),  // Blue
+                        Color.argb((chromAlpha * 0.85f).toInt(), 213, 0, 249),  // Purple / Magenta
+                        Color.argb((chromAlpha * 0.65f).toInt(), 255, 23, 68),   // Red
+                        Color.TRANSPARENT
+                    ),
+                    floatArrayOf(0f, 0.55f, 0.72f, 0.82f, 0.90f, 0.96f, 1f),
+                    Shader.TileMode.CLAMP
+                )
+                chromaticPaint.shader = chromaticShader
+                chromaticPaint.strokeWidth = Utils.dipToPixels(1.5f).toFloat()
+                rect.set(centerX - halfW, centerY - halfH, centerX + halfW, centerY + halfH)
+                canvas.drawRoundRect(rect, corner, corner, chromaticPaint)
+            }
         }
 
         override fun setAlpha(alpha: Int) {}
@@ -176,7 +257,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
 
         companion object {
             private val SHADOW_SPREAD = floatArrayOf(1f, 0.60f, 0.25f)
-            private val SHADOW_ALPHA = floatArrayOf(0.06f, 0.12f, 0.22f)
+            private val SHADOW_ALPHA = floatArrayOf(0.07f, 0.14f, 0.24f)
         }
     }
 
@@ -200,15 +281,18 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         // Direct cache from setSelected hook — avoids per-frame drawableState scan
         var checkedViewRef: java.lang.ref.WeakReference<View>? = null
 
-        // --- Named Spring Physics Constants ---
+        // Haptic tracking during scrub
+        var lastHapticIndex: Int = -1
+
+        // --- Named Spring Physics Constants (Tuned to Remielle Kernel Manager) ---
         companion object {
-            const val SPRING_CENTER_LERP = 0.50f  // How fast pill center tracks target
-            const val SPRING_WIDTH_LERP  = 0.50f  // How fast pill width tracks target
-            const val SPRING_SCALE_LERP  = 0.42f  // Squash/stretch recovery speed
-            const val SPRING_PRESS_LERP  = 0.38f  // Press progress fade speed
-            const val JELLY_STRETCH_MAX  = 0.40f  // Max horizontal stretch at high velocity
-            const val JELLY_SQUASH_MAX   = 0.20f  // Max vertical squash at high velocity
-            const val JELLY_VEL_SCALE    = 25f    // px/frame threshold for max jelly
+            const val SPRING_CENTER_LERP = 0.45f  // How fast pill center tracks target
+            const val SPRING_WIDTH_LERP  = 0.45f  // How fast pill width tracks target
+            const val SPRING_SCALE_LERP  = 0.35f  // Squash/stretch & expansion recovery speed
+            const val SPRING_PRESS_LERP  = 0.35f  // Press progress speed
+            const val JELLY_STRETCH_MAX  = 0.45f  // Max horizontal stretch at high velocity
+            const val JELLY_SQUASH_MAX   = 0.25f  // Max vertical squash at high velocity
+            const val JELLY_VEL_SCALE    = 20f    // px/frame threshold for max jelly
             const val SETTLE_THRESHOLD_X = 0.2f   // px delta below which position is settled
             const val SETTLE_THRESHOLD_S = 0.01f  // scale delta below which scale is settled
         }
@@ -318,9 +402,16 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             state.lastDragX = ev.x
                             state.pillStartCenterX = indicator.centerX
                             state.isDragging = false
+                            state.isScrubbing = false
                             isLongPressHandled = false
+                            state.lastHapticIndex = state.selectedIndex
+
+                            // Instantly expand to PRESSED_SCALE with spring physics (like Remielle Kernel Manager)
                             state.targetPressProgress = 1f
+                            state.targetScaleX = PRESSED_SCALE
+                            state.targetScaleY = PRESSED_SCALE
                             startPillPhysics(bar, state)
+                            performTickHaptic(bar)
                             bar.parent?.requestDisallowInterceptTouchEvent(true)
 
                             // Detect long press on Anda / Settings tab (rank 5 or last item)
@@ -336,6 +427,8 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                                     state.isDragging = false
                                     state.isScrubbing = false
                                     state.targetPressProgress = 0f
+                                    state.targetScaleX = 1f
+                                    state.targetScaleY = 1f
                                     startPillPhysics(bar, state)
 
                                     try {
@@ -359,14 +452,15 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             val stepDx = ev.x - state.lastDragX
                             state.lastDragX = ev.x
 
-                            if (abs(dx) > Utils.dipToPixels(8f)) {
+                            if (abs(dx) > Utils.dipToPixels(6f)) {
                                 longPressRunnable?.let { mainHandler.removeCallbacks(it) }
                                 longPressRunnable = null
                             }
 
-                            if (!state.isDragging && abs(dx) > Utils.dipToPixels(12f)) {
+                            if (!state.isDragging && abs(dx) > Utils.dipToPixels(6f)) {
                                 state.isDragging = true
                                 state.isScrubbing = true
+                                bar.parent?.requestDisallowInterceptTouchEvent(true)
                                 try {
                                     val cancelEv = MotionEvent.obtain(ev).apply { action = MotionEvent.ACTION_CANCEL }
                                     for (i in 0 until bar.childCount) {
@@ -377,7 +471,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             }
 
                             if (state.isDragging) {
-                                // Hitung posisi visual X terluar kiri & kanan aktual (karena tab di-reorder via translationX)
                                 val centers = items.map { offsetInBar(bar, it).first + it.width / 2f }
                                 val minX = centers.minOrNull() ?: 0f
                                 val maxX = centers.maxOrNull() ?: bar.width.toFloat()
@@ -385,29 +478,35 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                                 // Rubber band resistance
                                 val rawCenterX = state.pillStartCenterX + dx
                                 var newCenterX = when {
-                                    rawCenterX < minX -> minX - sqrt((minX - rawCenterX) * Utils.dipToPixels(RUBBER_BAND_DP * 2f))
-                                    rawCenterX > maxX -> maxX + sqrt((rawCenterX - maxX) * Utils.dipToPixels(RUBBER_BAND_DP * 2f))
+                                    rawCenterX < minX -> minX - sqrt((minX - rawCenterX) * Utils.dipToPixels(RUBBER_BAND_DP * 2.5f))
+                                    rawCenterX > maxX -> maxX + sqrt((rawCenterX - maxX) * Utils.dipToPixels(RUBBER_BAND_DP * 2.5f))
                                     else -> rawCenterX
                                 }
-
                                 val closestIndex = items.indices.minByOrNull { idx ->
                                     val item = items[idx]
                                     val center = offsetInBar(bar, item).first + item.width / 2f
                                     abs(center - newCenterX)
                                 } ?: state.selectedIndex
-                                val targetWidth = items[closestIndex].width * INDICATOR_WIDTH_RATIO / 2f
+                                val hPadding = Utils.dipToPixels(4f).toFloat()
+                                val targetWidth = (items[closestIndex].width / 2f) - hPadding
 
-                                val safeMargin = Utils.dipToPixels(10f).toFloat()
+                                val safeMargin = Utils.dipToPixels(4f).toFloat()
                                 val minCenter = safeMargin + targetWidth
                                 val maxCenter = if (bar.width > 0) bar.width - safeMargin - targetWidth else minCenter
                                 if (maxCenter > minCenter) {
                                     newCenterX = newCenterX.coerceIn(minCenter, maxCenter)
                                 }
 
-                                // Velocity-driven stretch and press scale
-                                val dragVelocityNorm = (stepDx / Utils.dipToPixels(12f)).coerceIn(-0.35f, 0.35f)
-                                val stretchX = PRESSED_SCALE * (1f + abs(dragVelocityNorm) * 0.25f)
-                                val squashY = PRESSED_SCALE * (1f - abs(dragVelocityNorm) * 0.10f)
+                                // Haptic tick when scrubbing across tabs
+                                if (closestIndex != state.lastHapticIndex) {
+                                    state.lastHapticIndex = closestIndex
+                                    performTickHaptic(bar)
+                                }
+
+                                // Velocity-driven squash & stretch (Remielle DampedDragAnimation physics)
+                                val dragVelocityNorm = (stepDx / Utils.dipToPixels(10f)).coerceIn(-0.35f, 0.35f)
+                                val stretchX = PRESSED_SCALE / (1f - (dragVelocityNorm * 0.75f).coerceIn(-0.25f, 0.25f))
+                                val squashY = PRESSED_SCALE * (1f - abs(dragVelocityNorm * 0.25f).coerceIn(-0.25f, 0.25f))
 
                                 state.currentCenterX = newCenterX
                                 state.targetCenterX = newCenterX
@@ -415,8 +514,8 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                                 state.targetHalfWidth = targetWidth
                                 state.currentScaleX = stretchX
                                 state.currentScaleY = squashY
-                                state.targetScaleX = 1f
-                                state.targetScaleY = 1f
+                                state.targetScaleX = PRESSED_SCALE
+                                state.targetScaleY = PRESSED_SCALE
                                 state.targetPressProgress = 1f
 
                                 indicator.centerX = newCenterX
@@ -427,13 +526,13 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                                 indicator.invalidateSelf()
                                 bar.invalidate()
 
-                                // Interactive tab item hover scale
+                                // Interactive tab item hover scale (magnifying glass effect ala Remielle)
                                 for (item in items) {
                                     val center = offsetInBar(bar, item).first + item.width / 2f
                                     val dist = abs(center - newCenterX)
                                     val maxDist = item.width.toFloat().coerceAtLeast(1f)
                                     val hoverFraction = (1f - dist / maxDist).coerceIn(0f, 1f)
-                                    val targetScale = 1f + 0.12f * hoverFraction
+                                    val targetScale = 1f + 0.20f * hoverFraction * state.pressProgress
                                     item.scaleX = targetScale
                                     item.scaleY = targetScale
                                 }
@@ -449,12 +548,16 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             if (isLongPressHandled) {
                                 isLongPressHandled = false
                                 state.targetPressProgress = 0f
+                                state.targetScaleX = 1f
+                                state.targetScaleY = 1f
                                 startPillPhysics(bar, state)
                                 param.result = true
                                 return
                             }
 
                             state.targetPressProgress = 0f
+                            state.targetScaleX = 1f
+                            state.targetScaleY = 1f
                             if (state.isDragging) {
                                 state.isDragging = false
                                 state.isScrubbing = false
@@ -469,11 +572,13 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                                 if (closestIndex in items.indices) {
                                     items[closestIndex].performClick()
                                     animateToItem(bar, state, items, closestIndex)
+                                    performClickHaptic(bar)
                                 }
 
                                 param.result = true
                                 return
                             } else {
+                                performClickHaptic(bar)
                                 startPillPhysics(bar, state)
                             }
                         }
@@ -484,12 +589,16 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             if (isLongPressHandled) {
                                 isLongPressHandled = false
                                 state.targetPressProgress = 0f
+                                state.targetScaleX = 1f
+                                state.targetScaleY = 1f
                                 startPillPhysics(bar, state)
                                 param.result = true
                                 return
                             }
 
                             state.targetPressProgress = 0f
+                            state.targetScaleX = 1f
+                            state.targetScaleY = 1f
                             if (state.isDragging) {
                                 state.isDragging = false
                                 state.isScrubbing = false
@@ -576,6 +685,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             val view = param.thisObject as? View ?: return
                             if (!isBarOrChild(view)) return
                             disableNativeActiveIndicator(view)
+                            formatTabItemViews(view)
                             val isNowSelected = param.args.getOrNull(0) as? Boolean ?: return
                             if (isNowSelected) {
                                 val rank = getTabRank(view)
@@ -944,7 +1054,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             }
         }
 
-        bar.clipToOutline = true
+        bar.clipToOutline = false
         bar.clipChildren = false
         bar.clipToPadding = false
         bar.elevation = elevPx + 2f
@@ -961,19 +1071,19 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
 
         // Clean spotlight indicator
         val indicatorColor = if (isLight) {
-            Color.argb(38, 0, 0, 0)
+            Color.argb(22, 0, 0, 0)
         } else {
-            Color.argb(55, 255, 255, 255)
+            Color.argb(32, 255, 255, 255)
         }
         val shadowColor = if (isLight) {
-            Color.argb(30, 0, 0, 0)
+            Color.argb(18, 0, 0, 0)
         } else {
-            Color.argb(45, 0, 0, 0)
+            Color.argb(35, 0, 0, 0)
         }
         val indicatorStroke = if (isLight) {
-            Color.argb(30, 255, 255, 255)
+            Color.argb(35, 0, 0, 0)
         } else {
-            Color.argb(70, 255, 255, 255)
+            Color.argb(55, 255, 255, 255)
         }
         val indicator = LiquidIndicatorDrawable(indicatorColor, shadowColor, indicatorStroke)
         state.indicator = indicator
@@ -991,7 +1101,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         try {
             val setLabelMode = bar.javaClass
                 .getMethod("setLabelVisibilityMode", Int::class.javaPrimitiveType)
-            setLabelMode.invoke(bar, 1)
+            setLabelMode.invoke(bar, 2) // LABEL_VISIBILITY_UNLABELED
         } catch (e: Exception) { }
 
         attachSelectionWatcher(bar, state)
@@ -1408,7 +1518,12 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                             child.imageTintList = targetColorState
                         }
                     } else if (child is TextView) {
-                        if (child.currentTextColor != targetColor) {
+                        val entryName = runCatching { child.resources.getResourceEntryName(child.id) }.getOrNull()?.lowercase() ?: ""
+                        val isBadge = child.javaClass.simpleName.contains("Badge", ignoreCase = true) || entryName.contains("badge")
+                        if (!isBadge) {
+                            child.visibility = View.GONE
+                            child.alpha = 0f
+                        } else if (child.currentTextColor != targetColor) {
                             child.setTextColor(targetColor)
                         }
                     }
@@ -1707,25 +1822,30 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                 }
             }
             val clsName = v.javaClass.simpleName
-            val isIcon = v is ImageView || clsName.contains("Icon", ignoreCase = true)
-            val isLabel = v is TextView || clsName.contains("Label", ignoreCase = true)
+            val entryName = runCatching { v.resources.getResourceEntryName(v.id) }.getOrNull()?.lowercase() ?: ""
+            val isBadge = clsName.contains("Badge", ignoreCase = true) || entryName.contains("badge")
+            val isIcon = !isBadge && (v is ImageView || clsName.contains("Icon", ignoreCase = true))
+            val isLabel = !isBadge && !isIcon && (clsName.contains("Label", ignoreCase = true) ||
+                    clsName.contains("BaselineLayout", ignoreCase = true) ||
+                    entryName.contains("label") ||
+                    v is TextView)
 
             if (isIcon) {
-                val targetY = -3f * density
+                val targetY = 0f
                 if (v.translationY != targetY) {
                     v.translationY = targetY
                 }
             } else if (isLabel) {
-                val targetY = 3.5f * density
-                if (v.translationY != targetY) {
-                    v.translationY = targetY
+                if (v.visibility != View.GONE) {
+                    v.visibility = View.GONE
                 }
-                if (v is TextView) {
-                    if (v.textSize != 9.5f * density && v.textSize != 9.5f) {
-                        v.textSize = 9.5f
-                    }
-                    v.maxLines = 1
-                    v.ellipsize = android.text.TextUtils.TruncateAt.END
+                if (v.alpha != 0f) {
+                    v.alpha = 0f
+                }
+                val lp = v.layoutParams
+                if (lp != null && lp.height != 0) {
+                    lp.height = 0
+                    v.layoutParams = lp
                 }
             }
         }
@@ -1905,21 +2025,23 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                 } else {
                     state.currentCenterX = state.targetCenterX
                     state.currentHalfWidth = state.targetHalfWidth
-                    state.currentScaleX = 1f
-                    state.currentScaleY = 1f
+                    state.currentScaleX = state.targetScaleX
+                    state.currentScaleY = state.targetScaleY
                     state.pressProgress = state.targetPressProgress
                     indicator.centerX = state.targetCenterX
                     indicator.halfWidth = state.targetHalfWidth
-                    indicator.scaleX = 1f
-                    indicator.scaleY = 1f
+                    indicator.scaleX = state.targetScaleX
+                    indicator.scaleY = state.targetScaleY
                     indicator.pressProgress = state.targetPressProgress
                     state.isChoreographerActive = false
                     indicator.invalidateSelf()
                     bar.invalidate()
 
-                    for (item in items) {
-                        item.scaleX = 1f
-                        item.scaleY = 1f
+                    if (state.targetPressProgress <= 0f) {
+                        for (item in items) {
+                            item.scaleX = 1f
+                            item.scaleY = 1f
+                        }
                     }
                 }
             }
@@ -1936,12 +2058,16 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         val indicator = state.indicator ?: return
         val target = items.getOrNull(newIndex) ?: return
         val (offsetX, _) = offsetInBar(bar, target)
-        val inset = Utils.dipToPixels(INDICATOR_INSET_DP).toFloat()
 
         var toCenter = offsetX + target.width / 2f
-        val toHalfWidth = target.width * INDICATOR_WIDTH_RATIO / 2f
+        val barH = (if (bar.height > 0) bar.height else target.height).toFloat()
+        val vPadding = Utils.dipToPixels(5f).toFloat()
+        val hPadding = Utils.dipToPixels(4f).toFloat()
 
-        val safeMargin = Utils.dipToPixels(10f).toFloat()
+        val toHalfWidth = (target.width / 2f) - hPadding
+        val toHalfHeight = (barH / 2f) - vPadding
+
+        val safeMargin = Utils.dipToPixels(4f).toFloat()
         val minCenter = safeMargin + toHalfWidth
         val maxCenter = if (bar.width > 0) bar.width - safeMargin - toHalfWidth else minCenter
         if (maxCenter > minCenter) {
@@ -1953,11 +2079,9 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
 
         state.selectedIndex = newIndex
 
-        val barH = (if (bar.height > 0) bar.height else target.height).toFloat()
-        val pillH = Utils.dipToPixels(52f).toFloat()
         val centerY = barH / 2f
-        indicator.top = (centerY - pillH / 2f).coerceAtLeast(inset)
-        indicator.bottom = (centerY + pillH / 2f).coerceAtMost(barH - inset)
+        indicator.top = centerY - toHalfHeight
+        indicator.bottom = centerY + toHalfHeight
 
         if (firstRun) {
             state.currentCenterX = toCenter
@@ -1966,7 +2090,10 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             state.targetHalfWidth = toHalfWidth
             state.currentScaleX = 1f
             state.currentScaleY = 1f
+            state.targetScaleX = 1f
+            state.targetScaleY = 1f
             state.pressProgress = 0f
+            state.targetPressProgress = 0f
             indicator.centerX = toCenter
             indicator.halfWidth = toHalfWidth
             indicator.scaleX = 1f
@@ -1980,6 +2107,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             state.targetHalfWidth = toHalfWidth
             state.targetScaleX = 1f
             state.targetScaleY = 1f
+            state.targetPressProgress = 0f
             startPillPhysics(bar, state)
         }
     }
