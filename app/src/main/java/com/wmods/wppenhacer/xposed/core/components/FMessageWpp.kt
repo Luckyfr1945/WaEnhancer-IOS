@@ -489,6 +489,7 @@ class FMessageWpp(fMessage: Any?) {
 
             private val jidFieldsCache = java.util.concurrent.ConcurrentHashMap<Class<*>, List<java.lang.reflect.Field>>()
 
+            @JvmStatic
             fun extractFrom(obj: Any?): UserJid? {
                 if (obj == null) return null
                 if (obj is UserJid) return obj

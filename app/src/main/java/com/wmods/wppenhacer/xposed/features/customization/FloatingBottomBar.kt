@@ -94,6 +94,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         private const val BLUR_RADIUS = 2.5f
         private const val PRESSED_SCALE = 1.18f // Refined liquid swell matching continuous capsule
         private const val RUBBER_BAND_DP = 4f
+        private var cachedNavInset: Int = -1
     }
 
     private val processedBars = WeakHashMap<ViewGroup, Boolean>()
@@ -146,12 +147,29 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         }
         private val chromaticPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
+            strokeWidth = Utils.dipToPixels(1.5f).toFloat()
         }
         private val highlightPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.FILL
+            style = Paint.Style.STROKE
+            strokeWidth = Utils.dipToPixels(1.2f).toFloat()
         }
         private val rect = RectF()
-        private val chromaticMatrix = Matrix()
+        private val dp4 = Utils.dipToPixels(4f).toFloat()
+
+        private var cachedHlShader: LinearGradient? = null
+        private var lastHlCenterX = Float.NaN
+        private var lastHlCenterY = Float.NaN
+        private var lastHlHalfH = Float.NaN
+        private var lastHlAlpha = -1
+        private val hlPositions = floatArrayOf(0f, 0.45f, 1f)
+
+        private var cachedChromShader: LinearGradient? = null
+        private var lastChromX0 = Float.NaN
+        private var lastChromY0 = Float.NaN
+        private var lastChromX1 = Float.NaN
+        private var lastChromY1 = Float.NaN
+        private var lastChromAlpha = -1
+        private val chromPositions = floatArrayOf(0f, 0.55f, 0.72f, 0.82f, 0.90f, 0.96f, 1f)
 
         var centerX = 0f
         var halfWidth = 0f
@@ -178,7 +196,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             shadowPaint.color = shadowColor
             val shadowSpread = 1f + 0.20f * pressProgress
             for (i in SHADOW_SPREAD.indices) {
-                val grow = Utils.dipToPixels(4f) * SHADOW_SPREAD[i] * shadowSpread
+                val grow = dp4 * SHADOW_SPREAD[i] * shadowSpread
                 shadowPaint.alpha = (baseAlpha * SHADOW_ALPHA[i] * (1f + 0.4f * pressProgress)).toInt().coerceIn(0, 255)
                 val drop = grow * (0.25f + 0.10f * pressProgress)
                 rect.set(
@@ -205,43 +223,57 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
 
             // 4. Subtle Specular Highlight along the Top Rim (Light reflection from above, like photo 3)
             val topHlAlpha = (75 + 65 * pressProgress).toInt().coerceIn(0, 255)
-            val topHighlightShader = LinearGradient(
-                centerX, centerY - halfH,
-                centerX, centerY,
-                intArrayOf(
-                    Color.argb(topHlAlpha, 255, 255, 255),
-                    Color.argb((topHlAlpha * 0.25f).toInt(), 255, 255, 255),
-                    Color.TRANSPARENT
-                ),
-                floatArrayOf(0f, 0.45f, 1f),
-                Shader.TileMode.CLAMP
-            )
-            highlightPaint.style = Paint.Style.STROKE
-            highlightPaint.strokeWidth = Utils.dipToPixels(1.2f).toFloat()
-            highlightPaint.shader = topHighlightShader
+            if (centerX != lastHlCenterX || centerY != lastHlCenterY || halfH != lastHlHalfH || topHlAlpha != lastHlAlpha) {
+                lastHlCenterX = centerX
+                lastHlCenterY = centerY
+                lastHlHalfH = halfH
+                lastHlAlpha = topHlAlpha
+                cachedHlShader = LinearGradient(
+                    centerX, centerY - halfH,
+                    centerX, centerY,
+                    intArrayOf(
+                        Color.argb(topHlAlpha, 255, 255, 255),
+                        Color.argb((topHlAlpha * 0.25f).toInt(), 255, 255, 255),
+                        Color.TRANSPARENT
+                    ),
+                    hlPositions,
+                    Shader.TileMode.CLAMP
+                )
+            }
+            highlightPaint.shader = cachedHlShader
             rect.set(centerX - halfW, centerY - halfH, centerX + halfW, centerY + halfH)
             canvas.drawRoundRect(rect, corner, corner, highlightPaint)
 
             // 5. Chromatic Aberration Dispersion (Realistic edge refraction ONLY at bottom-right rim, like Photo 3!)
             if (pressProgress > 0.02f) {
                 val chromAlpha = (130 * pressProgress).toInt().coerceIn(0, 255)
-                val chromaticShader = LinearGradient(
-                    centerX - halfW * 0.2f, centerY - halfH * 0.2f,
-                    centerX + halfW, centerY + halfH,
-                    intArrayOf(
-                        Color.TRANSPARENT,
-                        Color.TRANSPARENT,
-                        Color.argb((chromAlpha * 0.60f).toInt(), 0, 229, 255),   // Cyan
-                        Color.argb((chromAlpha * 0.80f).toInt(), 41, 121, 255),  // Blue
-                        Color.argb((chromAlpha * 0.85f).toInt(), 213, 0, 249),  // Purple / Magenta
-                        Color.argb((chromAlpha * 0.65f).toInt(), 255, 23, 68),   // Red
-                        Color.TRANSPARENT
-                    ),
-                    floatArrayOf(0f, 0.55f, 0.72f, 0.82f, 0.90f, 0.96f, 1f),
-                    Shader.TileMode.CLAMP
-                )
-                chromaticPaint.shader = chromaticShader
-                chromaticPaint.strokeWidth = Utils.dipToPixels(1.5f).toFloat()
+                val x0 = centerX - halfW * 0.2f
+                val y0 = centerY - halfH * 0.2f
+                val x1 = centerX + halfW
+                val y1 = centerY + halfH
+                if (x0 != lastChromX0 || y0 != lastChromY0 || x1 != lastChromX1 || y1 != lastChromY1 || chromAlpha != lastChromAlpha) {
+                    lastChromX0 = x0
+                    lastChromY0 = y0
+                    lastChromX1 = x1
+                    lastChromY1 = y1
+                    lastChromAlpha = chromAlpha
+                    cachedChromShader = LinearGradient(
+                        x0, y0,
+                        x1, y1,
+                        intArrayOf(
+                            Color.TRANSPARENT,
+                            Color.TRANSPARENT,
+                            Color.argb((chromAlpha * 0.60f).toInt(), 0, 229, 255),   // Cyan
+                            Color.argb((chromAlpha * 0.80f).toInt(), 41, 121, 255),  // Blue
+                            Color.argb((chromAlpha * 0.85f).toInt(), 213, 0, 249),  // Purple / Magenta
+                            Color.argb((chromAlpha * 0.65f).toInt(), 255, 23, 68),   // Red
+                            Color.TRANSPARENT
+                        ),
+                        chromPositions,
+                        Shader.TileMode.CLAMP
+                    )
+                }
+                chromaticPaint.shader = cachedChromShader
                 rect.set(centerX - halfW, centerY - halfH, centerX + halfW, centerY + halfH)
                 canvas.drawRoundRect(rect, corner, corner, chromaticPaint)
             }
@@ -371,9 +403,8 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                     val view = param.thisObject as? View ?: return
                     if (view.id != bottomNavId) return
                     val bar = view as? ViewGroup ?: return
-                    teardownBarState(bar)
-                    setupAttempts.remove(bar)
-                    processedBars.remove(bar)
+                    val state = barStates[bar]
+                    state?.isChoreographerActive = false
                 }
             })
 
@@ -805,7 +836,9 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                 val state = barStates.getOrPut(bar) { BarState() }
                 state.wrapper = existingParent
                 updateOverlayLayout(rootView, existingParent, bar)
-                applyTransparentShadowStyle(rootView, existingParent, bar)
+                if (state.indicator == null || bar.background !== state.indicator) {
+                    applyTransparentShadowStyle(rootView, existingParent, bar)
+                }
                 positionFabsAboveBar(rootView, existingParent)
                 setupVisibilitySync(rootView, existingParent, bar, state)
                 return true
@@ -831,6 +864,20 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             }
             state.wrapper = wrapper
 
+            ViewCompat.setOnApplyWindowInsetsListener(wrapper) { v, insets ->
+                val navBottom = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
+                if (navBottom > 0 && navBottom != cachedNavInset) {
+                    cachedNavInset = navBottom
+                    val lp = v.layoutParams as? FrameLayout.LayoutParams
+                    val targetMargin = navBottom + Utils.dipToPixels(BOTTOM_MARGIN_DP)
+                    if (lp != null && lp.bottomMargin != targetMargin) {
+                        lp.bottomMargin = targetMargin
+                        v.layoutParams = lp
+                    }
+                }
+                insets
+            }
+
             val barHeight = Utils.dipToPixels(BAR_HEIGHT_DP)
 
             val wrapperParams = FrameLayout.LayoutParams(
@@ -853,14 +900,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             applyTransparentShadowStyle(rootView, wrapper, bar)
             positionFabsAboveBar(rootView, wrapper)
             setupVisibilitySync(rootView, wrapper, bar, state)
-
-            bar.post {
-                val rv = findRootView(bar)
-                val st = barStates[bar]
-                if (rv != null && st?.wrapper != null) {
-                    applyTransparentShadowStyle(rv, st.wrapper!!, bar)
-                }
-            }
 
             logDebug("FloatingBottomBar: wrapped bar in floating overlay")
             return true
@@ -914,33 +953,128 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         val params = container.layoutParams as? FrameLayout.LayoutParams ?: return
         val sideMargin = Utils.dipToPixels(SIDE_MARGIN_DP)
         val barHeight = Utils.dipToPixels(BAR_HEIGHT_DP)
-        params.gravity = Gravity.BOTTOM
-        params.leftMargin = sideMargin
-        params.rightMargin = sideMargin
-        params.bottomMargin = navigationBarInset(rootView) + Utils.dipToPixels(BOTTOM_MARGIN_DP)
-        params.height = barHeight
-        container.layoutParams = params
+        val targetBottomMargin = getStableNavInset(rootView) + Utils.dipToPixels(BOTTOM_MARGIN_DP)
 
-        val barParams = bar.layoutParams ?: return
-        barParams.width = ViewGroup.LayoutParams.MATCH_PARENT
-        barParams.height = barHeight
-        (barParams as? ViewGroup.MarginLayoutParams)?.setMargins(0, 0, 0, 0)
-        bar.layoutParams = barParams
-        bar.setPadding(Utils.dipToPixels(BAR_PADDING_DP), 0, Utils.dipToPixels(BAR_PADDING_DP), 0)
+        var changed = false
+        if (params.gravity != Gravity.BOTTOM) {
+            params.gravity = Gravity.BOTTOM
+            changed = true
+        }
+        if (params.leftMargin != sideMargin) {
+            params.leftMargin = sideMargin
+            changed = true
+        }
+        if (params.rightMargin != sideMargin) {
+            params.rightMargin = sideMargin
+            changed = true
+        }
+        if (params.bottomMargin != targetBottomMargin) {
+            params.bottomMargin = targetBottomMargin
+            changed = true
+        }
+        if (params.height != barHeight) {
+            params.height = barHeight
+            changed = true
+        }
+        if (changed) {
+            container.layoutParams = params
+        }
+
+        val barParams = bar.layoutParams
+        if (barParams != null) {
+            var barChanged = false
+            if (barParams.width != ViewGroup.LayoutParams.MATCH_PARENT) {
+                barParams.width = ViewGroup.LayoutParams.MATCH_PARENT
+                barChanged = true
+            }
+            if (barParams.height != barHeight) {
+                barParams.height = barHeight
+                barChanged = true
+            }
+            val marginLp = barParams as? ViewGroup.MarginLayoutParams
+            if (marginLp != null && (marginLp.leftMargin != 0 || marginLp.topMargin != 0 || marginLp.rightMargin != 0 || marginLp.bottomMargin != 0)) {
+                marginLp.setMargins(0, 0, 0, 0)
+                barChanged = true
+            }
+            if (barChanged) {
+                bar.layoutParams = barParams
+            }
+        }
+        val padH = Utils.dipToPixels(BAR_PADDING_DP)
+        if (bar.paddingLeft != padH || bar.paddingRight != padH || bar.paddingTop != 0 || bar.paddingBottom != 0) {
+            bar.setPadding(padH, 0, padH, 0)
+        }
+
+        // Center menuView vertically inside bar so tab icons never shift up/down
+        if (bar.childCount > 0) {
+            val menuView = bar.getChildAt(0)
+            val mlp = menuView.layoutParams as? FrameLayout.LayoutParams
+            if (mlp != null && (mlp.gravity != Gravity.CENTER || mlp.topMargin != 0 || mlp.bottomMargin != 0)) {
+                mlp.gravity = Gravity.CENTER
+                mlp.topMargin = 0
+                mlp.bottomMargin = 0
+                menuView.layoutParams = mlp
+            }
+        }
     }
 
-    private fun navigationBarInset(view: View): Int {
-        return ViewCompat.getRootWindowInsets(view)
+    private fun getStableNavInset(view: View): Int {
+        val insets = ViewCompat.getRootWindowInsets(view)
             ?.getInsets(WindowInsetsCompat.Type.systemBars())
-            ?.bottom ?: 0
+            ?.bottom
+        if (insets != null && insets > 0) {
+            cachedNavInset = insets
+            return insets
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val rwi = view.rootWindowInsets
+            if (rwi != null) {
+                val b = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    rwi.getInsets(android.view.WindowInsets.Type.systemBars()).bottom
+                } else {
+                    rwi.stableInsetBottom
+                }
+                if (b > 0) {
+                    cachedNavInset = b
+                    return b
+                }
+            }
+        }
+        if (cachedNavInset > 0) {
+            return cachedNavInset
+        }
+        val resId = view.resources.getIdentifier("navigation_bar_height", "dimen", "android")
+        if (resId > 0) {
+            val resInset = runCatching { view.resources.getDimensionPixelSize(resId) }.getOrNull() ?: 0
+            if (resInset > 0) {
+                cachedNavInset = resInset
+                return resInset
+            }
+        }
+        return 0
     }
 
     private fun findRootView(startView: View): FrameLayout? {
+        var ctx = startView.context
+        while (ctx is android.content.ContextWrapper) {
+            if (ctx is Activity) break
+            val base = ctx.baseContext
+            if (base === ctx) break
+            ctx = base
+        }
+        val act = ctx as? Activity ?: WppCore.getCurrentActivity()
+        if (act != null) {
+            val content = act.findViewById<ViewGroup>(android.R.id.content) as? FrameLayout
+            if (content != null) return content
+            val decor = act.window?.decorView as? FrameLayout
+            if (decor != null) return decor
+        }
+
         var candidate: FrameLayout? = null
         var p: android.view.ViewParent? = startView.parent
         while (p != null) {
-            if (p.javaClass == FrameLayout::class.java) {
-                candidate = p as FrameLayout
+            if (p is FrameLayout && (p as? View)?.getTag(TAG_FLOATING_WRAPPER) != true) {
+                candidate = p
             }
             p = p.parent
         }
@@ -1154,9 +1288,10 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             if (h > 0) {
                 val lp = backdrop.layoutParams as? FrameLayout.LayoutParams
                     ?: return@OnLayoutChangeListener
-                if (lp.height != h || lp.topMargin != 0) {
+                if (lp.height != h || lp.topMargin != 0 || lp.gravity != Gravity.BOTTOM) {
                     lp.height = h
                     lp.topMargin = 0
+                    lp.gravity = Gravity.BOTTOM
                     backdrop.layoutParams = lp
                 }
             }
@@ -1165,9 +1300,10 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         bar.addOnLayoutChangeListener(listener)
         if (bar.height > 0) {
             val lp = backdrop.layoutParams as? FrameLayout.LayoutParams ?: return
-            if (lp.height != bar.height || lp.topMargin != 0) {
+            if (lp.height != bar.height || lp.topMargin != 0 || lp.gravity != Gravity.BOTTOM) {
                 lp.height = bar.height
                 lp.topMargin = 0
+                lp.gravity = Gravity.BOTTOM
                 backdrop.layoutParams = lp
             }
         }
@@ -1535,14 +1671,18 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         if (selected != state.selectedIndex && !state.isDragging && !state.isScrubbing) {
             state.selectedIndex = selected
             animateToItem(bar, state, items, selected)
+            state.wrapper?.let { wrap ->
+                val rv = findRootView(bar) ?: (bar.rootView as? ViewGroup)
+                rv?.let { positionFabsAboveBar(it, wrap) }
+            }
         } else if (state.selectedIndex < 0) {
             // First time init
             state.selectedIndex = selected
             animateToItem(bar, state, items, selected)
-        }
-        state.wrapper?.let { wrap ->
-            val rv = findRootView(bar) ?: (bar.rootView as? ViewGroup)
-            rv?.let { positionFabsAboveBar(it, wrap) }
+            state.wrapper?.let { wrap ->
+                val rv = findRootView(bar) ?: (bar.rootView as? ViewGroup)
+                rv?.let { positionFabsAboveBar(it, wrap) }
+            }
         }
     }
 
@@ -1804,7 +1944,6 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         if (item !is ViewGroup) return
         item.clipChildren = false
         item.clipToPadding = false
-        val density = item.resources.displayMetrics.density
 
         if (item.translationY != 0f) {
             item.translationY = 0f
@@ -1824,16 +1963,20 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             val clsName = v.javaClass.simpleName
             val entryName = runCatching { v.resources.getResourceEntryName(v.id) }.getOrNull()?.lowercase() ?: ""
             val isBadge = clsName.contains("Badge", ignoreCase = true) || entryName.contains("badge")
-            val isIcon = !isBadge && (v is ImageView || clsName.contains("Icon", ignoreCase = true))
-            val isLabel = !isBadge && !isIcon && (clsName.contains("Label", ignoreCase = true) ||
+            val isIconContainer = !isBadge && (entryName.contains("icon_container") || clsName.contains("IconContainer", ignoreCase = true))
+            val isIcon = !isBadge && !isIconContainer && (v is ImageView || clsName.contains("Icon", ignoreCase = true))
+            val isLabel = !isBadge && !isIcon && !isIconContainer && (clsName.contains("Label", ignoreCase = true) ||
                     clsName.contains("BaselineLayout", ignoreCase = true) ||
                     entryName.contains("label") ||
                     v is TextView)
 
-            if (isIcon) {
-                val targetY = 0f
-                if (v.translationY != targetY) {
-                    v.translationY = targetY
+            if (isIconContainer) {
+                if (v.translationY != 0f) {
+                    v.translationY = 0f
+                }
+            } else if (isIcon) {
+                if (v.translationY != 0f) {
+                    v.translationY = 0f
                 }
             } else if (isLabel) {
                 if (v.visibility != View.GONE) {

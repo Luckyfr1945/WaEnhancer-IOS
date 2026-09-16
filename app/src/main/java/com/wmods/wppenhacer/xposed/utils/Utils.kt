@@ -457,6 +457,9 @@ object Utils {
             val density = context.resources.displayMetrics.density
             val sizePx = (sizeDp * density).toInt().coerceAtLeast(1)
             val scaled = Bitmap.createScaledBitmap(bitmap, sizePx, sizePx, true)
+            if (scaled != bitmap) {
+                bitmap.recycle()
+            }
             val rounded = RoundedBitmapDrawableFactory.create(
                 context.resources,
                 scaled

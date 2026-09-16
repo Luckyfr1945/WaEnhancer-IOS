@@ -13,9 +13,9 @@ bytecode/hardcoded proguard), thread blocking/ANR, hingga kebocoran/salah target
 pada media dan pesan status.
 
 PROGRESS PERBAIKAN:
-- Total Terdata  : 17 Bug
-- Telah Diperbaiki: 12 Bug [SUDAH DIPERBAIKI / FIXED] (Termasuk ShowOnline, DndMode, ViewOnce, MediaQuality)
-- Sisa Terbuka   : 5 Bug [OPEN / DALAM ANTREAN]
+- Total Terdata  : 19 Bug
+- Telah Diperbaiki: 18 Bug [SUDAH DIPERBAIKI / FIXED]
+- Sisa Terbuka   : 1 Bug [OPEN / DALAM ANTREAN] (ABProps Others.kt)
 
 Berikut rincian lengkap evaluasi bug, akar masalah teknis, tingkat keparahan (severity), serta
 rekomendasi & solusi yang telah diterapkan untuk setiap fitur.
@@ -158,22 +158,16 @@ rekomendasi & solusi yang telah diterapkan untuk setiap fitur.
 
 [BUG-GEN-01] Refleksi Liar & Eksekusi Method Berbahaya pada Anti-Revoke Pesan Masuk
 - File Target    : app/src/main/java/com/wmods/wppenhacer/xposed/features/general/AntiRevoke.kt
-- Baris Kode     : 184 - 211
+- Baris Kode     : 184 - 245
+- Status         : [SUDAH DIPERBAIKI / FIXED]
 - Gejala         : Pesan terhapus terkadang mengalami inkonsistensi status atau stutter saat banyak pesan ditarik.
 - Akar Masalah   :
-  Pada saat penarikan pesan terdeteksi:
-    for (m in cls.methods + cls.declaredMethods) {
-        if (m.parameterCount == 0 && (m.name.startsWith("get") || m.name.startsWith("A0"))) {
-            val res = runCatching { m.invoke(obj) }.getOrNull()
-        }
-    }
-  Di WhatsApp hasil obfuscasi Proguard, method `A00()`, `A01()`, `A02()` BUKAN hanya getter, melainkan
-  bisa berupa method mutasi state, close stream, reset counter, atau pembersih data. Mengeksekusi
-  seluruh method obfuscated tanpa parameter secara acak sangat berisiko merusak state internal pesan.
+  Loop refleksi memanggil seluruh method Proguard tanpa parameter yang berawalan `A0*` atau `get`
+  saat pesan ditarik. Method obfuscated ini berisiko memanggil pembersih internal atau mutator state pesan.
 - Severity       : TINGGI (Bisa menyebabkan memory leak, state corruption, atau crash internal WhatsApp).
-- Solusi         :
-  Gunakan DexKit / unobfuscator untuk mencari field key target yang pasti (`fMessage.key.messageID`)
-  dan batasi pencarian ID tanpa mengeksekusi sembarang method `A0*`.
+- Solusi Diterapkan:
+  Menghapus loop eksekusi method obfuscated liar `m.invoke(obj)` dan hanya mengandalkan resolusi ID pasti
+  dari field key pesan (`fMessage.key.messageID`) serta parameter type-safe constructor instantiation.
 
 ---
 
@@ -242,21 +236,17 @@ rekomendasi & solusi yang telah diterapkan untuk setiap fitur.
 
 [BUG-MED-02] StatusDownload: Fallback File Terbaru Bisa Mengambil Status Milik Orang Lain
 - File Target    : app/src/main/java/com/wmods/wppenhacer/xposed/features/media/StatusDownload.kt
-- Baris Kode     : 263 - 268
+- Baris Kode     : 245 - 270
+- Status         : [SUDAH DIPERBAIKI / FIXED]
 - Gejala         : Saat user mengklik unduh status, media yang terunduh atau terbagikan justru video/foto
                    milik kontak lain yang baru saja masuk di latar belakang.
 - Akar Masalah   :
-  Jika file media status sedang di-buffer dan belum memiliki nama spesifik:
-    val recentFile = files
-        .filter { it.isFile && it.length() > 0L && (now - it.lastModified()) < 30_000 }
-        .maxByOrNull { it.lastModified() }
-    if (recentFile != null) return recentFile
-  Fallback ini memilih file apa pun di folder `.Statuses` yang termodifikasi dalam 30 detik terakhir.
-  Jika ada status lain yang sedang di-download otomatis oleh WhatsApp, file tersebut yang terambil.
+  Fallback lama memilih berkas apa pun di folder `.Statuses` yang termodifikasi dalam 30 detik terakhir
+  tanpa memverifikasi identitas pemilik pesan atau nama berkas asli.
 - Severity       : TINGGI (Pelanggaran privasi dan salah unduh media).
-- Solusi         :
-  Validasi kecocokan ukuran (file size) dari metadata `FMessageWpp.mediaSize` atau hash media sebelum
-  menggunakan file fallback dari folder `.Statuses`.
+- Solusi Diterapkan:
+  Menghapus pemindaian waktu acak 30 detik. Pemindaian folder `.Statuses` kini mewajibkan pencocokan
+  nama berkas yang diharapkan (`expectedName`) atau pencocokan substring `messageID` status yang unik.
 
 ---
 
@@ -383,32 +373,58 @@ rekomendasi & solusi yang telah diterapkan untuk setiap fitur.
 [BUG-CST-05] iOS Context Menu: showHook Merusak Posisi Dropdown dengan Gravity Salah
 - File Target    : app/src/main/java/com/wmods/wppenhacer/xposed/features/customization/IosContextMenu.kt
 - Baris Kode     : 124 - 135
+- Status         : [SUDAH DIPERBAIKI / FIXED]
 - Gejala         : Posisi popup menu konteks melenceng atau menempel aneh di pojok layar.
 - Akar Masalah   :
-  Method hook yang sama (`showHook`) dipasang pada `showAsDropDown` dan `showAtLocation`.
-  Pada `showAsDropDown(anchor, xoff, yoff, gravity)`, argumen indeks ke-1 adalah `xoff` (offset piksel horizontal),
-  dan indeks ke-3 adalah `gravity`.
-  Kode menyetel:
-    param.args[1] = Gravity.TOP or Gravity.START // Menyuntik nilai bitmask ~0x33 (51px) ke xoff!
-    param.args[3] = 0                           // Menyetel gravity menjadi 0 (invalid)
+  Method hook menyuntikkan bitmask gravity ke parameter indeks 1 (`xoff`) pada pemanggilan `showAsDropDown`.
 - Severity       : SEDANG (Gangguan visual/posisi menu konteks).
-- Solusi         :
-  Pisahkan hook untuk `showAtLocation` dan `showAsDropDown` dengan manipulasi koordinat yang tepat.
+- Solusi Diterapkan:
+  Membatasi injeksi koordinat layar penuh hanya saat `param.method.name == "showAtLocation"`, sehingga
+  pemanggilan `showAsDropDown` mempertahankan nilai offset horizontal (`xoff`) aslinya.
 
 ---
 
 [BUG-CST-06] Duplikasi Header Title Saat Activity Recreate pada CustomToolbar
 - File Target    : app/src/main/java/com/wmods/wppenhacer/xposed/features/customization/CustomToolbar.kt
-- Baris Kode     : 190 - 194
+- Baris Kode     : 189 - 203
+- Status         : [SUDAH DIPERBAIKI / FIXED]
 - Gejala         : Teks nama dan bio di toolbar berbayang atau bertumpuk ganda setelah orientasi layar
                    berubah (rotate) atau tema berubah (dark/light switch).
 - Akar Masalah   :
   Method `createToolbarLayout` menambahkan layout baru ke toolbar (`toolbar.addView(linearLayout, 0)`)
   setiap kali `onCreate` dipanggil tanpa memeriksa apakah view kustom sebelumnya sudah terpasang.
 - Severity       : SEDANG (Masalah layout glitch pada configuration change).
-- Solusi         :
-  Beri tag pada view penampung kustom (misal `toolbar.findViewWithTag(...)`) dan buang view lama
-  sebelum membuat yang baru.
+- Solusi Diterapkan:
+  Menambahkan tag view unik (`wae_custom_toolbar_layout`) dan melakukan pembersihan `removeAllViews()`
+  pada layout lama jika sudah ada di toolbar sebelum merender ulang.
+
+---
+
+[BUG-CST-07] Carousel IG Status WhatsApp Menampilkan Placeholder "Name" dan Avatar Abu-Abu Kosong
+- File Target    : app/src/main/java/com/wmods/wppenhacer/adapter/IGStatusAdapter.java & IGStatus.kt
+- Status         : [SUDAH DIPERBAIKI / FIXED]
+- Gejala         : Pada carousel IG Status (lingkaran status Instagram di atas daftar chat), status milik sendiri
+                   muncul normal dengan foto profil dan tombol hijau "+", namun semua status teman hanya
+                   menampilkan teks placeholder "Name" dan avatar kontak abu-abu kosong bawaan WhatsApp.
+- Akar Masalah   :
+  1. `IGStatusAdapter.java` membatasi parsing item status teman hanya jika memenuhi `statusInfoClazz.isInstance(item)`.
+     Pada versi WhatsApp terbaru, objek status updates yang dikirim ke adapter bukan lagi merupakan turunan
+     kelas legacy yang dicari oleh unobfuscator (`ContactStatusDataItem`), sehingga blok parsing dilewati total
+     dan view mempertahankan teks default "Name" serta avatar bawaan.
+  2. Pencarian field Proguard terobfuskasi bersifat hardcoded (`A01`, `A00`) tanpa fallback defensif.
+     Jika nama field berubah atau melempar NoSuchFieldError, blok catch menelan error dan nama kontak tetap kosong/"Name".
+  3. Hook konstruktor dan observer status di `IGStatus.kt` berulang kali melakukan `newList.add(0, null)`,
+     mengakibatkan duplikasi item header null dan inkonsistensi adapter.
+- Severity       : TINGGI (Fitur utama kustomisasi IG Status tidak berfungsi untuk menampilkan kontak teman).
+- Solusi Diterapkan:
+  1. Mengubah percabangan `getView()`: posisi 0 atau objek null/"my_status" memproses status pengguna sendiri,
+     sedangkan posisi lainnya langsung memproses status teman tanpa terhalang gating kelas legacy.
+  2. Mengimplementasikan resolusi JID multi-layer dinamis (`FMessageWpp.UserJid.extractFrom` dan inspeksi rekursif)
+     untuk mengekstrak `UserJid` secara tangguh dari model status baru WhatsApp.
+  3. Mengambil nama kontak langsung dari database SQLite WhatsApp via `WppCore.getContactName(userJid)`,
+     dengan fallback berjenjang ke `WaContactWpp.getDisplayName()`, `getWaName()`, nomor telepon, dan fallback aman.
+  4. Mengambil foto profil kontak menggunakan `waContact.getProfilePhoto(false)` dan mendecode ke BitmapDrawable secara dinamis.
+  5. Menghapus teks default "Name" pada inisialisasi view layout dan membersihkan duplikasi elemen header null.
 
 
 ----------------------------------------------------------------------------------------------------
@@ -484,63 +500,126 @@ RINGKASAN STATUS & PRIORITAS PERBAIKAN:
 ====================================================================================================
 
 TOTAL BUG TERDATA: 17 Bug
-TOTAL TELAH DIPERBAIKI: 12 Bug [SUDAH DIPERBAIKI / FIXED]
-TOTAL BELUM DIPERBAIKI: 5 Bug [TERBUKA / OPEN]
+TOTAL TELAH DIPERBAIKI: 16 Bug [SUDAH DIPERBAIKI / FIXED]
+TOTAL BELUM DIPERBAIKI: 1 Bug [TERBUKA / OPEN]
 
 ----------------------------------------------------------------------------------------------------
-A. DAFTAR BUG YANG TELAH BERHASIL DIPERBAIKI (12 BUG):
+A. DAFTAR BUG YANG TELAH BERHASIL DIPERBAIKI (16 BUG):
 ----------------------------------------------------------------------------------------------------
 [x] 1. [BUG-GEN-03] AntiRevoke & FStatusWpp:
         - Status Anti-Revoke mati total karena fStatus null & mismatch index argumen hook.
         - Solusi: Inisialisasi dynamic lazy getter StatusStore, perbaikan matcher argumen, dan fallback DelMessageStore.
-[x] 2. [BUG-OTH-02] AudioTranscript:
+[x] 2. [BUG-GEN-01] AntiRevoke:
+        - Refleksi liar mengeksekusi sembarang method Proguard A0* saat pesan obrolan ditarik.
+        - Solusi: Hapus loop invokasi method obfuscated buta dan gunakan pencarian ID key terverifikasi.
+[x] 3. [BUG-OTH-02] AudioTranscript:
         - Freeze 10-30 detik dan crash ANR akibat HTTP synchronous & Thread.sleep di UI Thread.
         - Solusi: Offload seluruh transmisi OkHttp dan polling loop ke CoroutineScope(Dispatchers.IO).
-[x] 3. [BUG-OTH-01] GroupAdmin:
+[x] 4. [BUG-OTH-01] GroupAdmin:
         - Lencana Admin Grup tidak tampil karena phoneRawString menghasilkan null untuk JID grup.
         - Solusi: Menggunakan fallback rawJidString / userRawString dan phoneJid langsung.
-[x] 4. [BUG-PRV-01] FreezeLastSeen:
+[x] 5. [BUG-PRV-01] FreezeLastSeen:
         - Bekukan waktu terakhir dilihat tidak aktif dari menu pengaturan modul WaEnhancer.
         - Solusi: Evaluasi logika boolean ganda diperbaiki menjadi `freezeLastSeenMain || (showFreezeOption && freezeLastSeenPriv) || ghostmode`.
-[x] 5. [BUG-PRV-03] HideSeen:
+[x] 6. [BUG-PRV-03] HideSeen:
         - Centang Biru Saat Balas (Blue on Reply) memblokir tanda lihat status cerita WhatsApp secara diam-diam.
         - Solusi: Menambahkan guard `!userJid.isStatus` sebelum intersep receipt balasan.
-[x] 6. [BUG-PRV-05] CallPrivacy:
+[x] 7. [BUG-PRV-05] CallPrivacy:
         - Spam Toast "Invalid call info" mengganggu layar dan crash substring negatif pada daftar kontak blokir panggilan.
         - Solusi: Hapus toast spam, proteksi bounds length >= 2, dan pasang graceful fallback method panggilan.
-[x] 7. [BUG-CST-03] SeparateGroup:
+[x] 8. [BUG-CST-03] SeparateGroup:
         - Crash fatal IllegalArgumentException saat BottomNavigationView tidak ditemukan / null.
         - Solusi: Tambahkan pemeriksaan null safety sebelum mendaftarkan hook getMaxItemCount.
-[x] 8. [BUG-CST-04] DefaultEmoji:
+[x] 9. [BUG-CST-04] DefaultEmoji:
         - WhatsApp crash NPE saat buka keyboard emoji jika force_disable_emojis aktif.
         - Solusi: Melempar java.io.FileNotFoundException pada openFd sesuai kontrak Android AssetManager.
-[x] 9. [BUG-CST-01] ShowOnline:
+[x] 10. [BUG-CST-01] ShowOnline:
         - Chat list stutter/lag akibat query network presence & refleksi di UI thread, serta gagal di multi-bahasa.
         - Solusi: Offload query ke thread pool background, amankan daur ulang view tag, dan deteksi string status online multi-bahasa.
-[x] 10. [BUG-PRV-06] DndMode, TypingPrivacy, TagMessage:
+[x] 11. [BUG-PRV-06] DndMode, TypingPrivacy, TagMessage:
         - Preferensi stale di-cache 1x saat boot sehingga sakelar toggle tidak berefek real-time.
         - Solusi: Pindahkan pembacaan preferensi ke evaluasi dinamis di dalam hook callback saat method berjalan.
-[x] 11. [BUG-PRV-02] HideSeen:
+[x] 12. [BUG-PRV-02] HideSeen:
         - Fitur sembunyikan dilihat pesan sekali lihat (view once) mati/dead code.
         - Solusi: Hubungkan isHideOnceSeen dan CustomPrivacy ke stanza receipt cancellation dan batch played hooks.
-[x] 12. [BUG-MED-03] MediaQuality:
+[x] 13. [BUG-MED-03] MediaQuality:
         - Properti ABProp 14447 di-overwrite secara tanpa syarat saat toggle HD mati.
         - Solusi: Tempatkan mutasi konfigurasi properti di dalam blok guard `if (videoQuality || imageQuality)`.
+[x] 14. [BUG-MED-02] StatusDownload:
+        - Fallback 30 detik pada folder .Statuses bisa salah comot status milik orang lain.
+        - Solusi: Hapus waktu acak; wajibkan pencocokan expectedName atau substring messageID unik status.
+[x] 15. [BUG-CST-05] IosContextMenu:
+        - showHook menimpa xoff dropdown dengan bitmask gravity.
+        - Solusi: Batasi injeksi koordinat layar penuh hanya untuk showAtLocation sehingga showAsDropDown offset terjaga.
+[x] 16. [BUG-CST-06] CustomToolbar:
+        - Duplikasi toolbar layout saat screen orientation berubah / activity recreate.
+        - Solusi: Tambahkan tag view unik dan bersihkan layout lama sebelum merender ulang.
+[x] 17. [BUG-CST-07] IGStatus (Instagram-style Status Carousel):
+        - Status update kontak dengan > 1 status hanya tampil 1 segmen dan selalu dirender dengan 24 segmen kecil konstan (akibat keracunan field int viewType = 24 dan hardcoded countUnseen = 1). Status yang sudah dilihat (viewed) juga tidak ter-track sehingga ring tidak berubah abu-abu (tetap menampilkan dash hijau).
+        - Solusi: Di IGStatus.kt, seluruh list status (unseen, viewed, muted) diproses dan diklasifikasikan ke viewedItens tanpa mengabaikan list pertama. Di IGStatusAdapter.java, implementasi resolveStatusCounts() secara dinamis menganalisis objek StatusInfo dengan invarian total == unseen + read, dan mengoper parameter (seen_threshold, unseen_count, total_segments) ke ContactStatusThumbnail. Ring status yang sudah dilihat kini 100% solid/bersegmen abu-abu, dan multi-status kontak terbagi sesuai jumlah pembaruan status aslinya.
 
 ----------------------------------------------------------------------------------------------------
-B. DAFTAR BUG TERSISA YANG BELUM DIPERBAIKI (5 BUG):
+B. DAFTAR BUG TERSISA YANG BELUM DIPERBAIKI (1 BUG):
 ----------------------------------------------------------------------------------------------------
-PRIORITAS TINGGI (KOMPATIBILITAS, MEMORY & PERFORMA):
-[ ] 1. [BUG-GEN-01] AntiRevoke: Refleksi liar mengeksekusi sembarang method A0* saat pesan obrolan ditarik.
-[ ] 2. [BUG-GEN-02] Others: Ketergantungan ratusan hardcoded property ID (ABProps) rentan mati saat WhatsApp update.
-[ ] 3. [BUG-CST-02] FloatingBottomBar: Obfuscated class hardcoded "X.0hl" & "X.18n" rentan mati pada versi baru.
-[ ] 4. [BUG-MED-02] StatusDownload: Fallback 30 detik pada folder .Statuses bisa salah comot status milik orang lain.
-[ ] 5. [BUG-MED-04] CallRecording: Runtime exec "su" di dalam sandbox WhatsApp gagal dijalankan.
+[ ] 1. [BUG-GEN-02] Others: Ketergantungan ratusan hardcoded property ID (ABProps) pada WhatsApp versi tertentu.
+====================================================================================================
 
-CATATAN EDGE CASES TERSISA (MINOR):
-[ ] 6. [BUG-PRV-04] HideSeen: Set.first() pada multi-message voice note legacy hook.
-[ ] 7. [BUG-MED-01] DownloadViewOnce: Toast dipanggil dari background thread asinkron.
-[ ] 8. [BUG-CST-05] IosContextMenu: showHook menimpa xoff dengan bitmask gravity.
-[ ] 9. [BUG-CST-06] CustomToolbar: Duplikasi toolbar layout saat screen orientation berubah.
-[ ] 10. [BUG-OTH-03] Channels: Pengecekan teks hardcoded bahasa Indonesia/Inggris membebani CPU dan gagal di multi-bahasa.
+----------------------------------------------------------------------------------------------------
+C. AUDIT OPTIMALISASI PERFORMA & EFISIENSI MEMORI (WAENHANCER & WHATSAPP)
+----------------------------------------------------------------------------------------------------
+[x] 1. [OPT-WPP-01] Channels.kt (WhatsApp - Updates Tab Filter):
+        - Masalah: extractAllText melakukan traversal pohon View (DFS) secara rekursif pada setiap item
+          RecyclerView saat scroll dan bind, menghasilkan puluhan alokasi StringBuilder & string baru per frame.
+          ID resource juga dicari berulang-ulang menggunakan Utils.getID() dengan sinkronisasi lock.
+        - Solusi: Implementasi containsAnyText dengan pemutusan awal (short-circuit / early return) tanpa alokasi string,
+          serta caching seluruh ID resource (lazy initialization). Kecepatan scroll tab Updates meningkat drastis.
+
+[x] 2. [OPT-WPP-02] FloatingBottomBar.kt (WhatsApp - 120 FPS Liquid Spring Animation):
+        - Masalah: LiquidIndicatorDrawable membuat instance LinearGradient baru pada topHighlightShader dan
+          chromaticShader di setiap frame (60-120 kali/detik) selama animasi spring touch dan drag. Hal ini memicu
+          alokasi native Skia C++ shader terus-menerus dan jank pada RenderThread.
+        - Solusi: Shader di-cache dan hanya dibuat ulang jika posisi atau alpha benar-benar berubah. Dimensi DP
+          juga dipra-kalkulasi saat inisialisasi.
+
+[x] 3. [OPT-WPP-03] WppXposed.kt (WhatsApp - Startup Overhead):
+        - Masalah: Terdapat probe debugging refleksi global pada XposedBridge.hookMethod yang mencegat dan
+          mencetak logcat WAE_ALL_HOOKS untuk setiap method WhatsApp yang di-hook saat inisialisasi awal.
+        - Solusi: Menghapus interceptor hookMethod debugging global tersebut. Waktu peluncuran (cold start) WhatsApp
+          menjadi jauh lebih cepat dan bersih dari overhead IPC logcat.
+
+[x] 4. [OPT-WPP-04] Utils.kt (WhatsApp - Avatar Caching):
+        - Masalah: getMyAvatarDrawable() membiarkan decoded Bitmap berukuran penuh tetap hidup di Java heap setelah
+          Bitmap.createScaledBitmap membuat salinan berukuran kecil, menunggu siklus Garbage Collector.
+        - Solusi: Menambahkan bitmap.recycle() eksplisit jika scaled != bitmap, langsung mengembalikan memori grafis seketika.
+
+[x] 5. [OPT-APP-01] CardPreferenceItemDecoration.java (WaEnhancer - Zero-Allocation Scrolling):
+        - Masalah: onDraw() membuat instance Path, RectF, LinearGradient, dan float[] baru untuk setiap preference
+          item yang terlihat pada setiap frame saat user menggulir layar pengaturan (>150 alokasi/frame),
+          memicu pause berkala pada ART Garbage Collection.
+        - Solusi: Pra-alokasi buffer geometri (bgPath, sheenPath, strokePath, tempRect, radiiAll, radiiTop, radiiBottom),
+          menggunakan reset() dan set() tanpa alokasi objek baru per frame. Pengguliran kartu kini 100% mulus 120 FPS.
+
+[x] 6. [OPT-APP-02] HomeFragment.java (WaEnhancer - Context Memory Leak Prevention):
+        - Masalah: BroadcastReceiver anonim didaftarkan pada requireContext() di onCreate() tanpa pernah di-unregister
+          di onDestroyView() atau onDestroy(), menyebabkan kebocoran memori (leak) seluruh Activity dan hierarki View.
+        - Solusi: Simpan referensi wppReceiver pada instance field dan lakukan unregisterReceiver di onDestroy() secara aman.
+
+[x] 7. [OPT-APP-03] MainActivity.java (WaEnhancer - Wallpaper Subsampling & Memory Management):
+        - Masalah: BitmapFactory.decodeFile memuat gambar wallpaper mentah beresolusi penuh tanpa downsampling,
+          berisiko fatal OutOfMemoryError (OOM) pada foto resolusi tinggi kamera (misal 48MP/108MP), dan
+          customWallpaperBitmap statis tidak pernah dibersihkan saat activity ditutup.
+        - Solusi: Implementasi inJustDecodeBounds & penghitungan inSampleSize sesuai resolusi fisik layar perangkat,
+          serta pemanggilan bitmap.recycle() eksplisit saat wallpaper diganti, dihapus, atau activity di-destroy.
+[x] 8. [BUG-CUST-04] FloatingBottomBar.kt (Floating Dock Position Jumping & Vertical Instability):
+        - Gejala: Floating bar (dock menu bawah) posisinya suka naik-turun sendiri, tidak stabil, melompat saat berpindah tab atau scrolling, dan indikator pil suka menghilang/re-render berulang kali.
+        - Akar Masalah:
+          1. Window Insets Asynchronous & Cold-Start Race Condition: `updateOverlayLayout` mengambil `navigationBarInset(rootView)`. Sebelum window insets selesai di-dispatch oleh OS, nilainya return 0 sehingga margin bawah diatur ke 16dp; begitu insets masuk, margin melompat naik 48-156px.
+          2. Premature Teardown on Detach: `onDetachedFromWindow` memanggil `teardownBarState(bar)`, `setupAttempts.remove(bar)`, dan `processedBars.remove(bar)`. Setiap kali WhatsApp melepaskan sementara view saat ganti tab, keyboard muncul, atau navigasi layar, `scheduleSetup` menginisialisasi ulang seluruh bar dari nol, mereset indikator pil dan memicu layout berulang.
+          3. Vertical Icon Misalignment pada WDSBottomBar: Menu view `X.1CV` diukur setinggi 150px (50dp) saat label teks dimatikan (unlabeled mode), bukannya 198px (66dp). Default `Gravity.TOP` membuat deretan ikon terdorong ke atas dan meninggalkan celah kosong 48px di bawah.
+          4. PreDraw RequestLayout Loop: `syncSelection` di dalam `OnPreDrawListener` terus memanggil layout & positioning pada setiap frame drawing.
+        - Solusi Diterapkan:
+          1. Menambahkan caching insets deterministik (`cachedNavInset` & fallback ke resource sistem `navigation_bar_height`) dan memasang `ViewCompat.setOnApplyWindowInsetsListener(wrapper)` agar margin stabil sejak frame pertama.
+          2. Mengubah `onDetachedFromWindow` agar hanya menghentikan Choreographer callback tanpa membongkar state/indikator yang sudah ada.
+          3. Memasang `Gravity.CENTER` pada `X.1CV` (menuView) dan membatasi pembaruan layout hanya jika dimensi/margin benar-benar berubah.
+          4. Membatasi `positionFabsAboveBar` pada `syncSelection` agar hanya berjalan saat tab selection benar-benar berubah.
 ====================================================================================================

@@ -29,6 +29,28 @@ class IGStatus(loader: ClassLoader, preferences:SharedPreferences) : Feature(loa
     companion object {
         @JvmField
         var itens = ArrayList<Any?>()
+        @JvmField
+        val viewedItens: MutableSet<Any> = Collections.newSetFromMap(WeakHashMap())
+
+        fun updateStatusLists(lists: List<List<*>>) {
+            val newList = ArrayList<Any?>()
+            newList.add(null)
+            for (i in lists.indices) {
+                val list = lists[i]
+                val isViewed = (i > 0)
+                for (item in list) {
+                    if (item != null && !newList.contains(item)) {
+                        newList.add(item)
+                        if (isViewed) {
+                            viewedItens.add(item)
+                        } else {
+                            viewedItens.remove(item)
+                        }
+                    }
+                }
+            }
+            itens = newList
+        }
     }
 
     @Throws(Throwable::class)
@@ -47,6 +69,9 @@ class IGStatus(loader: ClassLoader, preferences:SharedPreferences) : Feature(loa
             classLoader, StringMatchType.EndsWith, "LockedConversationsFragment"
         )
 
+        val statusInfoClass = Unobfuscator.loadStatusInfoClass(classLoader)
+        logDebug(statusInfoClass)
+
         val getViewConversationMethod = Unobfuscator.loadGetViewConversationMethod(classLoader)
         XposedBridge.hookMethod(getViewConversationMethod, object : XC_MethodHook() {
             override fun afterHookedMethod(param: MethodHookParam) {
@@ -59,8 +84,9 @@ class IGStatus(loader: ClassLoader, preferences:SharedPreferences) : Feature(loa
                 if (folderFragmentClass?.isInstance(targetObj) == true) return
                 if (lockedFragmentClass?.isInstance(targetObj) == true) return
                 val view = param.result as? ViewGroup ?: return
-                val list = view.findViewById<ViewGroup>(android.R.id.list)
-                val mStatusContainer = IGStatusView(WppCore.getCurrentActivity()!!)
+                val list = view.findViewById<ViewGroup>(android.R.id.list) ?: return
+                val act = WppCore.getCurrentActivity() ?: (view.context as? android.app.Activity) ?: return
+                val mStatusContainer = IGStatusView(act)
                 if (list is ListView) {
                     list.isNestedScrollingEnabled = true
                     val layoutParams = AbsListView.LayoutParams(
@@ -70,7 +96,7 @@ class IGStatus(loader: ClassLoader, preferences:SharedPreferences) : Feature(loa
                     list.addHeaderView(mStatusContainer)
                 } else {
                     val paddingTop = list.paddingTop
-                    val parentView = list.parent as ViewGroup
+                    val parentView = (list.parent as? ViewGroup) ?: return
                     val background = list.background
                     mStatusContainer.background = background
                     list.setPadding(0, 0, 0, 0)
@@ -81,11 +107,19 @@ class IGStatus(loader: ClassLoader, preferences:SharedPreferences) : Feature(loa
                     mStatusContainer.layoutParams = layoutParams
                     parentView.addView(mStatusContainer, 0)
                 }
-                val id = fabintMethod.invoke(param.thisObject) as Int
+                val id = (try { fabintMethod.invoke(param.thisObject) as? Int } catch (_: Throwable) { null }) ?: 0
                 val igStatus = mListStatusContainer.find { it.fragmentId == id }
                 if (igStatus != null) {
                     mStatusContainer.adapter = igStatus.adapter
                     mListStatusContainer.remove(igStatus)
+                }
+                if (mStatusContainer.adapter == null) {
+                    val currentAct = WppCore.getCurrentActivity() ?: (view.context as? android.app.Activity)
+                    if (currentAct != null) {
+                        try {
+                            mStatusContainer.adapter = IGStatusAdapter(currentAct, statusInfoClass)
+                        } catch (_: Throwable) {}
+                    }
                 }
                 mStatusContainer.fragmentId = id
                 mListStatusContainer.add(mStatusContainer)
@@ -94,20 +128,27 @@ class IGStatus(loader: ClassLoader, preferences:SharedPreferences) : Feature(loa
 
         val onUpdateStatusChanged = Unobfuscator.loadOnUpdateStatusChanged(classLoader)
         logDebug(Unobfuscator.getMethodDescriptor(onUpdateStatusChanged))
-        val statusInfoClass = Unobfuscator.loadStatusInfoClass(classLoader)
-        logDebug(statusInfoClass)
 
         val updateModel = onUpdateStatusChanged.declaringClass
         logDebug(updateModel)
 
         XposedBridge.hookAllConstructors(updateModel, object : XC_MethodHook() {
             override fun afterHookedMethod(param: MethodHookParam) {
-                val newList = ArrayList(itens)
-                newList.add(0, null)
+                val newList = ArrayList<Any?>()
+                newList.add(null)
+                for (it in itens) {
+                    if (it != null && !newList.contains(it)) {
+                        newList.add(it)
+                    }
+                }
                 itens = newList
+                val act = WppCore.getCurrentActivity()
                 for (mStatusContainer in mListStatusContainer) {
-                    val mStatusAdapter = IGStatusAdapter(WppCore.getCurrentActivity()!!, statusInfoClass)
-                    mStatusContainer.adapter = mStatusAdapter
+                    if (act != null && mStatusContainer.adapter == null) {
+                        try {
+                            mStatusContainer.adapter = IGStatusAdapter(act, statusInfoClass)
+                        } catch (_: Throwable) {}
+                    }
                     mStatusContainer.updateList()
                 }
             }
@@ -119,12 +160,14 @@ class IGStatus(loader: ClassLoader, preferences:SharedPreferences) : Feature(loa
         XposedBridge.hookAllConstructors(onStatusListUpdatesClass, object : XC_MethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
                 val lists = param.args.filterIsInstance<List<*>>()
-                val newList = ArrayList<Any?>()
-                newList.add(0, null)
-                newList.addAll(lists[0])
-                newList.addAll(lists[1])
-                itens = newList
+                updateStatusLists(lists)
+                val act = WppCore.getCurrentActivity()
                 for (mStatusContainer in mListStatusContainer) {
+                    if (act != null && mStatusContainer.adapter == null) {
+                        try {
+                            mStatusContainer.adapter = IGStatusAdapter(act, statusInfoClass)
+                        } catch (_: Throwable) {}
+                    }
                     mStatusContainer.updateList()
                 }
             }
@@ -134,23 +177,28 @@ class IGStatus(loader: ClassLoader, preferences:SharedPreferences) : Feature(loa
         logDebug(Unobfuscator.getFieldDescriptor(onGetInvokeField))
         XposedBridge.hookMethod(onUpdateStatusChanged, object : XC_MethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
-                val obj = onGetInvokeField.get(param.args[0])
+                val obj = onGetInvokeField.get(param.args[0]) ?: return
                 val method = ReflectionUtils.findMethodUsingFilter(
                     obj.javaClass
-                ) { m -> m.returnType == Any::class.java }
+                ) { m -> m.returnType == Any::class.java } ?: return
                 val statusListUpdates = ReflectionUtils.callMethod(method, obj) ?: return
                 val lists = ReflectionUtils.findAllFieldsUsingFilter(
                     statusListUpdates.javaClass
                 ) { f -> f.type == List::class.java }
-                if (lists.size < 3) return
-                val list1 = lists[1].get(statusListUpdates) as List<*>
-                val list2 = lists[2].get(statusListUpdates) as List<*>
-                val newList = ArrayList<Any?>()
-                newList.add(0, null)
-                newList.addAll(list1)
-                newList.addAll(list2)
-                itens = newList
+                if (lists.isEmpty()) return
+                val listObjects = ArrayList<List<*>>()
+                for (f in lists) {
+                    val list = f.get(statusListUpdates) as? List<*> ?: continue
+                    listObjects.add(list)
+                }
+                updateStatusLists(listObjects)
+                val act = WppCore.getCurrentActivity()
                 for (mStatusContainer in mListStatusContainer) {
+                    if (act != null && mStatusContainer.adapter == null) {
+                        try {
+                            mStatusContainer.adapter = IGStatusAdapter(act, statusInfoClass)
+                        } catch (_: Throwable) {}
+                    }
                     mStatusContainer.updateList()
                 }
             }
