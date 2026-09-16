@@ -382,34 +382,54 @@ public class MainActivity extends BaseActivity {
             return;
         File wallpaperFile = new File(getFilesDir(), "custom_app_wallpaper.png");
         if (wallpaperFile.exists() && wallpaperFile.length() > 0) {
-            android.graphics.Bitmap bitmap = android.graphics.BitmapFactory.decodeFile(wallpaperFile.getAbsolutePath());
-            if (bitmap != null) {
-                customWallpaperBitmap = bitmap;
-                binding.mainWallpaper.setImageBitmap(bitmap);
-                binding.mainWallpaper.setVisibility(android.view.View.VISIBLE);
-                binding.mainWallpaperScrim.setVisibility(android.view.View.VISIBLE);
+            try {
+                android.graphics.BitmapFactory.Options boundsOptions = new android.graphics.BitmapFactory.Options();
+                boundsOptions.inJustDecodeBounds = true;
+                android.graphics.BitmapFactory.decodeFile(wallpaperFile.getAbsolutePath(), boundsOptions);
 
-                float blurRadius = androidx.preference.PreferenceManager
-                        .getDefaultSharedPreferences(this)
-                        .getInt("app_blur_radius", 20);
-                blurRadius = Math.max(1f, Math.min(blurRadius, 25f));
+                int reqWidth = getResources().getDisplayMetrics().widthPixels;
+                int reqHeight = getResources().getDisplayMetrics().heightPixels;
 
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                    binding.mainWallpaper.setRenderEffect(
-                            android.graphics.RenderEffect.createBlurEffect(
-                                    blurRadius * 2.5f, blurRadius * 2.5f, android.graphics.Shader.TileMode.CLAMP
-                            )
-                    );
+                android.graphics.BitmapFactory.Options decodeOptions = new android.graphics.BitmapFactory.Options();
+                decodeOptions.inSampleSize = calculateInSampleSize(boundsOptions, reqWidth, reqHeight);
+
+                android.graphics.Bitmap bitmap = android.graphics.BitmapFactory.decodeFile(wallpaperFile.getAbsolutePath(), decodeOptions);
+                if (bitmap != null) {
+                    if (customWallpaperBitmap != null && customWallpaperBitmap != bitmap && !customWallpaperBitmap.isRecycled()) {
+                        customWallpaperBitmap.recycle();
+                    }
+                    customWallpaperBitmap = bitmap;
+                    binding.mainWallpaper.setImageBitmap(bitmap);
+                    binding.mainWallpaper.setVisibility(android.view.View.VISIBLE);
+                    binding.mainWallpaperScrim.setVisibility(android.view.View.VISIBLE);
+
+                    float blurRadius = androidx.preference.PreferenceManager
+                            .getDefaultSharedPreferences(this)
+                            .getInt("app_blur_radius", 20);
+                    blurRadius = Math.max(1f, Math.min(blurRadius, 25f));
+
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                        binding.mainWallpaper.setRenderEffect(
+                                android.graphics.RenderEffect.createBlurEffect(
+                                        blurRadius * 2.5f, blurRadius * 2.5f, android.graphics.Shader.TileMode.CLAMP
+                                )
+                        );
+                    }
+
+                    binding.container.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+                    binding.appBarLayout.setBackgroundResource(R.drawable.bg_frosted_glass_topbar);
+                    binding.toolbar.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+                    return;
                 }
-
-                binding.container.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-                binding.appBarLayout.setBackgroundResource(R.drawable.bg_frosted_glass_topbar);
-                binding.toolbar.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-                return;
+            } catch (Throwable ignored) {
             }
         }
 
+        if (customWallpaperBitmap != null && !customWallpaperBitmap.isRecycled()) {
+            customWallpaperBitmap.recycle();
+        }
         customWallpaperBitmap = null;
+        binding.mainWallpaper.setImageBitmap(null);
         binding.mainWallpaper.setVisibility(android.view.View.GONE);
         binding.mainWallpaperScrim.setVisibility(android.view.View.GONE);
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
@@ -418,6 +438,21 @@ public class MainActivity extends BaseActivity {
         binding.container.setBackgroundResource(R.color.background_color);
         binding.appBarLayout.setBackgroundResource(R.drawable.bg_frosted_glass_topbar);
         binding.toolbar.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+    }
+
+    private static int calculateInSampleSize(android.graphics.BitmapFactory.Options options, int reqWidth, int reqHeight) {
+        int height = options.outHeight;
+        int width = options.outWidth;
+        int inSampleSize = 1;
+
+        if (height > reqHeight || width > reqWidth) {
+            final int halfHeight = height / 2;
+            final int halfWidth = width / 2;
+            while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
+                inSampleSize *= 2;
+            }
+        }
+        return inSampleSize;
     }
 
     private void showWallpaperOptionsDialog() {
@@ -443,6 +478,15 @@ public class MainActivity extends BaseActivity {
                     }
                 })
                 .show();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (customWallpaperBitmap != null && !customWallpaperBitmap.isRecycled()) {
+            customWallpaperBitmap.recycle();
+        }
+        customWallpaperBitmap = null;
     }
 
     private static class DepthPageTransformer implements ViewPager2.PageTransformer {

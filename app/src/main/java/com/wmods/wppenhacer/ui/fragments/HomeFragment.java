@@ -62,14 +62,14 @@ import rikka.core.util.IOUtils;
 public class HomeFragment extends BaseFragment {
 
     private FragmentHomeBinding binding;
+    private BroadcastReceiver wppReceiver;
 
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
         var intentFilter = new IntentFilter(BuildConfig.APPLICATION_ID + ".RECEIVER_WPP");
-        ContextCompat.registerReceiver(requireContext(), new BroadcastReceiver() {
-
+        wppReceiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
                 try {
@@ -80,7 +80,8 @@ public class HomeFragment extends BaseFragment {
                 } catch (Exception ignored) {
                 }
             }
-        }, intentFilter, ContextCompat.RECEIVER_EXPORTED);
+        };
+        ContextCompat.registerReceiver(requireContext(), wppReceiver, intentFilter, ContextCompat.RECEIVER_EXPORTED);
     }
 
     public View onCreateView(@NonNull LayoutInflater inflater,
@@ -696,5 +697,17 @@ public class HomeFragment extends BaseFragment {
     public void onDestroyView() {
         super.onDestroyView();
         binding = null;
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        if (wppReceiver != null) {
+            try {
+                requireContext().unregisterReceiver(wppReceiver);
+            } catch (Exception ignored) {
+            }
+            wppReceiver = null;
+        }
     }
 }

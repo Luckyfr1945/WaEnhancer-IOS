@@ -36,6 +36,7 @@ private const val MULTI_CLICK_COUNT = 5
 private const val MULTI_CLICK_INTERVAL = 700
 private const val TITLE_TEXT_SIZE = 20f
 private const val SUBTITLE_TEXT_SIZE = 12f
+private const val TOOLBAR_LAYOUT_TAG = "wae_custom_toolbar_layout"
 
 private var onMenuItemSelected: Method? = null
 private var tabVisibilityHooked = false
@@ -187,7 +188,13 @@ class CustomToolbar(loader: ClassLoader, preferences:SharedPreferences) : Featur
         }
 
         private fun createToolbarLayout(homeActivity: Activity, toolbar: ViewGroup): LinearLayout {
+            val existing = toolbar.findViewWithTag<LinearLayout>(TOOLBAR_LAYOUT_TAG)
+            if (existing != null) {
+                existing.removeAllViews()
+                return existing
+            }
             val linearLayout = LinearLayout(homeActivity)
+            linearLayout.tag = TOOLBAR_LAYOUT_TAG
             linearLayout.orientation = LinearLayout.VERTICAL
             toolbar.addView(linearLayout, 0)
             return linearLayout

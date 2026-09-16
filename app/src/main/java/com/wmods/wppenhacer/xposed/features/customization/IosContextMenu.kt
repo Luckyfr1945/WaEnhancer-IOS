@@ -125,8 +125,8 @@ class IosContextMenu(loader: ClassLoader, prefs: SharedPreferences) : Feature(lo
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     val popupWindow = param.thisObject as? PopupWindow ?: return
                     configurePopupWindow(popupWindow)
-                    // Fullscreen coordinates to prevent viewport clipping
-                    if (param.args.size >= 4) {
+                    // Fullscreen coordinates to prevent viewport clipping (only for showAtLocation)
+                    if (param.method.name == "showAtLocation" && param.args.size >= 4) {
                         param.args[1] = Gravity.TOP or Gravity.START
                         param.args[2] = 0
                         param.args[3] = 0

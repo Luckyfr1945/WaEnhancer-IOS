@@ -37,6 +37,16 @@ public class CardPreferenceItemDecoration extends RecyclerView.ItemDecoration {
     private final float strokeWidth;
     private final int marginHorizontal;
 
+    // Reusable geometry buffers to eliminate GC allocations per frame in onDraw
+    private final Path bgPath = new Path();
+    private final Path sheenPath = new Path();
+    private final Path strokePath = new Path();
+    private final RectF tempRect = new RectF();
+    private final float[] radiiAll = new float[8];
+    private final float[] radiiTop = new float[8];
+    private final float[] radiiBottom = new float[8];
+    private final float[] radiiNone = new float[8];
+
     public CardPreferenceItemDecoration(Context context) {
         float density = context.getResources().getDisplayMetrics().density;
 
@@ -50,6 +60,18 @@ public class CardPreferenceItemDecoration extends RecyclerView.ItemDecoration {
 
         radius = 22f * density;
         marginHorizontal = (int) (16 * density);
+
+        // Pre-fill radii arrays once
+        radiiAll[0] = radius; radiiAll[1] = radius;
+        radiiAll[2] = radius; radiiAll[3] = radius;
+        radiiAll[4] = radius; radiiAll[5] = radius;
+        radiiAll[6] = radius; radiiAll[7] = radius;
+
+        radiiTop[0] = radius; radiiTop[1] = radius;
+        radiiTop[2] = radius; radiiTop[3] = radius;
+
+        radiiBottom[4] = radius; radiiBottom[5] = radius;
+        radiiBottom[6] = radius; radiiBottom[7] = radius;
     }
 
     private Preference getPreference(RecyclerView.Adapter<?> adapter, int position) {
@@ -160,11 +182,10 @@ public class CardPreferenceItemDecoration extends RecyclerView.ItemDecoration {
                         Shader.TileMode.CLAMP));
             }
 
-            Path bgPath = createBackgroundPath(left, top, right, bottom, isFirst, isLast, radius);
+            updateBackgroundPath(left, top, right, bottom, isFirst, isLast);
             canvas.drawPath(bgPath, cardBgPaint);
 
-            // 2. Specular Top Sheen (efek pantulan kaca di bagian atas kartu seperti di
-            // Dashboard)
+            // 2. Specular Top Sheen (efek pantulan kaca di bagian atas kartu seperti di Dashboard)
             if (isFirst) {
                 float sheenHeight = Math.min(bottom - top, 26f * density);
                 sheenPaint.setShader(new LinearGradient(
@@ -172,7 +193,7 @@ public class CardPreferenceItemDecoration extends RecyclerView.ItemDecoration {
                         Color.argb(24, 255, 255, 255),
                         Color.TRANSPARENT,
                         Shader.TileMode.CLAMP));
-                Path sheenPath = createTopSheenPath(left, top, right, top + sheenHeight, radius);
+                updateTopSheenPath(left, top, right, top + sheenHeight);
                 canvas.drawPath(sheenPath, sheenPaint);
             }
 
@@ -184,10 +205,8 @@ public class CardPreferenceItemDecoration extends RecyclerView.ItemDecoration {
                     Color.argb(20, 255, 255, 255),
                     Shader.TileMode.CLAMP));
 
-            Path strokePath = createOuterStrokePath(left, top, right, bottom, isFirst, isLast, radius);
-            if (strokePath != null) {
-                canvas.drawPath(strokePath, strokePaint);
-            }
+            updateOuterStrokePath(left, top, right, bottom, isFirst, isLast, radius);
+            canvas.drawPath(strokePath, strokePaint);
 
             // 4. Hairline Crystal Divider di dalam kartu antar item
             if (!isLast) {
@@ -199,66 +218,61 @@ public class CardPreferenceItemDecoration extends RecyclerView.ItemDecoration {
         }
     }
 
-    private Path createBackgroundPath(float left, float top, float right, float bottom, boolean isFirst, boolean isLast,
-            float r) {
-        Path path = new Path();
+    private void updateBackgroundPath(float left, float top, float right, float bottom, boolean isFirst, boolean isLast) {
+        bgPath.reset();
         float[] radii;
         if (isFirst && isLast) {
-            radii = new float[] { r, r, r, r, r, r, r, r };
+            radii = radiiAll;
         } else if (isFirst) {
-            radii = new float[] { r, r, r, r, 0, 0, 0, 0 };
+            radii = radiiTop;
         } else if (isLast) {
-            radii = new float[] { 0, 0, 0, 0, r, r, r, r };
+            radii = radiiBottom;
         } else {
-            radii = new float[] { 0, 0, 0, 0, 0, 0, 0, 0 };
+            radii = radiiNone;
         }
-        RectF rect = new RectF(left, top, right, bottom);
-        path.addRoundRect(rect, radii, Path.Direction.CW);
-        return path;
+        tempRect.set(left, top, right, bottom);
+        bgPath.addRoundRect(tempRect, radii, Path.Direction.CW);
     }
 
-    private Path createTopSheenPath(float left, float top, float right, float sheenBottom, float r) {
-        Path path = new Path();
-        float[] radii = new float[] { r, r, r, r, 0, 0, 0, 0 };
-        RectF rect = new RectF(left, top, right, sheenBottom);
-        path.addRoundRect(rect, radii, Path.Direction.CW);
-        return path;
+    private void updateTopSheenPath(float left, float top, float right, float sheenBottom) {
+        sheenPath.reset();
+        tempRect.set(left, top, right, sheenBottom);
+        sheenPath.addRoundRect(tempRect, radiiTop, Path.Direction.CW);
     }
 
-    private Path createOuterStrokePath(float left, float top, float right, float bottom, boolean isFirst,
+    private void updateOuterStrokePath(float left, float top, float right, float bottom, boolean isFirst,
             boolean isLast, float r) {
-        Path p = new Path();
+        strokePath.reset();
         if (isFirst && isLast) {
-            RectF rect = new RectF(left, top, right, bottom);
-            p.addRoundRect(rect, r, r, Path.Direction.CW);
-            return p;
+            tempRect.set(left, top, right, bottom);
+            strokePath.addRoundRect(tempRect, r, r, Path.Direction.CW);
+            return;
         }
 
         if (isFirst) {
-            p.moveTo(left, bottom);
-            p.lineTo(left, top + r);
-            p.quadTo(left, top, left + r, top);
-            p.lineTo(right - r, top);
-            p.quadTo(right, top, right, top + r);
-            p.lineTo(right, bottom);
-            return p;
+            strokePath.moveTo(left, bottom);
+            strokePath.lineTo(left, top + r);
+            strokePath.quadTo(left, top, left + r, top);
+            strokePath.lineTo(right - r, top);
+            strokePath.quadTo(right, top, right, top + r);
+            strokePath.lineTo(right, bottom);
+            return;
         }
 
         if (!isLast) {
-            p.moveTo(left, top);
-            p.lineTo(left, bottom);
-            p.moveTo(right, top);
-            p.lineTo(right, bottom);
-            return p;
+            strokePath.moveTo(left, top);
+            strokePath.lineTo(left, bottom);
+            strokePath.moveTo(right, top);
+            strokePath.lineTo(right, bottom);
+            return;
         }
 
         // isLast
-        p.moveTo(left, top);
-        p.lineTo(left, bottom - r);
-        p.quadTo(left, bottom, left + r, bottom);
-        p.lineTo(right - r, bottom);
-        p.quadTo(right, bottom, right, bottom - r);
-        p.lineTo(right, top);
-        return p;
+        strokePath.moveTo(left, top);
+        strokePath.lineTo(left, bottom - r);
+        strokePath.quadTo(left, bottom, left + r, bottom);
+        strokePath.lineTo(right - r, bottom);
+        strokePath.quadTo(right, bottom, right, bottom - r);
+        strokePath.lineTo(right, top);
     }
 }

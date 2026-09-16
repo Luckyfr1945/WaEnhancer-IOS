@@ -248,8 +248,8 @@ class StatusDownload(loader: ClassLoader, preferences: SharedPreferences) : Feat
             "$extStorage/Android/media/com.whatsapp/WhatsApp/Media/.Statuses",
             "$extStorage/WhatsApp/Media/.Statuses"
         )
-        val now = System.currentTimeMillis()
         val expectedName = statusItem.fMessage?.mediaFile?.name
+        val messageId = statusItem.messageID
 
         for (path in paths) {
             val dir = File(path)
@@ -260,11 +260,13 @@ class StatusDownload(loader: ClassLoader, preferences: SharedPreferences) : Feat
                     val matched = files.firstOrNull { it.name.equals(expectedName, ignoreCase = true) && it.length() > 0L }
                     if (matched != null) return matched
                 }
-                // 2. Fallback: file terbaru dalam window 30 detik terakhir
-                val recentFile = files
-                    .filter { it.isFile && it.length() > 0L && (now - it.lastModified()) < 30_000 }
-                    .maxByOrNull { it.lastModified() }
-                if (recentFile != null) return recentFile
+                // 2. Cocokkan berdasarkan potongan ID pesan status agar tidak salah comot status kontak lain
+                if (messageId.isNotEmpty() && messageId.length >= 6) {
+                    val idMatch = files.firstOrNull {
+                        it.name.contains(messageId, ignoreCase = true) && it.length() > 0L
+                    }
+                    if (idMatch != null) return idMatch
+                }
             }
         }
         return null

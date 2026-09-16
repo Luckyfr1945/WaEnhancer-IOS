@@ -219,25 +219,8 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
                     for (f in cls.fields + cls.declaredFields) {
                         f.isAccessible = true
                         val v = f.get(obj)
-                        if (v != null) {
-                            val vStr = v.toString()
-                            if (vStr.contains("AC") || vStr.contains("3EB") || vStr.contains("Key") || vStr.contains("key")) {
-                                logDebug("[AntiRevoke] Field ${f.name} (${f.type.simpleName}) = $vStr")
-                            }
-                            if (v is String && v.length >= 16) {
-                                candidateIds.add(v)
-                            }
-                        }
-                    }
-                    for (m in cls.methods + cls.declaredMethods) {
-                        if (m.parameterCount == 0 && m.name.startsWith("get") || m.name.startsWith("A0")) {
-                            val res = runCatching { m.invoke(obj) }.getOrNull()
-                            if (res != null) {
-                                val rStr = res.toString()
-                                if (rStr.contains("AC") || rStr.contains("3EB") || rStr.contains("Key") || rStr.contains("key")) {
-                                    logDebug("[AntiRevoke] Method ${m.name}() = $rStr")
-                                }
-                            }
+                        if (v is String && v.length >= 16) {
+                            candidateIds.add(v)
                         }
                     }
                 } catch (_: Throwable) {}
@@ -271,7 +254,7 @@ class AntiRevoke(loader: ClassLoader, preferences:SharedPreferences) :
                     try {
                         val constructor = returnType.constructors.firstOrNull()
                         if (constructor != null) {
-                            val args = Array(constructor.parameterCount) { idx ->
+                            val args = Array<Any?>(constructor.parameterCount) { idx ->
                                 val pType = constructor.parameterTypes[idx]
                                 when {
                                     pType == java.lang.Boolean.TYPE -> false
