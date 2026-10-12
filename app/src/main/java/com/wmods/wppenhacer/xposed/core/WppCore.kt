@@ -207,7 +207,7 @@ object WppCore {
             prefsCacheHooks.edit { putInt("preferredOrder", newPreferredOrder) }
             return
         }
-        throw Exception(context.getString(R.string.bridge_error))
+        XposedBridge.log("Bridge connection failed, features requiring root bridge will connect on-demand: ${context.getString(R.string.bridge_error)}")
     }
 
     @JvmStatic

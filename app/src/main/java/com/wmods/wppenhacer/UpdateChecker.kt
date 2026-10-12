@@ -1,6 +1,7 @@
 package com.wmods.wppenhacer
 
 import android.app.Activity
+import com.wmods.wppenhacer.utils.VersionUtils
 import com.wmods.wppenhacer.xposed.core.WppCore
 import com.wmods.wppenhacer.xposed.core.components.AlertDialogWpp
 import com.wmods.wppenhacer.xposed.utils.Utils
@@ -31,6 +32,8 @@ class UpdateChecker(private val mActivity: Activity) : Runnable {
         try {
             val request = okhttp3.Request.Builder()
                 .url(LATEST_RELEASE_API)
+                .header("User-Agent", "WaEnhancer-App")
+                .header("Accept", "application/vnd.github.v3+json")
                 .build()
 
             val tagName: String
@@ -62,9 +65,8 @@ class UpdateChecker(private val mActivity: Activity) : Runnable {
                 return
             }
 
-            val currentVersion = packageInfo.versionName?.lowercase() ?: ""
-            val hash = if (tagName.contains("-")) tagName.split("-")[1].trim() else tagName
-            val isNewVersion = !currentVersion.contains(hash.lowercase().trim())
+            val currentVersion = packageInfo.versionName ?: ""
+            val isNewVersion = VersionUtils.isNewVersion(currentVersion, tagName)
 
             // Check if user has already been notified ONCE for this release version
             val lastNotifiedVersion = WppCore.getPrivString("last_notified_release_version", "")
