@@ -39,6 +39,7 @@ import io.noties.markwon.Markwon;
 import com.wmods.wppenhacer.ui.fragments.base.BaseFragment;
 import com.wmods.wppenhacer.utils.FilePicker;
 import com.wmods.wppenhacer.utils.RootDiagnostics;
+import com.wmods.wppenhacer.utils.VersionUtils;
 import com.wmods.wppenhacer.xposed.core.FeatureLoader;
 import com.wmods.wppenhacer.xposed.utils.Utils;
 
@@ -448,6 +449,8 @@ public class HomeFragment extends BaseFragment {
 
                 var request = new Request.Builder()
                         .url("https://api.github.com/repos/Luckyfr1945/WaEnhancer-IOS/releases/latest")
+                        .header("User-Agent", "WaEnhancer-App")
+                        .header("Accept", "application/vnd.github.v3+json")
                         .build();
 
                 try (var response = client.newCall(request).execute()) {
@@ -472,18 +475,33 @@ public class HomeFragment extends BaseFragment {
                     String publishedAt = release.optString("published_at", "");
 
                     String apkUrl = null;
+                    boolean isBusiness = BuildConfig.APPLICATION_ID.contains("w4b")
+                            || BuildConfig.FLAVOR.equalsIgnoreCase("business");
                     if (release.has("assets")) {
                         var assets = release.optJSONArray("assets");
                         if (assets != null) {
+                            String fallbackApk = null;
                             for (int i = 0; i < assets.length(); i++) {
                                 var asset = assets.optJSONObject(i);
                                 if (asset != null) {
                                     String downloadUrl = asset.optString("browser_download_url", "");
+                                    String assetName = asset.optString("name", "").toLowerCase();
                                     if (downloadUrl.endsWith(".apk")) {
-                                        apkUrl = downloadUrl;
-                                        break;
+                                        if (fallbackApk == null) {
+                                            fallbackApk = downloadUrl;
+                                        }
+                                        if (isBusiness && assetName.contains("business")) {
+                                            apkUrl = downloadUrl;
+                                            break;
+                                        } else if (!isBusiness && !assetName.contains("business")) {
+                                            apkUrl = downloadUrl;
+                                            break;
+                                        }
                                     }
                                 }
+                            }
+                            if (apkUrl == null) {
+                                apkUrl = fallbackApk;
                             }
                         }
                     }
@@ -510,8 +528,7 @@ public class HomeFragment extends BaseFragment {
                                 .format(new Date());
                     }
 
-                    var hash = tagName.contains("-") ? tagName.split("-")[1].trim() : tagName;
-                    var isNewVersion = !BuildConfig.VERSION_NAME.toLowerCase().contains(hash.toLowerCase());
+                    var isNewVersion = VersionUtils.isNewVersion(BuildConfig.VERSION_NAME, tagName);
                     this.isUpdateAvailable = isNewVersion;
 
                     updateCardState(true, !isNewVersion, tagName);
