@@ -50,18 +50,8 @@ class DelMessageStore private constructor(context: Context) {
 
     fun getTimestampByMessageId(msgid: String): Long {
         timestampCache[msgid]?.let { return it }
-        timestampCache[msgid] = 0L
-        CompletableFuture.runAsync {
-            try {
-                val ts = dao.getTimestampByMessageId(msgid) ?: 0L
-                if (ts > 0L) {
-                    timestampCache[msgid] = ts
-                    com.wmods.wppenhacer.xposed.core.WppCore.getCurrentActivity()?.runOnUiThread {
-                        com.wmods.wppenhacer.xposed.features.listeners.ConversationItemListener.notifyDataSetChanged()
-                    }
-                }
-            } catch (_: Exception) {}
-        }
-        return 0L
+        val ts = runCatching { dao.getTimestampByMessageId(msgid) ?: 0L }.getOrDefault(0L)
+        timestampCache[msgid] = ts
+        return ts
     }
 }

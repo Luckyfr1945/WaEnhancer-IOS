@@ -743,6 +743,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                                         break
                                     }
                                 }
+                                showAllBars()
                             }
                         }
                     })
@@ -767,6 +768,50 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             }
         } catch (e: Throwable) {
             logDebug("BottomBar item hook failed: ${e.message}")
+        }
+
+        WppCore.addListenerActivity { _, type ->
+            if (type == WppCore.ActivityChangeState.ChangeType.RESUMED) {
+                showAllBars()
+            }
+        }
+
+        // Auto-hide floating bar on downward scroll, show on upward scroll or top of list
+        try {
+            XposedBridge.hookAllMethods(android.widget.AbsListView::class.java, "trackMotionScroll", object : XC_MethodHook() {
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    val deltaY = param.args.getOrNull(0) as? Int ?: return
+                    val list = param.thisObject as? android.widget.AbsListView ?: return
+                    if (list.firstVisiblePosition == 0 && (list.getChildAt(0)?.top ?: 0) >= 0) {
+                        showAllBars()
+                    } else if (deltaY < -15) {
+                        hideAllBars()
+                    } else if (deltaY > 15) {
+                        showAllBars()
+                    }
+                }
+            })
+        } catch (e: Throwable) {
+            logDebug("FloatingBottomBar: failed to hook AbsListView.trackMotionScroll: ${e.message}")
+        }
+
+        try {
+            val recyclerViewClass = classLoader.loadClass("androidx.recyclerview.widget.RecyclerView")
+            XposedBridge.hookAllMethods(recyclerViewClass, "onScrolled", object : XC_MethodHook() {
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    val dy = param.args.getOrNull(1) as? Int ?: return
+                    val rv = param.thisObject as? View ?: return
+                    if (!rv.canScrollVertically(-1)) {
+                        showAllBars()
+                    } else if (dy > 12) {
+                        hideAllBars()
+                    } else if (dy < -12) {
+                        showAllBars()
+                    }
+                }
+            })
+        } catch (e: Throwable) {
+            logDebug("FloatingBottomBar: failed to hook RecyclerView.onScrolled: ${e.message}")
         }
     }
 
@@ -841,6 +886,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
                 }
                 positionFabsAboveBar(rootView, existingParent)
                 setupVisibilitySync(rootView, existingParent, bar, state)
+                applyContentInsetsToScrollableViews(rootView, state.originalParent)
                 return true
             }
 
@@ -900,6 +946,7 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
             applyTransparentShadowStyle(rootView, wrapper, bar)
             positionFabsAboveBar(rootView, wrapper)
             setupVisibilitySync(rootView, wrapper, bar, state)
+            applyContentInsetsToScrollableViews(rootView, originalParent)
 
             logDebug("FloatingBottomBar: wrapped bar in floating overlay")
             return true
@@ -947,6 +994,92 @@ class FloatingBottomBar(loader: ClassLoader, preferences: SharedPreferences) :
         state.visibilitySyncRoot = java.lang.ref.WeakReference(rootView)
         rootView.viewTreeObserver.addOnGlobalLayoutListener(listener)
         updateVisibility()
+    }
+
+    private var isBarsHidden = false
+    private var isAnimatingHide = false
+
+    fun hideAllBars() {
+        if (isBarsHidden || isAnimatingHide) return
+        isBarsHidden = true
+        for ((_, state) in barStates) {
+            val wrap = state.wrapper ?: continue
+            val act = wrap.context as? Activity ?: WppCore.getCurrentActivity() ?: continue
+            act.runOnUiThread {
+                val marginLp = wrap.layoutParams as? ViewGroup.MarginLayoutParams
+                val targetY = wrap.height.toFloat() + (marginLp?.bottomMargin?.toFloat() ?: 0f) + Utils.dipToPixels(30f)
+                isAnimatingHide = true
+                wrap.animate()
+                    .translationY(targetY)
+                    .setDuration(220)
+                    .setInterpolator(android.view.animation.AccelerateInterpolator())
+                    .withEndAction { isAnimatingHide = false }
+                    .start()
+            }
+        }
+    }
+
+    fun showAllBars() {
+        if (!isBarsHidden && !isAnimatingHide) return
+        isBarsHidden = false
+        for ((_, state) in barStates) {
+            val wrap = state.wrapper ?: continue
+            val act = wrap.context as? Activity ?: WppCore.getCurrentActivity() ?: continue
+            act.runOnUiThread {
+                isAnimatingHide = true
+                wrap.animate()
+                    .translationY(0f)
+                    .setDuration(220)
+                    .setInterpolator(android.view.animation.DecelerateInterpolator())
+                    .withEndAction { isAnimatingHide = false }
+                    .start()
+            }
+        }
+    }
+
+    private fun applyContentInsetsToScrollableViews(rootView: ViewGroup, originalParent: ViewGroup?) {
+        val bottomInset = Utils.dipToPixels(BAR_HEIGHT_DP + BOTTOM_MARGIN_DP) + getStableNavInset(rootView) + Utils.dipToPixels(16f)
+
+        fun updateScrollableView(v: View) {
+            if (v is android.widget.AbsListView || v.javaClass.name.contains("RecyclerView") || v is android.widget.ScrollView) {
+                if (v is ViewGroup) {
+                    v.clipToPadding = false
+                }
+                if (v.paddingBottom < bottomInset) {
+                    v.setPadding(v.paddingLeft, v.paddingTop, v.paddingRight, bottomInset)
+                }
+            }
+        }
+
+        fun scan(vg: ViewGroup) {
+            for (i in 0 until vg.childCount) {
+                val child = vg.getChildAt(i)
+                updateScrollableView(child)
+                if (child is ViewGroup && child.getTag(TAG_FLOATING_WRAPPER) != true) {
+                    if (child.javaClass.name.contains("ViewPager", ignoreCase = true)) {
+                        child.setOnHierarchyChangeListener(object : ViewGroup.OnHierarchyChangeListener {
+                            override fun onChildViewAdded(parent: View?, view: View?) {
+                                if (view is ViewGroup) scan(view)
+                                else if (view != null) updateScrollableView(view)
+                            }
+                            override fun onChildViewRemoved(parent: View?, view: View?) {}
+                        })
+                    }
+                    scan(child)
+                }
+            }
+        }
+
+        originalParent?.let { scan(it) }
+        scan(rootView)
+
+        originalParent?.setOnHierarchyChangeListener(object : ViewGroup.OnHierarchyChangeListener {
+            override fun onChildViewAdded(parent: View?, child: View?) {
+                if (child is ViewGroup) scan(child)
+                else if (child != null) updateScrollableView(child)
+            }
+            override fun onChildViewRemoved(parent: View?, child: View?) {}
+        })
     }
 
     private fun updateOverlayLayout(rootView: FrameLayout, container: ViewGroup, bar: ViewGroup) {

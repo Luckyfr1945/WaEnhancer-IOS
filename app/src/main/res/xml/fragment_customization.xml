@@ -225,6 +225,7 @@
             app:title="@string/floating_bottom_bar_blur" />
 
 
+
         <ListPreference
             android:defaultValue="0"
             android:entries="@array/configui_entries"
@@ -241,7 +242,7 @@
 
         <rikka.material.preference.MaterialSwitchPreference
             app:key="igstatus"
-            app:defaultValue="true"
+            app:defaultValue="false"
             app:summary="@string/igstatus_on_home_screen_sum"
             app:title="@string/igstatus_on_home_screen" />
 

@@ -63,31 +63,38 @@ class MediaQuality(loader: ClassLoader, preferences: SharedPreferences) :
                 }
             })
 
-            val mediaDataVideoConfiguration =
-                Unobfuscator.loadMediaDataVideoConfigurationClass(classLoader)
-            val fieldsMediaDataVideoConfiguration =
-                Unobfuscator.getAllMapFields(mediaDataVideoConfiguration)
+            runCatching {
+                val mediaDataVideoConfiguration =
+                    Unobfuscator.loadMediaDataVideoConfigurationClass(classLoader)
+                val fieldsMediaDataVideoConfiguration =
+                    Unobfuscator.getAllMapFields(mediaDataVideoConfiguration)
 
-            val videoTranscoderStart = Unobfuscator.loadVideoTranscoderStartMethod(classLoader)
-            if (videoTranscoderStart != null) {
-                XposedBridge.hookMethod(videoTranscoderStart, object : XC_MethodHook() {
-                    override fun beforeHookedMethod(param: MethodHookParam) {
-                        try {
-                            val videoProcessor = param.args.getOrNull(0) ?: return
-                            val fieldMediaDataVideoConfiguration = ReflectionUtils.getFieldByType(
-                                videoProcessor.javaClass,
-                                mediaDataVideoConfiguration
-                            ) ?: return
-                            val mediaDataVideoConfigObj =
-                                fieldMediaDataVideoConfiguration.get(videoProcessor) ?: return
-                            val fieldforceSingleTranscoding =
-                                fieldsMediaDataVideoConfiguration["forceSingleTranscoding"]
-                            fieldforceSingleTranscoding?.setBoolean(mediaDataVideoConfigObj, true)
-                        } catch (e: Throwable) {
-                            logDebug("MediaQuality: forceSingleTranscoding failed: ${e.message}")
+                val videoTranscoderStart = runCatching {
+                    Unobfuscator.loadVideoTranscoderStartMethod(classLoader)
+                }.getOrNull()
+
+                if (videoTranscoderStart != null) {
+                    XposedBridge.hookMethod(videoTranscoderStart, object : XC_MethodHook() {
+                        override fun beforeHookedMethod(param: MethodHookParam) {
+                            try {
+                                val videoProcessor = param.args.getOrNull(0) ?: return
+                                val fieldMediaDataVideoConfiguration = ReflectionUtils.getFieldByType(
+                                    videoProcessor.javaClass,
+                                    mediaDataVideoConfiguration
+                                ) ?: return
+                                val mediaDataVideoConfigObj =
+                                    fieldMediaDataVideoConfiguration.get(videoProcessor) ?: return
+                                val fieldforceSingleTranscoding =
+                                    fieldsMediaDataVideoConfiguration["forceSingleTranscoding"]
+                                fieldforceSingleTranscoding?.setBoolean(mediaDataVideoConfigObj, true)
+                            } catch (e: Throwable) {
+                                logDebug("MediaQuality: forceSingleTranscoding failed: ${e.message}")
+                            }
                         }
-                    }
-                })
+                    })
+                }
+            }.onFailure {
+                logDebug("MediaQuality: video transcoder configuration hook skipped: ${it.message}")
             }
 
             Others.propsBoolean[18888] = true

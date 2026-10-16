@@ -13,10 +13,12 @@ import android.view.Gravity
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.Toast
+import java.util.Collections
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.drawable.toDrawable
 import com.wmods.wppenhacer.R
@@ -74,6 +76,32 @@ class SeenTick(
         private var sendPlayedClass: Class<*>? = null
         private var sendPlayedConstructor: Constructor<*>? = null
         private var participantInfoConstructor: Constructor<*>? = null
+
+        @JvmStatic
+        fun tryCaptureJobManagerFromObject(obj: Any?) {
+            if (mWaJobManager != null || obj == null) return
+            val targetClass = waJobManagerMethod?.declaringClass ?: return
+            if (targetClass.isInstance(obj)) {
+                mWaJobManager = obj
+                return
+            }
+            var current: Class<*>? = obj.javaClass
+            while (current != null && current != Any::class.java) {
+                for (f in current.declaredFields) {
+                    if (targetClass.isAssignableFrom(f.type)) {
+                        try {
+                            f.isAccessible = true
+                            val inst = f.get(obj)
+                            if (inst != null) {
+                                mWaJobManager = inst
+                                return
+                            }
+                        } catch (_: Throwable) {}
+                    }
+                }
+                current = current.superclass
+            }
+        }
 
         fun setSeenButton(buttonImage: ImageView, isSeen: Boolean) {
             val originalDrawable = DesignUtils.getDrawableByName("ic_notif_mark_read")
@@ -180,13 +208,30 @@ class SeenTick(
             logDebug("Error caching reflection: ${e.message}")
         }
 
-        XposedBridge.hookAllConstructors(
-            waJobManagerMethod?.declaringClass,
-            object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam) {
-                    mWaJobManager = param.thisObject
+        val jobMgrClass = waJobManagerMethod?.declaringClass
+        if (jobMgrClass != null) {
+            XposedBridge.hookAllConstructors(
+                jobMgrClass,
+                object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        mWaJobManager = param.thisObject
+                    }
+                })
+
+            for (m in jobMgrClass.declaredMethods) {
+                if (!java.lang.reflect.Modifier.isStatic(m.modifiers)) {
+                    runCatching {
+                        XposedBridge.hookMethod(m, object : XC_MethodHook() {
+                            override fun beforeHookedMethod(param: MethodHookParam) {
+                                if (mWaJobManager == null && param.thisObject != null) {
+                                    mWaJobManager = param.thisObject
+                                }
+                            }
+                        })
+                    }
                 }
-            })
+            }
+        }
 
         hookOnSendMessages()
 
@@ -447,61 +492,98 @@ class SeenTick(
     }
 
     private fun hookOnSendMessages() {
-        val messageJobMethod = runCatching { Unobfuscator.loadBlueOnReplayMessageJobMethod(classLoader) }.getOrNull() ?: return
-        val messageSendClass = runCatching {
-            Unobfuscator.findFirstClassUsingName(
-                classLoader,
-                StringMatchType.Contains,
-                "SendE2EMessageJob"
-            )
-        }.getOrNull()
+        val messageJobMethod = runCatching { Unobfuscator.loadBlueOnReplayMessageJobMethod(classLoader) }.getOrNull()
 
-        XposedBridge.hookMethod(messageJobMethod, object : XC_MethodHook() {
-            override fun afterHookedMethod(param: MethodHookParam) {
-                if (!Utils.isBlueOnReplyEnabled(prefs)) return
+        if (messageJobMethod != null) {
+            val jobDeclaringClass = messageJobMethod.declaringClass
+            XposedBridge.hookMethod(messageJobMethod, object : XC_MethodHook() {
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    if (!Utils.isBlueOnReplyEnabled(prefs)) return
 
-                val obj = param.thisObject ?: return
+                    val obj = param.thisObject ?: return
+                    tryCaptureJobManagerFromObject(obj)
 
-                // Guard 1: Only trigger for actual outgoing message jobs (SendE2EMessageJob)
-                if (messageSendClass != null && !messageSendClass.isInstance(obj)) return
+                    // Guard 1: Verify object is indeed an outgoing message job
+                    if (!jobDeclaringClass.isInstance(obj) && !obj.javaClass.name.contains("SendE2EMessageJob")) return
 
-                // Guard 2: Prevent feedback loop from self-dispatched receipt jobs
-                val isSelfDispatched = try {
-                    XposedHelpers.getAdditionalInstanceField(obj, "blue_on_reply") as? Boolean ?: false
-                } catch (_: Throwable) { false }
-                if (isSelfDispatched) return
+                    // Guard 2: Prevent feedback loop from self-dispatched receipt jobs
+                    val isSelfDispatched = try {
+                        XposedHelpers.getAdditionalInstanceField(obj, "blue_on_reply") as? Boolean ?: false
+                    } catch (_: Throwable) { false }
+                    if (isSelfDispatched) return
 
-                scope.launch(Dispatchers.IO) {
-                    runCatching {
-                        // Jangan cast langsung — bisa ClassCastException silent kalau obfuscated class berubah
-                        val userJid = runCatching { FMessageWpp.UserJid.extractFrom(obj) }.getOrNull()
-                            ?: WppCore.getCurrentUserJid() ?: return@launch
+                    scope.launch(Dispatchers.IO) {
+                        runCatching {
+                            val userJid = runCatching { FMessageWpp.UserJid.extractFrom(obj) }.getOrNull()
+                                ?: WppCore.getCurrentUserJid() ?: return@launch
 
-                        logDebug("[SeenTick] hookOnSendMessages triggered for outgoing message, userJid=$userJid")
+                            logDebug("[SeenTick] hookOnSendMessages triggered for outgoing message, userJid=$userJid")
 
-                        if (userJid.isStatus) {
-                            val listStatus = MenuStatusListener.statusData.getCurrentItemList()
-                            listStatus.forEach { fstatus ->
-                                val view = getRegisteredView(fstatus.messageID)
-                                view?.post {
-                                    setSeenButton(view, true)
+                            if (userJid.isStatus) {
+                                val listStatus = MenuStatusListener.statusData.getCurrentItemList()
+                                listStatus.forEach { fstatus ->
+                                    val view = getRegisteredView(fstatus.messageID)
+                                    view?.post {
+                                        setSeenButton(view, true)
+                                    }
                                 }
+                                sendBlueTickStatus(listStatus)
+                            } else {
+                                sendBlueTick(userJid)
                             }
-                            sendBlueTickStatus(listStatus)
-                        } else {
-                            sendBlueTick(userJid)
+                        }.onFailure { e ->
+                            logDebug("[SeenTick] hookOnSendMessages error: ${e.javaClass.simpleName}: ${e.message}")
                         }
-                    }.onFailure { e ->
-                        logDebug("[SeenTick] hookOnSendMessages error: ${e.javaClass.simpleName}: ${e.message}")
                     }
                 }
+            })
+        }
+
+        // Secondary trigger: when user replies inside an active conversation (text, voice note, photo, video, sticker)
+        val handledOutgoingMessageIds = Collections.synchronizedSet(LinkedHashSet<String>())
+        com.wmods.wppenhacer.xposed.features.listeners.ConversationItemListener.conversationListeners.add(
+            object : com.wmods.wppenhacer.xposed.features.listeners.ConversationItemListener.OnConversationItemListener() {
+                override fun onItemBind(fMessage: FMessageWpp, view: ViewGroup, position: Int, convertView: View?) {
+                    if (!Utils.isBlueOnReplyEnabled(prefs)) return
+                    if (!fMessage.key.isFromMe) return
+
+                    val timeDiff = Math.abs(System.currentTimeMillis() - fMessage.timeStamp)
+                    if (timeDiff > 30000L && fMessage.timeStamp > 0L) return
+
+                    val msgId = fMessage.key.messageID
+                    if (msgId.isBlank() || !handledOutgoingMessageIds.add(msgId)) return
+
+                    val remoteJid = fMessage.key.remoteJid
+                    if (remoteJid.isNull || remoteJid.isStatus) return
+
+                    logDebug("[SeenTick] ConversationItemListener triggered reply for remoteJid=$remoteJid, msgId=$msgId")
+                    sendBlueTick(remoteJid)
+                }
             }
-        })
+        )
     }
 
     private fun getJobManager(): Any? {
         if (mWaJobManager != null) return mWaJobManager
-        val cls = waJobManagerMethod?.declaringClass ?: return null
+        val targetClass = waJobManagerMethod?.declaringClass
+
+        // Fallback 1: inspect active conversation delegate for WaJobManager instance
+        try {
+            val convDelegate = WppCore.getConversationDelegate()
+            if (convDelegate != null && targetClass != null) {
+                val jobMgrField = ReflectionUtils.findFieldUsingFilter(convDelegate.javaClass) { f ->
+                    targetClass.isAssignableFrom(f.type)
+                }
+                val inst = jobMgrField?.get(convDelegate)
+                if (inst != null) {
+                    mWaJobManager = inst
+                    return inst
+                }
+            }
+        } catch (_: Throwable) {}
+
+        // Fallback 2: static field
+        val cls = targetClass ?: return null
         for (f in cls.declaredFields) {
             if (java.lang.reflect.Modifier.isStatic(f.modifiers) && cls.isAssignableFrom(f.type)) {
                 try {
@@ -551,17 +633,29 @@ class SeenTick(
             if (primaryJid.isNotBlank()) allJids.add(primaryJid)
             if (userRaw.isNotBlank() && userRaw != primaryJid) allJids.add(userRaw)
             if (!fullUserRaw.isNullOrBlank() && fullUserRaw != primaryJid && fullUserRaw != userRaw) allJids.add(fullUserRaw)
+            userJid.phoneNumber?.let {
+                allJids.add(it)
+                allJids.add("$it@s.whatsapp.net")
+            }
 
             val messages = ArrayList<FMessageWpp>()
             var hiddenMessages: List<MessageHistoryStore.MessageSeenItem>? = null
 
+            val collectedHidden = ArrayList<MessageHistoryStore.MessageSeenItem>()
+            val seenMsgIds = HashSet<String>()
             for (jid in allJids) {
                 val result = MessageHistoryStore.getInstance()
                     .getHideSeenMessages(jid, MessageHistoryStore.ReceiptType.READ, false)
                 if (!result.isNullOrEmpty()) {
-                    hiddenMessages = result
-                    break
+                    for (item in result) {
+                        if (seenMsgIds.add(item.message)) {
+                            collectedHidden.add(item)
+                        }
+                    }
                 }
+            }
+            if (collectedHidden.isNotEmpty()) {
+                hiddenMessages = collectedHidden
             }
 
             hiddenMessages?.forEach { message ->
@@ -658,10 +752,15 @@ class SeenTick(
     ): Array<Any?> {
         val args = ReflectionUtils.initArray(paramTypes)
 
-        val phoneRaw = (userJid.phoneRawString ?: userJid.phoneNumber?.let { "$it@s.whatsapp.net" } ?: "").replaceFirst(":[\\d]+@".toRegex(), "@")
-        val chatJidObj = (if (phoneRaw.isNotBlank()) WppCore.createUserJid(phoneRaw) else null)
+        val targetRaw = userJid.phoneRawString
+            ?: userJid.userRawString
+            ?: userJid.phoneNumber?.let { "$it@s.whatsapp.net" }
+            ?: ""
+        val cleanedRaw = targetRaw.replaceFirst(":[\\d]+@".toRegex(), "@")
+        val chatJidObj = (if (cleanedRaw.isNotBlank()) WppCore.createUserJid(cleanedRaw) else null)
             ?: (if (!userJid.phoneNumber.isNullOrBlank()) WppCore.createUserJid("${userJid.phoneNumber}@s.whatsapp.net") else null)
             ?: userJid.phoneJid
+            ?: userJid.userJid
 
         val participantJidObj = if (isGroup) {
             val partRaw = userJidMsg?.phoneRawString ?: userJidMsg?.userRawString ?: ""
@@ -721,7 +820,20 @@ class SeenTick(
             val sendJob = constr.newInstance(*args)
             XposedHelpers.setAdditionalInstanceField(sendJob, "blue_on_reply", true)
             val jobMgr = getJobManager()
-            waJobManagerMethod?.invoke(jobMgr, sendJob)
+            if (jobMgr != null && waJobManagerMethod != null) {
+                waJobManagerMethod?.invoke(jobMgr, sendJob)
+            } else {
+                logDebug("[SeenTick] JobManager unavailable, running sendJob.onRun() directly!")
+                val onRunMethod = sendJob.javaClass.methods.firstOrNull { it.name == "onRun" && it.parameterCount == 0 }
+                    ?: sendJob.javaClass.declaredMethods.firstOrNull { it.name == "onRun" && it.parameterCount == 0 }
+                    ?: runCatching { Unobfuscator.loadHideViewSendReadJob(classLoader) }.getOrNull()
+                if (onRunMethod != null) {
+                    onRunMethod.isAccessible = true
+                    onRunMethod.invoke(sendJob)
+                } else {
+                    logDebug("[SeenTick] Failed to find onRun method on sendJob")
+                }
+            }
             logDebug("[SeenTick] SendReadReceiptJob (direct) dispatched successfully for ${messageIds.joinToString()}")
         } catch (ex: Throwable) {
             val target = if (ex is java.lang.reflect.InvocationTargetException) ex.targetException ?: ex else ex
@@ -754,7 +866,18 @@ class SeenTick(
                 val sendJob = constr.newInstance(*args)
                 XposedHelpers.setAdditionalInstanceField(sendJob, "blue_on_reply", true)
                 val jobMgr = getJobManager()
-                waJobManagerMethod?.invoke(jobMgr, sendJob)
+                if (jobMgr != null && waJobManagerMethod != null) {
+                    waJobManagerMethod?.invoke(jobMgr, sendJob)
+                } else {
+                    logDebug("[SeenTick] JobManager unavailable, running sendJob.onRun() directly!")
+                    val onRunMethod = sendJob.javaClass.methods.firstOrNull { it.name == "onRun" && it.parameterCount == 0 }
+                        ?: sendJob.javaClass.declaredMethods.firstOrNull { it.name == "onRun" && it.parameterCount == 0 }
+                        ?: runCatching { Unobfuscator.loadHideViewSendReadJob(classLoader) }.getOrNull()
+                    if (onRunMethod != null) {
+                        onRunMethod.isAccessible = true
+                        onRunMethod.invoke(sendJob)
+                    }
+                }
                 logDebug("[SeenTick] SendReadReceiptJob dispatched successfully for ${messageIds.joinToString()}")
             } catch (ex: Throwable) {
                 val target = if (ex is java.lang.reflect.InvocationTargetException) ex.targetException ?: ex else ex
@@ -831,8 +954,15 @@ class SeenTick(
                 val sendJob = XposedHelpers.newInstance(sPlayedClass, participantInfo, false)
 
                 val jobMgr = getJobManager()
-                if (jobMgr != null) {
+                if (jobMgr != null && waJobManagerMethod != null) {
                     waJobManagerMethod?.invoke(jobMgr, sendJob)
+                } else {
+                    val onRunMethod = sendJob.javaClass.methods.firstOrNull { it.name == "onRun" && it.parameterCount == 0 }
+                        ?: sendJob.javaClass.declaredMethods.firstOrNull { it.name == "onRun" && it.parameterCount == 0 }
+                    onRunMethod?.let {
+                        it.isAccessible = true
+                        it.invoke(sendJob)
+                    }
                 }
             } catch (e: Throwable) {
                 logDebug(e)

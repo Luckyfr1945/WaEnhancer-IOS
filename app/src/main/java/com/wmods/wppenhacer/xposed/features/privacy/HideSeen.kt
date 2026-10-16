@@ -68,6 +68,7 @@ class HideSeen(loader: ClassLoader, preferences: SharedPreferences) :
         XposedBridge.hookMethod(sendReadReceiptJobMethod, object : XC_MethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
                 val job = param.thisObject ?: return
+                com.wmods.wppenhacer.xposed.features.general.SeenTick.tryCaptureJobManagerFromObject(job)
                 val hasBlueOnReply =
                     XposedHelpers.getAdditionalInstanceField(job, "blue_on_reply") as? Boolean
                         ?: false

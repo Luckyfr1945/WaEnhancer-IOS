@@ -3,6 +3,7 @@ package com.wmods.wppenhacer.xposed.core.components
 import com.wmods.wppenhacer.xposed.core.WppCore
 import com.wmods.wppenhacer.xposed.core.devkit.Unobfuscator
 import com.wmods.wppenhacer.xposed.utils.ReflectionUtils
+import com.wmods.wppenhacer.xposed.utils.Utils
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
@@ -27,7 +28,9 @@ class FStatusWpp(val fstatus: Any?) {
             FStatusKey.initialize(classLoader)
             TYPE = Unobfuscator.loadFStatusClass(classLoader)
             val fStatusKeyClass = Unobfuscator.loadFStatusKeyClass(classLoader)
-            fieldFStatusKey = ReflectionUtils.getFieldByType(TYPE, fStatusKeyClass)!!
+            fieldFStatusKey = ReflectionUtils.findFieldUsingFilterIfExists(TYPE) { f ->
+                fStatusKeyClass.isAssignableFrom(f.type)
+            } ?: ReflectionUtils.getFieldByType(TYPE, fStatusKeyClass)!!
             methodGetStatusByKey = Unobfuscator.loadGetStatusByKey(classLoader)
             XposedBridge.hookAllConstructors(
                 methodGetStatusByKey.declaringClass,
@@ -219,12 +222,24 @@ class FStatusWpp(val fstatus: Any?) {
                 }
             }
 
-            try {
-                this.isFromMe = XposedHelpers.getBooleanField(key, "A03")
-            } catch (_: Throwable) {
-                this.isFromMe = ReflectionUtils.findFieldUsingFilterIfExists(key.javaClass) { f ->
-                    f.type == java.lang.Boolean.TYPE || f.type == java.lang.Boolean::class.java
-                }?.getBoolean(key) ?: false
+            val fromMeByField = runCatching { XposedHelpers.getBooleanField(key, "A03") }.getOrNull()
+            if (fromMeByField != null) {
+                this.isFromMe = fromMeByField
+            } else {
+                val str = key.toString()
+                val matchFromMe = Regex("(?:isFromMe|fromMe)=(true|false)", RegexOption.IGNORE_CASE).find(str)
+                if (matchFromMe != null) {
+                    this.isFromMe = matchFromMe.groupValues[1].toBoolean()
+                } else {
+                    val myNumber = Utils.getMyNumber()
+                    if (!myNumber.isNullOrBlank() && !senderJid.phoneNumber.isNullOrBlank()) {
+                        this.isFromMe = senderJid.phoneNumber == myNumber
+                    } else {
+                        this.isFromMe = ReflectionUtils.findFieldUsingFilterIfExists(key.javaClass) { f ->
+                            f.type == java.lang.Boolean.TYPE || f.type == java.lang.Boolean::class.java
+                        }?.getBoolean(key) ?: false
+                    }
+                }
             }
 
             try {

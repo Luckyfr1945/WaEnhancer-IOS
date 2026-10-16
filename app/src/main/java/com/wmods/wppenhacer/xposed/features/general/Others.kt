@@ -121,7 +121,7 @@ class Others(loader: ClassLoader, preferences:SharedPreferences) : Feature(loade
             propsBoolean[17420] = false
             propsBoolean[18055] = false
             propsBoolean[18128] = false
-        } else {
+        } else if (igstatus) {
             propsInteger[3877] = 2
         }
 
