@@ -1050,21 +1050,39 @@
         @JvmStatic
         fun loadBlueOnReplayMessageJobMethod(loader: ClassLoader): Method {
             return UnobfuscatorCache.getInstance().getMethod(loader) {
-                val methodWithTag = findFirstMethodUsingStrings(loader, StringMatchType.Contains, "SendE2EMessageJob/onRun")
-                    ?: throw Exception("BlueOnReplayMessageJob method not found")
+                var methodWithTag = findFirstMethodUsingStrings(
+                    loader,
+                    StringMatchType.Contains,
+                    "SendE2EMessageJob/onRun",
+                    "sende2emessagejob/onrun",
+                    "SendE2EMessageJob"
+                )
 
-                if (methodWithTag.returnType == java.lang.Void.TYPE && methodWithTag.parameterCount == 0) {
+                if (methodWithTag != null && methodWithTag.returnType == java.lang.Void.TYPE && methodWithTag.parameterCount == 0) {
                     return@getMethod methodWithTag
                 }
 
-                val jobClass = methodWithTag.declaringClass
-                val voidZeroParam = jobClass.declaredMethods.firstOrNull {
+                val jobClass = methodWithTag?.declaringClass ?: findFirstClassUsingName(
+                    loader,
+                    StringMatchType.EndsWith,
+                    "SendE2EMessageJob"
+                ) ?: findFirstClassUsingStrings(
+                    loader,
+                    StringMatchType.Contains,
+                    "SendE2EMessageJob"
+                ) ?: throw Exception("BlueOnReplayMessageJob method not found")
+
+                val onRunMethod = jobClass.methods.firstOrNull {
+                    it.name.equals("onRun", ignoreCase = true) && it.parameterCount == 0 && it.returnType == java.lang.Void.TYPE
+                } ?: jobClass.declaredMethods.firstOrNull {
+                    it.name.equals("onRun", ignoreCase = true) && it.parameterCount == 0 && it.returnType == java.lang.Void.TYPE
+                } ?: jobClass.declaredMethods.firstOrNull {
                     it.returnType == java.lang.Void.TYPE && it.parameterCount == 0 && java.lang.reflect.Modifier.isPublic(it.modifiers)
                 } ?: jobClass.declaredMethods.firstOrNull {
                     it.returnType == java.lang.Void.TYPE && it.parameterCount == 0
                 }
 
-                voidZeroParam ?: methodWithTag
+                onRunMethod ?: methodWithTag ?: throw Exception("BlueOnReplayMessageJob method not found")
             }
         }
 
@@ -2957,13 +2975,42 @@
             }
         }
 
-        fun loadVideoTranscoderStartMethod(classLoader: ClassLoader): Method {
-            return UnobfuscatorCache.getInstance().getMethod(classLoader) {
-                findFirstMethodUsingStrings(
-                    classLoader,
-                    StringMatchType.Contains,
-                    "VideoTranscoder/transcodeVideoNew/"
-                )!!
+        fun loadVideoTranscoderStartMethod(classLoader: ClassLoader): Method? {
+            return try {
+                UnobfuscatorCache.getInstance().getMethod(classLoader) {
+                    for (tag in listOf(
+                        "VideoTranscoder/transcodeVideoNew/",
+                        "VideoTranscoder/transcodeVideoNew",
+                        "VideoTranscoder/transcode/",
+                        "VideoTranscoder/transcode",
+                        "VideoTranscoder/start",
+                        "VideoTranscoder",
+                        "transcodeVideoNew"
+                    )) {
+                        val m = findFirstMethodUsingStrings(classLoader, StringMatchType.Contains, tag)
+                        if (m != null) return@getMethod m
+                    }
+
+                    val mediaTranscodeMethod = bridge.findMethod {
+                        matcher {
+                            usingStrings("MediaTranscode/Starting")
+                        }
+                    }.firstOrNull()?.getMethodInstance(classLoader)
+                    if (mediaTranscodeMethod != null) return@getMethod mediaTranscodeMethod
+
+                    val transcoderClass = runCatching {
+                        findFirstClassUsingName(classLoader, StringMatchType.Contains, "VideoTranscoder")
+                    }.getOrNull()
+                    val startMethod = transcoderClass?.declaredMethods?.firstOrNull {
+                        it.parameterCount >= 1 && java.lang.reflect.Modifier.isPublic(it.modifiers)
+                    }
+                    if (startMethod != null) return@getMethod startMethod
+
+                    throw NoSuchMethodException("VideoTranscoderStart method not found")
+                }
+            } catch (e: Throwable) {
+                XposedBridge.log("loadVideoTranscoderStartMethod not found: ${e.message}")
+                null
             }
         }
 
@@ -3168,8 +3215,13 @@
                 findFirstClassUsingStrings(
                     classLoader,
                     StringMatchType.Contains,
-                    "MediaDataVideoConfiguration("
-                )!!
+                    "MediaDataVideoConfiguration(",
+                    "MediaDataVideoConfiguration"
+                ) ?: findFirstClassUsingName(
+                    classLoader,
+                    StringMatchType.EndsWith,
+                    "MediaDataVideoConfiguration"
+                ) ?: throw ClassNotFoundException("MediaDataVideoConfiguration class not found")
             }
         }
 

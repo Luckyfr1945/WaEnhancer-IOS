@@ -55,7 +55,7 @@ class IGStatus(loader: ClassLoader, preferences:SharedPreferences) : Feature(loa
 
     @Throws(Throwable::class)
     override fun doHook() {
-        if (!prefs.getBoolean("igstatus", true)) return
+        if (!prefs.getBoolean("igstatus", false)) return
 
         val fabintMethod = Unobfuscator.loadFabMethod(classLoader)
 
@@ -87,25 +87,36 @@ class IGStatus(loader: ClassLoader, preferences:SharedPreferences) : Feature(loa
                 val list = view.findViewById<ViewGroup>(android.R.id.list) ?: return
                 val act = WppCore.getCurrentActivity() ?: (view.context as? android.app.Activity) ?: return
                 val mStatusContainer = IGStatusView(act)
+                val statusHeight = Utils.dipToPixels(98)
+                mStatusContainer.setPadding(0, Utils.dipToPixels(4), 0, Utils.dipToPixels(10))
+                mStatusContainer.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+
                 if (list is ListView) {
                     list.isNestedScrollingEnabled = true
+                    try {
+                        list.setHeaderDividersEnabled(false)
+                    } catch (_: Throwable) {}
                     val layoutParams = AbsListView.LayoutParams(
-                        AbsListView.LayoutParams.MATCH_PARENT, Utils.dipToPixels(88)
+                        AbsListView.LayoutParams.MATCH_PARENT, statusHeight
                     )
                     mStatusContainer.layoutParams = layoutParams
-                    list.addHeaderView(mStatusContainer)
+                    list.addHeaderView(mStatusContainer, null, false)
                 } else {
                     val paddingTop = list.paddingTop
                     val parentView = (list.parent as? ViewGroup) ?: return
-                    val background = list.background
-                    mStatusContainer.background = background
                     list.setPadding(0, 0, 0, 0)
                     val layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT, Utils.dipToPixels(88)
+                        LinearLayout.LayoutParams.MATCH_PARENT, statusHeight
                     )
                     layoutParams.topMargin = paddingTop
                     mStatusContainer.layoutParams = layoutParams
                     parentView.addView(mStatusContainer, 0)
+                }
+
+                if (prefs.getBoolean("floating_bottom_bar", false)) {
+                    val bottomInset = Utils.dipToPixels(100)
+                    list.clipToPadding = false
+                    list.setPadding(list.paddingLeft, list.paddingTop, list.paddingRight, bottomInset)
                 }
                 val id = (try { fabintMethod.invoke(param.thisObject) as? Int } catch (_: Throwable) { null }) ?: 0
                 val igStatus = mListStatusContainer.find { it.fragmentId == id }

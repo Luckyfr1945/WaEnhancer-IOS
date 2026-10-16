@@ -306,12 +306,20 @@ class IosHeader(loader: ClassLoader, preferences: SharedPreferences) : Feature(l
 
 
                         val isNight = DesignUtils.isNightMode()
-                        val defaultBg = if (isNight) Color.parseColor("#0B141B") else Color.WHITE
+                        val customBg = prefs.getInt("background_color", 0)
+                        val defaultBg = if (isNight) Color.BLACK else Color.WHITE
                         val surfaceColor = DesignUtils.getPrimarySurfaceColor()
-                        val headerBgColor = if (surfaceColor != -15132398 && surfaceColor != -2 && surfaceColor != 0) surfaceColor else defaultBg
+                        val headerBgColor = when {
+                            customBg != 0 -> customBg
+                            surfaceColor != -15132398 && surfaceColor != -2 && surfaceColor != 0 -> surfaceColor
+                            else -> defaultBg
+                        }
 
                         header.setBackgroundColor(headerBgColor)
                         toolbar.setBackgroundColor(Color.TRANSPARENT)
+                        try {
+                            activity.window.statusBarColor = headerBgColor
+                        } catch (_: Throwable) {}
                         header.elevation = 0f
                         header.bringToFront()
 
